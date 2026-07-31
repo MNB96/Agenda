@@ -16,6 +16,7 @@ dist-ssr
 .expo
 .expo-shared
 web-build
+android
 
 # Editor directories and files
 .vscode/*
