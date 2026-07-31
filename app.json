@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "Agenda Personal",
+    "slug": "agenda-personal",
+    "scheme": "agendaapp",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.agenda.personal"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#f7f2ea"
+      },
+      "package": "com.agenda.personal"
+    }
+  }
+}
