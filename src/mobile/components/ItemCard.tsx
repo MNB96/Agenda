@@ -34,7 +34,6 @@ export const ItemCard = ({ item, categoryName, onToggle, onOpen }: ItemCardProps
 
         <View style={styles.content}>
           <View style={styles.titleRow}>
-            <View style={[styles.indicator, { backgroundColor: indicatorColor }]} />
             <Text style={[styles.title, item.status === 'completed' ? styles.done : undefined]}>{item.title}</Text>
           </View>
           {item.description ? <Text style={styles.meta}>{item.description}</Text> : null}
@@ -106,11 +105,11 @@ const createStyles = (colors: ThemeTokens) =>
       gap: 10,
     },
     checkbox: {
-      width: 18,
-      height: 18,
+      width: 24,
+      height: 24,
       borderRadius: 999,
-      borderWidth: 1,
-      marginTop: 2,
+      borderWidth: 1.6,
+      marginTop: 0,
       backgroundColor: colors.surface,
     },
     checkboxDone: {
@@ -122,12 +121,7 @@ const createStyles = (colors: ThemeTokens) =>
     titleRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 8,
-    },
-    indicator: {
-      width: 9,
-      height: 9,
-      borderRadius: 999,
+      gap: 0,
     },
     title: {
       fontSize: 15,
