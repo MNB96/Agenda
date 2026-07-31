@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
   BackHandler,
+  Keyboard,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -19,11 +21,13 @@ import {
   CircleCheck,
   Clock,
   CornerDownRight,
+  MapPin,
   MoreVertical,
   Star,
   Tag,
   X,
 } from 'lucide-react-native'
+import { searchPlaceSuggestions, type PlaceSuggestion } from '../../services/googlePlaces'
 import DateTimePicker from '@react-native-community/datetimepicker'
 import { format, isToday, parse } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -64,6 +68,9 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
   const [deadline, setDeadline] = useState<string | undefined>()
 
   const [categoryId, setCategoryId] = useState<string | undefined>()
+  const [location, setLocation] = useState<string | undefined>()
+  const [locationQuery, setLocationQuery] = useState('')
+  const [locationSuggestions, setLocationSuggestions] = useState<PlaceSuggestion[]>([])
   const [newSubtaskText, setNewSubtaskText] = useState('')
   const subtaskInputRef = useRef<TextInput>(null)
 
@@ -80,7 +87,27 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
     setScheduledTime(item.startTime)
     setDeadline(item.deadline)
     setCategoryId(item.categoryId)
+    setLocation(item.location)
+    setLocationQuery(item.location ?? '')
+    setLocationSuggestions([])
   }, [open, item?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const q = locationQuery.trim()
+    if (!q || q === location) {
+      setLocationSuggestions([])
+      return
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const results = await searchPlaceSuggestions(q)
+        setLocationSuggestions(results.slice(0, 4))
+      } catch {
+        setLocationSuggestions([])
+      }
+    }, 350)
+    return () => clearTimeout(timer)
+  }, [locationQuery, location])
 
   const handleClose = useCallback(async () => {
     if (!item) { onClose(); return }
@@ -95,6 +122,7 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
           startTime: scheduledTime,
           deadline,
           categoryId,
+          location: location || undefined,
         },
       })
     }
@@ -231,6 +259,61 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
                 </ScrollView>
               </View>
             )}
+
+            <View style={styles.rowDivider} />
+
+            {/* Location row */}
+            <View>
+              <View style={styles.detailRow}>
+                <Pressable
+                  onPress={() => location ? void Linking.openURL(`https://maps.google.com/?q=${encodeURIComponent(location)}`) : undefined}
+                  disabled={!location}
+                  hitSlop={4}
+                >
+                  <MapPin size={20} color={location ? colors.primary : colors.textMuted} style={styles.rowIcon} />
+                </Pressable>
+                <TextInput
+                  value={locationQuery}
+                  onChangeText={(text) => {
+                    setLocationQuery(text)
+                    if (!text.trim()) setLocation(undefined)
+                  }}
+                  style={[styles.detailRowInput, location ? { color: colors.primary } : {}]}
+                  placeholder="Agregar dirección"
+                  placeholderTextColor={colors.textMuted}
+                  returnKeyType="done"
+                  selectionColor={colors.primary}
+                  onSubmitEditing={() => setLocationSuggestions([])}
+                />
+                {locationQuery ? (
+                  <Pressable
+                    onPress={() => { setLocationQuery(''); setLocation(undefined); setLocationSuggestions([]) }}
+                    hitSlop={8}
+                  >
+                    <X size={16} color={colors.textMuted} />
+                  </Pressable>
+                ) : null}
+              </View>
+              {locationSuggestions.length > 0 && (
+                <View style={styles.suggestionsContainer}>
+                  {locationSuggestions.map((s) => (
+                    <Pressable
+                      key={s.placeId}
+                      style={({ pressed }) => [styles.suggestionItem, pressed && { opacity: 0.7 }]}
+                      onPress={() => {
+                        setLocation(s.description)
+                        setLocationQuery(s.description)
+                        setLocationSuggestions([])
+                        Keyboard.dismiss()
+                      }}
+                    >
+                      <MapPin size={13} color={colors.textMuted} style={{ marginTop: 1 }} />
+                      <Text style={styles.suggestionText} numberOfLines={2}>{s.description}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            </View>
 
             <View style={styles.rowDivider} />
 
@@ -487,6 +570,30 @@ const createStyles = (colors: ThemeTokens) =>
       fontSize: 13,
       color: colors.textSecondary,
       fontWeight: '500',
+    },
+    suggestionsContainer: {
+      marginLeft: 36,
+      marginBottom: 4,
+      backgroundColor: colors.surfaceSecondary,
+      borderRadius: 10,
+      overflow: 'hidden',
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    suggestionItem: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      borderBottomWidth: 1,
+      borderColor: colors.border,
+    },
+    suggestionText: {
+      flex: 1,
+      fontSize: 13,
+      color: colors.text,
+      lineHeight: 18,
     },
     subtaskRow: {
       flexDirection: 'row',

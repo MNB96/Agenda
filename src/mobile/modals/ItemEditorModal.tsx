@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Modal, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Keyboard, Modal, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native'
+import { searchPlaceSuggestions, type PlaceSuggestion } from '../../services/googlePlaces'
 import type { ItemType } from '../../domain/items/types'
 import { useItems } from '../../features/items/useItems'
 import { useAppTheme } from '../theme/useAppTheme'
@@ -29,6 +30,8 @@ export const ItemEditorModal = ({ open, itemId, onClose }: ItemEditorModalProps)
   const [startTime, setStartTime] = useState('')
   const [deadline, setDeadline] = useState('')
   const [location, setLocation] = useState('')
+  const [locationSuggestions, setLocationSuggestions] = useState<PlaceSuggestion[]>([])
+  const resolvedLocationRef = useRef('')
   const [type, setType] = useState<ItemType>('task')
   const [syncToGoogleCalendar, setSyncToGoogleCalendar] = useState(false)
 
@@ -42,9 +45,28 @@ export const ItemEditorModal = ({ open, itemId, onClose }: ItemEditorModalProps)
     setStartTime(item.startTime ?? '')
     setDeadline(item.deadline ?? '')
     setLocation(item.location ?? '')
+    resolvedLocationRef.current = item.location ?? ''
+    setLocationSuggestions([])
     setType(item.type)
     setSyncToGoogleCalendar(Boolean(item.syncToGoogleCalendar))
   }, [item])
+
+  useEffect(() => {
+    const q = location.trim()
+    if (!q || q === resolvedLocationRef.current) {
+      setLocationSuggestions([])
+      return
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const results = await searchPlaceSuggestions(q)
+        setLocationSuggestions(results.slice(0, 4))
+      } catch {
+        setLocationSuggestions([])
+      }
+    }, 350)
+    return () => clearTimeout(timer)
+  }, [location])
 
   if (!item) {
     return null
@@ -116,11 +138,34 @@ export const ItemEditorModal = ({ open, itemId, onClose }: ItemEditorModalProps)
           />
           <TextInput
             value={location}
-            onChangeText={setLocation}
+            onChangeText={(text) => {
+              setLocation(text)
+              if (!text.trim()) resolvedLocationRef.current = ''
+            }}
             style={styles.input}
-            placeholder="Ubicacion"
+            placeholder="Dirección (opcional)"
             placeholderTextColor={colors.textMuted}
+            returnKeyType="done"
+            onSubmitEditing={() => setLocationSuggestions([])}
           />
+          {locationSuggestions.length > 0 && (
+            <View style={styles.suggestionsContainer}>
+              {locationSuggestions.map((s) => (
+                <Pressable
+                  key={s.placeId}
+                  style={({ pressed }) => [styles.suggestionItem, pressed && { opacity: 0.7 }]}
+                  onPress={() => {
+                    setLocation(s.description)
+                    resolvedLocationRef.current = s.description
+                    setLocationSuggestions([])
+                    Keyboard.dismiss()
+                  }}
+                >
+                  <Text style={styles.suggestionText} numberOfLines={2}>{s.description}</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
 
           <Pressable style={styles.typeButton} onPress={() => setType((current) => nextType(current))}>
             <Text style={styles.typeButtonText}>Tipo: {type}</Text>
@@ -176,6 +221,25 @@ const createStyles = (colors: ThemeTokens) => StyleSheet.create({
   multiline: {
     minHeight: 72,
     textAlignVertical: 'top',
+  },
+  suggestionsContainer: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    overflow: 'hidden',
+    marginTop: -4,
+    backgroundColor: colors.surfaceSecondary,
+  },
+  suggestionItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderColor: colors.border,
+  },
+  suggestionText: {
+    fontSize: 13,
+    color: colors.text,
+    lineHeight: 18,
   },
   typeButton: {
     borderWidth: 1,

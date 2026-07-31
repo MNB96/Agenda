@@ -22,12 +22,14 @@ import {
   ChevronRight,
   Clock,
   Flag,
+  MapPin,
   Repeat,
   Star,
   Tag,
   Trash2,
   X,
 } from 'lucide-react-native'
+import { searchPlaceSuggestions, type PlaceSuggestion } from '../../services/googlePlaces'
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker'
 import {
   addMonths,
@@ -250,6 +252,12 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
   const [showDescInput, setShowDescInput] = useState(false)
   const [categoryId, setCategoryId] = useState<string | undefined>()
 
+  // Location
+  const [location, setLocation] = useState<string | undefined>()
+  const [locationQuery, setLocationQuery] = useState('')
+  const [locationSuggestions, setLocationSuggestions] = useState<PlaceSuggestion[]>([])
+  const [showLocationInput, setShowLocationInput] = useState(false)
+
   // NL dismissal flags (user tapped × on auto-detected chip)
   const [nlDateDismissed, setNlDateDismissed] = useState(false)
   const [nlTimeDismissed, setNlTimeDismissed] = useState(false)
@@ -322,6 +330,9 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
       setDescription(editingItem.description ?? '')
       setShowDescInput(Boolean(editingItem.description?.trim()))
       setCategoryId(editingItem.categoryId)
+      setLocation(editingItem.location)
+      setLocationQuery(editingItem.location ?? '')
+      setShowLocationInput(Boolean(editingItem.location))
     } else {
       setText('')
       setImportant(false)
@@ -335,8 +346,30 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
       setCategoryId(undefined)
       setNlDateDismissed(false)
       setNlTimeDismissed(false)
+      setLocation(undefined)
+      setLocationQuery('')
+      setLocationSuggestions([])
+      setShowLocationInput(false)
     }
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Location autocomplete debounce ──
+  useEffect(() => {
+    const q = locationQuery.trim()
+    if (!q || q === location) {
+      setLocationSuggestions([])
+      return
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const results = await searchPlaceSuggestions(q)
+        setLocationSuggestions(results.slice(0, 4))
+      } catch {
+        setLocationSuggestions([])
+      }
+    }, 350)
+    return () => clearTimeout(timer)
+  }, [locationQuery, location])
 
   // ── Android back handler ──
   useEffect(() => {
@@ -418,6 +451,7 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
       reminderConfig: reminders.length > 0 ? reminders : undefined,
       description: description.trim() || undefined,
       categoryId,
+      location: location || undefined,
     }
 
     if (isEditMode && editingItem) {
@@ -552,6 +586,59 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
           </>
         )}
 
+        {/* Location input */}
+        {showLocationInput && (
+          <View>
+            <View style={styles.locationInputRow}>
+              <MapPin size={15} color={location ? colors.primary : colors.textMuted} />
+              <TextInput
+                value={locationQuery}
+                onChangeText={(text) => {
+                  setLocationQuery(text)
+                  if (!text.trim()) setLocation(undefined)
+                }}
+                placeholder="Agregar dirección"
+                placeholderTextColor={colors.textMuted}
+                style={styles.locationInput}
+                returnKeyType="done"
+                selectionColor={colors.primary}
+                onSubmitEditing={() => setLocationSuggestions([])}
+              />
+              {locationQuery ? (
+                <Pressable
+                  onPress={() => {
+                    setLocationQuery('')
+                    setLocation(undefined)
+                    setLocationSuggestions([])
+                  }}
+                  hitSlop={8}
+                >
+                  <X size={14} color={colors.textMuted} />
+                </Pressable>
+              ) : null}
+            </View>
+            {locationSuggestions.length > 0 && (
+              <View style={styles.suggestionsContainer}>
+                {locationSuggestions.map((s) => (
+                  <Pressable
+                    key={s.placeId}
+                    style={({ pressed }) => [styles.suggestionItem, pressed && { opacity: 0.7 }]}
+                    onPress={() => {
+                      setLocation(s.description)
+                      setLocationQuery(s.description)
+                      setLocationSuggestions([])
+                      Keyboard.dismiss()
+                    }}
+                  >
+                    <MapPin size={13} color={colors.textMuted} style={{ marginTop: 1 }} />
+                    <Text style={styles.suggestionText} numberOfLines={2}>{s.description}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
+
         {/* NL parser chips */}
         {(showNlDate || showNlTime) && (
           <View style={styles.chipsRow}>
@@ -614,6 +701,24 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
               label="Fecha y hora"
               active={Boolean(effectiveDate)}
               onPress={openDatePanel}
+              colors={colors}
+            />
+            <ActionIcon
+              icon={MapPin}
+              label="Dirección"
+              active={showLocationInput || Boolean(location)}
+              onPress={() => {
+                if (showLocationInput) {
+                  setShowLocationInput(false)
+                  setLocationQuery('')
+                  setLocation(undefined)
+                  setLocationSuggestions([])
+                  Keyboard.dismiss()
+                } else {
+                  setShowLocationInput(true)
+                  setTimeout(() => Keyboard.dismiss(), 50)
+                }
+              }}
               colors={colors}
             />
             <ActionIcon
@@ -1541,5 +1646,44 @@ const createStyles = (colors: ThemeTokens) =>
       padding: 0,
       marginBottom: 8,
       outlineWidth: 0,
+    },
+
+    // Location
+    locationInputRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingVertical: 6,
+      marginBottom: 4,
+    },
+    locationInput: {
+      flex: 1,
+      fontSize: 14,
+      color: colors.text,
+      padding: 0,
+      outlineWidth: 0,
+    },
+    suggestionsContainer: {
+      backgroundColor: colors.surfaceSecondary,
+      borderRadius: 10,
+      marginBottom: 6,
+      overflow: 'hidden',
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    suggestionItem: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      borderBottomWidth: 1,
+      borderColor: colors.border,
+    },
+    suggestionText: {
+      flex: 1,
+      fontSize: 13,
+      color: colors.text,
+      lineHeight: 18,
     },
   })

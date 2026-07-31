@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { Linking, Pressable, StyleSheet, Text, View } from 'react-native'
 import { differenceInCalendarDays, parseISO, startOfDay } from 'date-fns'
 import type { Item } from '../../domain/items/types'
 import { useAppTheme } from '../theme/useAppTheme'
@@ -41,7 +41,14 @@ export const ItemCard = ({ item, categoryName, onToggle, onOpen }: ItemCardProps
           ) : null}
           <View style={styles.chipsRow}>
             {categoryName ? <Text style={[styles.chip, { backgroundColor: chipBackgroundColor }]}>{categoryName}</Text> : null}
-            {item.location ? <Text style={[styles.chip, { backgroundColor: colors.secondarySoft }]}>📍 {item.location}</Text> : null}
+            {item.location ? (
+              <Pressable
+                onPress={() => void Linking.openURL(`https://maps.google.com/?q=${encodeURIComponent(item.location!)}`)}
+                style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+              >
+                <Text style={[styles.chip, { backgroundColor: colors.secondarySoft }]}>📍 {item.location}</Text>
+              </Pressable>
+            ) : null}
             {item.goalConfig ? (
               <Text style={[styles.chip, { backgroundColor: colors.creamSoft }]}>
                 {`${item.goalConfig.currentValue}/${item.goalConfig.targetValue}`}
