@@ -45,6 +45,7 @@ export const createItem = (input: NewItemInput): Item => {
     goalConfig: input.goalConfig,
     academicConfig: input.academicConfig,
     syncToGoogleCalendar: input.syncToGoogleCalendar ?? false,
+    notificationId: undefined,
     createdAt: nowIso,
     updatedAt: nowIso,
   }

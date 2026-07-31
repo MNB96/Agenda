@@ -6,6 +6,7 @@ import { createItem, resolveEventDateTimes, updateItem } from './itemService'
 import { useGoogleAuthStore } from '../../state/googleAuthStore'
 import { useSettings } from '../settings/useSettings'
 import { isGoogleCalendarAuthError } from '../../providers/calendar/errors'
+import { cancelItemNotification, scheduleItemNotification } from '../../services/notifications/itemNotifications'
 
 const ITEMS_KEY = ['items']
 
@@ -53,6 +54,10 @@ export const useItems = () => {
         throw error
       }
 
+      const notificationId = await scheduleItemNotification(item)
+      if (notificationId) {
+        item = updateItem(item, { notificationId })
+      }
       return itemRepository.save(item)
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ITEMS_KEY }),
@@ -124,6 +129,9 @@ export const useItems = () => {
         throw error
       }
 
+      await cancelItemNotification(current.notificationId)
+      const notificationId = await scheduleItemNotification(next)
+      next = updateItem(next, { notificationId: notificationId ?? undefined })
       return itemRepository.save(next)
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ITEMS_KEY }),
@@ -131,6 +139,7 @@ export const useItems = () => {
 
   const removeMutation = useMutation({
     mutationFn: async (item: Item) => {
+      await cancelItemNotification(item.notificationId)
       try {
         if (item.googleCalendarLink && accessToken) {
           await calendarRepository.deleteEvent(
@@ -152,10 +161,18 @@ export const useItems = () => {
 
   const completeMutation = useMutation({
     mutationFn: async (item: Item) => {
-      const next = updateItem(item, {
-        status: item.status === 'completed' ? 'active' : 'completed',
-        completedAt: item.status === 'completed' ? undefined : new Date().toISOString(),
+      const completing = item.status !== 'completed'
+      let next = updateItem(item, {
+        status: completing ? 'completed' : 'active',
+        completedAt: completing ? new Date().toISOString() : undefined,
       })
+      if (completing) {
+        await cancelItemNotification(item.notificationId)
+        next = updateItem(next, { notificationId: undefined })
+      } else {
+        const notificationId = await scheduleItemNotification(next)
+        next = updateItem(next, { notificationId: notificationId ?? undefined })
+      }
       return itemRepository.save(next)
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ITEMS_KEY }),

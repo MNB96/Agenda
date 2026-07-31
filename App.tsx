@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DefaultTheme, NavigationContainer } from '@react-navigation/native'
 import { useColorScheme, View } from 'react-native'
@@ -12,6 +12,7 @@ import { useGoogleSessionLifecycleMobile } from './src/mobile/useGoogleSessionLi
 import { ThemePreferenceProvider } from './src/mobile/theme/ThemePreferenceContext'
 import { useAppTheme } from './src/mobile/theme/useAppTheme'
 import { FloatingAddButton } from './src/mobile/components/FloatingAddButton'
+import { requestNotificationPermissions } from './src/services/notifications/itemNotifications'
 
 export default function App() {
   const queryClient = useMemo(() => new QueryClient(), [])
@@ -71,6 +72,10 @@ const AppShellInner = ({
   const { colors } = useAppTheme()
 
   useGoogleSessionLifecycleMobile()
+
+  useEffect(() => {
+    requestNotificationPermissions()
+  }, [])
 
   const navTheme = useMemo(
     () => ({
