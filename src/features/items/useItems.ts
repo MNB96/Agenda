@@ -6,7 +6,8 @@ import { createItem, resolveEventDateTimes, updateItem } from './itemService'
 import { useGoogleAuthStore } from '../../state/googleAuthStore'
 import { useSettings } from '../settings/useSettings'
 import { isGoogleCalendarAuthError } from '../../providers/calendar/errors'
-import { cancelItemNotification, scheduleItemNotification } from '../../services/notifications/itemNotifications'
+import { cancelItemNotification, notifyCalendarDeleteFailed, scheduleItemNotification } from '../../services/notifications/itemNotifications'
+import { enqueueDelete } from '../../services/calendar/calendarDeleteQueue'
 
 const ITEMS_KEY = ['items']
 
@@ -25,7 +26,7 @@ export const useItems = () => {
       let item = createItem(payload)
 
       try {
-        if (item.syncToGoogleCalendar && accessToken) {
+        if ((item.startDate || item.startTime) && accessToken) {
           const dateTimes = resolveEventDateTimes(item)
           const calendarId = settings?.selectedGoogleCalendarIds[0] ?? 'primary'
           if (dateTimes) {
@@ -76,7 +77,7 @@ export const useItems = () => {
       try {
         if (accessToken) {
           const currentLink = current.googleCalendarLink
-          const shouldSync = Boolean(next.syncToGoogleCalendar)
+          const shouldSync = Boolean(next.startDate || next.startTime)
 
           if (shouldSync && dateTimes) {
             if (currentLink) {
@@ -144,19 +145,34 @@ export const useItems = () => {
   const removeMutation = useMutation({
     mutationFn: async (item: Item) => {
       await cancelItemNotification(item.notificationId)
-      try {
-        if (item.googleCalendarLink && accessToken) {
-          await calendarRepository.deleteEvent(
-            accessToken,
-            item.googleCalendarLink.calendarId,
-            item.googleCalendarLink.eventId,
-          )
+      const link = item.googleCalendarLink
+      if (link && accessToken) {
+        try {
+          await calendarRepository.deleteEvent(accessToken, link.calendarId, link.eventId)
+        } catch (deleteError) {
+          if (isGoogleCalendarAuthError(deleteError)) {
+            markUnauthorized()
+          } else {
+            // Fallback 1: renombrar el evento para marcarlo visualmente como eliminado
+            const dateTimes = resolveEventDateTimes(item)
+            if (dateTimes) {
+              try {
+                await calendarRepository.updateEvent(accessToken, link.calendarId, link.eventId, {
+                  summary: `[Eliminada] ${item.title}`,
+                  description: item.description,
+                  location: item.location,
+                  startDateTime: dateTimes.start,
+                  endDateTime: dateTimes.end,
+                  allDay: dateTimes.allDay,
+                })
+              } catch {
+                // El rename también falló, la cola se encarga
+              }
+            }
+            // Fallback 2: encolar para reintentar con backoff
+            await enqueueDelete(link.calendarId, link.eventId, item.title)
+          }
         }
-      } catch (error) {
-        if (isGoogleCalendarAuthError(error)) {
-          markUnauthorized()
-        }
-        throw error
       }
       return itemRepository.remove(item.id)
     },

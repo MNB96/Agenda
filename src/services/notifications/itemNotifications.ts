@@ -64,6 +64,22 @@ export const scheduleItemNotification = async (item: Item): Promise<string | nul
   }
 }
 
+export const notifyCalendarDeleteFailed = async (taskTitle: string): Promise<void> => {
+  try {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'No se pudo eliminar del calendario',
+        body: `"${taskTitle}" no se pudo borrar de Google Calendar`,
+        sound: true,
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: new Date(Date.now() + 3000),
+      },
+    })
+  } catch {}
+}
+
 export const cancelItemNotification = async (notificationId: string | undefined): Promise<void> => {
   if (!notificationId) return
   try {

@@ -13,6 +13,8 @@ import { ThemePreferenceProvider } from './src/mobile/theme/ThemePreferenceConte
 import { useAppTheme } from './src/mobile/theme/useAppTheme'
 import { FloatingAddButton } from './src/mobile/components/FloatingAddButton'
 import { requestNotificationPermissions } from './src/services/notifications/itemNotifications'
+import { useCalendarDeleteQueue } from './src/services/calendar/useCalendarDeleteQueue'
+import { useGoogleAuthStore } from './src/state/googleAuthStore'
 
 export default function App() {
   const queryClient = useMemo(() => new QueryClient(), [])
@@ -72,6 +74,9 @@ const AppShellInner = ({
   const { colors } = useAppTheme()
 
   useGoogleSessionLifecycleMobile()
+
+  const { accessToken, markUnauthorized } = useGoogleAuthStore()
+  useCalendarDeleteQueue(accessToken ?? null, markUnauthorized)
 
   useEffect(() => {
     requestNotificationPermissions()
