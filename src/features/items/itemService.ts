@@ -29,6 +29,8 @@ export const createItem = (input: NewItemInput): Item => {
     description: input.description?.trim(),
     type: inferType(input),
     status: 'active',
+    important: input.important,
+    repeatRule: input.repeatRule,
     categoryId: input.categoryId,
     location: input.location,
     startDate: input.startDate,

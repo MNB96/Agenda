@@ -1,3 +1,5 @@
+export type RepeatRule = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'
+
 export type ItemType =
   | 'task'
   | 'event'
@@ -63,6 +65,8 @@ export interface Item {
   description?: string
   type: ItemType
   status: ItemStatus
+  important?: boolean
+  repeatRule?: RepeatRule
   categoryId?: string
   location?: string
   startDate?: string
@@ -86,6 +90,8 @@ export interface NewItemInput {
   title: string
   description?: string
   type?: ItemType
+  important?: boolean
+  repeatRule?: RepeatRule
   categoryId?: string
   location?: string
   startDate?: string

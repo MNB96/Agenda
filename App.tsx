@@ -5,9 +5,8 @@ import { useColorScheme, View } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { useSettings } from './src/features/settings/useSettings'
 import { MainTabs } from './src/mobile/navigation/MainTabs'
-import { QuickAddModal } from './src/mobile/modals/QuickAddModal'
+import { QuickAddSheet } from './src/mobile/modals/QuickAddSheet'
 import { SettingsModal } from './src/mobile/modals/SettingsModal'
-import { ItemEditorModal } from './src/mobile/modals/ItemEditorModal'
 import { useGoogleSessionLifecycleMobile } from './src/mobile/useGoogleSessionLifecycleMobile'
 import { ThemePreferenceProvider } from './src/mobile/theme/ThemePreferenceContext'
 import { useAppTheme } from './src/mobile/theme/useAppTheme'
@@ -102,13 +101,12 @@ const AppShellInner = ({
 
       {!isAnyModalOpen ? <FloatingAddButton onPress={() => setQuickAddOpen(true)} /> : null}
 
-      <QuickAddModal open={quickAddOpen} onClose={() => setQuickAddOpen(false)} />
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-      <ItemEditorModal
-        itemId={editingItemId}
-        open={Boolean(editingItemId)}
-        onClose={() => setEditingItemId(undefined)}
+      <QuickAddSheet
+        open={quickAddOpen || Boolean(editingItemId)}
+        onClose={() => { setQuickAddOpen(false); setEditingItemId(undefined) }}
+        editingItemId={editingItemId}
       />
+      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </>
   )
 }
