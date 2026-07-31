@@ -51,8 +51,9 @@ export const useItems = () => {
       } catch (error) {
         if (isGoogleCalendarAuthError(error)) {
           markUnauthorized()
+        } else {
+          item = updateItem(item, { calendarSyncPending: true })
         }
-        throw error
       }
 
       const notificationId = await scheduleItemNotification(item)
@@ -74,12 +75,12 @@ export const useItems = () => {
       let next = updateItem(current, input.patch)
       const dateTimes = resolveEventDateTimes(next)
 
-      try {
-        if (accessToken) {
-          const currentLink = current.googleCalendarLink
-          const shouldSync = Boolean(next.startDate || next.startTime)
+      if (accessToken) {
+        const currentLink = current.googleCalendarLink
+        const shouldSync = Boolean(next.startDate || next.startTime)
 
-          if (shouldSync && dateTimes) {
+        if (shouldSync && dateTimes) {
+          try {
             if (currentLink) {
               await calendarRepository.updateEvent(accessToken, currentLink.calendarId, currentLink.eventId, {
                 summary: next.title,
@@ -89,8 +90,8 @@ export const useItems = () => {
                 endDateTime: dateTimes.end,
                 allDay: dateTimes.allDay,
               })
-
               next = updateItem(next, {
+                calendarSyncPending: undefined,
                 googleCalendarLink: {
                   ...currentLink,
                   lastSyncedAt: new Date().toISOString(),
@@ -106,8 +107,8 @@ export const useItems = () => {
                 endDateTime: dateTimes.end,
                 allDay: dateTimes.allDay,
               })
-
               next = updateItem(next, {
+                calendarSyncPending: undefined,
                 googleCalendarLink: {
                   calendarId,
                   eventId: created.eventId,
@@ -116,18 +117,27 @@ export const useItems = () => {
                 },
               })
             }
+          } catch (error) {
+            if (isGoogleCalendarAuthError(error)) {
+              markUnauthorized()
+            } else {
+              next = updateItem(next, { calendarSyncPending: true })
+            }
           }
+        }
 
-          if (!shouldSync && currentLink?.source === 'app') {
+        if (!shouldSync && currentLink?.source === 'app') {
+          try {
             await calendarRepository.deleteEvent(accessToken, currentLink.calendarId, currentLink.eventId)
-            next = updateItem(next, { googleCalendarLink: undefined })
+          } catch (error) {
+            if (isGoogleCalendarAuthError(error)) {
+              markUnauthorized()
+            } else {
+              await enqueueDelete(currentLink.calendarId, currentLink.eventId, next.title)
+            }
           }
+          next = updateItem(next, { googleCalendarLink: undefined })
         }
-      } catch (error) {
-        if (isGoogleCalendarAuthError(error)) {
-          markUnauthorized()
-        }
-        throw error
       }
 
       await cancelItemNotification(current.notificationId)

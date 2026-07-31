@@ -82,6 +82,7 @@ export interface Item {
   academicConfig?: AcademicConfig
   syncToGoogleCalendar?: boolean
   googleCalendarLink?: GoogleCalendarLink
+  calendarSyncPending?: boolean
   notificationId?: string
   createdAt: string
   updatedAt: string

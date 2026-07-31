@@ -14,6 +14,7 @@ import { useAppTheme } from './src/mobile/theme/useAppTheme'
 import { FloatingAddButton } from './src/mobile/components/FloatingAddButton'
 import { requestNotificationPermissions } from './src/services/notifications/itemNotifications'
 import { useCalendarDeleteQueue } from './src/services/calendar/useCalendarDeleteQueue'
+import { useCalendarSyncRecovery } from './src/services/calendar/useCalendarSyncRecovery'
 import { useGoogleAuthStore } from './src/state/googleAuthStore'
 
 export default function App() {
@@ -77,6 +78,7 @@ const AppShellInner = ({
 
   const { accessToken, markUnauthorized } = useGoogleAuthStore()
   useCalendarDeleteQueue(accessToken ?? null, markUnauthorized)
+  useCalendarSyncRecovery(accessToken ?? null, markUnauthorized)
 
   useEffect(() => {
     requestNotificationPermissions()
