@@ -6,6 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { useSettings } from './src/features/settings/useSettings'
 import { MainTabs } from './src/mobile/navigation/MainTabs'
 import { QuickAddSheet } from './src/mobile/modals/QuickAddSheet'
+import { ItemDetailModal } from './src/mobile/modals/ItemDetailModal'
 import { SettingsModal } from './src/mobile/modals/SettingsModal'
 import { useGoogleSessionLifecycleMobile } from './src/mobile/useGoogleSessionLifecycleMobile'
 import { ThemePreferenceProvider } from './src/mobile/theme/ThemePreferenceContext'
@@ -102,9 +103,13 @@ const AppShellInner = ({
       {!isAnyModalOpen ? <FloatingAddButton onPress={() => setQuickAddOpen(true)} /> : null}
 
       <QuickAddSheet
-        open={quickAddOpen || Boolean(editingItemId)}
-        onClose={() => { setQuickAddOpen(false); setEditingItemId(undefined) }}
-        editingItemId={editingItemId}
+        open={quickAddOpen}
+        onClose={() => setQuickAddOpen(false)}
+      />
+      <ItemDetailModal
+        open={Boolean(editingItemId)}
+        onClose={() => setEditingItemId(undefined)}
+        itemId={editingItemId ?? ''}
       />
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </>

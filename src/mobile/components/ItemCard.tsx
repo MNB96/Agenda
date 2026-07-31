@@ -36,12 +36,9 @@ export const ItemCard = ({ item, categoryName, onToggle, onOpen }: ItemCardProps
           <View style={styles.titleRow}>
             <Text style={[styles.title, item.status === 'completed' ? styles.done : undefined]}>{item.title}</Text>
           </View>
-          {item.description ? <Text style={styles.meta}>{item.description}</Text> : null}
-          <Text style={styles.meta}>
-            {item.startDate ? item.startDate : ''}
-            {item.startTime ? ` ${item.startTime}` : ''}
-            {item.deadline ? ` · Vence ${item.deadline}` : ''}
-          </Text>
+          {item.description ? (
+            <Text style={styles.meta} numberOfLines={1}>{item.description}</Text>
+          ) : null}
           <View style={styles.chipsRow}>
             {categoryName ? <Text style={[styles.chip, { backgroundColor: chipBackgroundColor }]}>{categoryName}</Text> : null}
             {item.location ? <Text style={[styles.chip, { backgroundColor: colors.secondarySoft }]}>📍 {item.location}</Text> : null}

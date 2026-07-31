@@ -31,6 +31,7 @@ export const createItem = (input: NewItemInput): Item => {
     status: 'active',
     important: input.important,
     repeatRule: input.repeatRule,
+    parentId: input.parentId,
     categoryId: input.categoryId,
     location: input.location,
     startDate: input.startDate,

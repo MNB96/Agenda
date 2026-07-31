@@ -67,6 +67,7 @@ export interface Item {
   status: ItemStatus
   important?: boolean
   repeatRule?: RepeatRule
+  parentId?: string
   categoryId?: string
   location?: string
   startDate?: string
@@ -92,6 +93,7 @@ export interface NewItemInput {
   type?: ItemType
   important?: boolean
   repeatRule?: RepeatRule
+  parentId?: string
   categoryId?: string
   location?: string
   startDate?: string

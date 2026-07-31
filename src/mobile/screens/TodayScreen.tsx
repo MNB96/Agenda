@@ -1,6 +1,6 @@
 ﻿import { useMemo, useState } from 'react'
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
-import { differenceInCalendarDays, format, parseISO, startOfDay } from 'date-fns'
+import { differenceInCalendarDays, format, isToday, parseISO, startOfDay } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { CalendarDays } from 'lucide-react-native'
 import { ItemCard } from '../components/ItemCard'
@@ -12,21 +12,21 @@ import type { CalendarEvent } from '../../domain/calendar/types'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
 
-type TodaySectionKey = 'next' | 'important' | 'later'
+type TodaySectionKey = 'overdue' | 'next' | 'important' | 'later' | 'completed'
 
 const sectionLabel: Record<TodaySectionKey, string> = {
+  overdue: 'Vencidas',
   next: 'Proximo',
   important: 'Importante',
   later: 'Mas adelante',
+  completed: 'Completadas',
 }
 
 const resolveSectionColor = (bucket: TodaySectionKey, colors: ThemeTokens): string => {
-  if (bucket === 'important') {
-    return colors.accent
-  }
-  if (bucket === 'later') {
-    return colors.secondary
-  }
+  if (bucket === 'overdue') return colors.danger
+  if (bucket === 'important') return colors.accent
+  if (bucket === 'later') return colors.secondary
+  if (bucket === 'completed') return colors.textMuted
   return colors.primary
 }
 
@@ -67,11 +67,12 @@ interface LocalEntry {
   kind: 'local'
   section: TodaySectionKey
   itemId: string
+  completed?: boolean
 }
 
 interface GoogleEntry {
   kind: 'google'
-  section: TodaySectionKey
+  section: ActiveSectionKey
   id: string
   title: string
   subtitle: string
@@ -81,13 +82,12 @@ interface GoogleEntry {
 
 type TodayEntry = LocalEntry | GoogleEntry
 
-const mapLocalBucketToSection = (bucket: TodayBucket): TodaySectionKey => {
-  if (bucket === 'overdue' || bucket === 'important') {
-    return 'important'
-  }
-  if (bucket === 'later' || bucket === 'long_term_goal') {
-    return 'later'
-  }
+type ActiveSectionKey = 'overdue' | 'next' | 'important' | 'later'
+
+const mapLocalBucketToSection = (bucket: TodayBucket): ActiveSectionKey => {
+  if (bucket === 'overdue') return 'overdue'
+  if (bucket === 'important') return 'important'
+  if (bucket === 'later' || bucket === 'long_term_goal') return 'later'
   return 'next'
 }
 
@@ -141,30 +141,39 @@ export const TodayScreen = ({ onOpenItemEditor }: TodayScreenProps) => {
   const filteredItems = useMemo(() => {
     const query = search.trim().toLowerCase()
     return items.filter((item) => {
-      if (!settings?.showCompletedItems && item.status === 'completed') {
-        return false
-      }
-      if (activeCategory !== 'all' && item.categoryId !== activeCategory) {
-        return false
-      }
-      if (!query) {
-        return true
-      }
+      if (item.status === 'completed') return false
+      if (item.parentId) return false
+      if (activeCategory !== 'all' && item.categoryId !== activeCategory) return false
+      if (!query) return true
       return [item.title, item.description, item.location, item.categoryId]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(query))
     })
-  }, [activeCategory, items, search, settings?.showCompletedItems])
+  }, [activeCategory, items, search])
+
+  const completedItems = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    return items.filter((item) => {
+      if (item.status !== 'completed') return false
+      if (item.parentId) return false
+      if (activeCategory !== 'all' && item.categoryId !== activeCategory) return false
+      if (!query) return true
+      return [item.title, item.description, item.location, item.categoryId]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(query))
+    })
+  }, [activeCategory, items, search])
 
   const scored = scoreItemsForToday(filteredItems)
 
   const localItemsById = useMemo(
-    () => new Map(filteredItems.map((entry) => [entry.id, entry])),
-    [filteredItems],
+    () => new Map([...filteredItems, ...completedItems].map((item) => [item.id, item])),
+    [filteredItems, completedItems],
   )
 
   const sections = useMemo(() => {
-    const map: Record<TodaySectionKey, TodayEntry[]> = {
+    const map: Record<ActiveSectionKey, TodayEntry[]> = {
+      overdue: [],
       next: [],
       important: [],
       later: [],
@@ -172,11 +181,7 @@ export const TodayScreen = ({ onOpenItemEditor }: TodayScreenProps) => {
 
     scored.forEach((entry) => {
       const section = mapLocalBucketToSection(entry.bucket)
-      map[section].push({
-        kind: 'local',
-        section,
-        itemId: entry.item.id,
-      })
+      map[section].push({ kind: 'local', section, itemId: entry.item.id })
     })
 
     ;(googleEvents.data ?? [])
@@ -186,17 +191,27 @@ export const TodayScreen = ({ onOpenItemEditor }: TodayScreenProps) => {
         const query = search.trim().toLowerCase()
         if (query) {
           const haystack = `${entry.title} ${entry.secondary ?? ''}`.toLowerCase()
-          if (!haystack.includes(query)) {
-            return
-          }
+          if (!haystack.includes(query)) return
         }
         map[entry.section].push(entry)
       })
 
-    return (['next', 'important', 'later'] as TodaySectionKey[])
-      .map((key) => [key, map[key]] as const)
+    const result: [TodaySectionKey, TodayEntry[]][] = (['overdue', 'next', 'important', 'later'] as Array<ActiveSectionKey>)
+      .map((key): [TodaySectionKey, TodayEntry[]] => [key, map[key]])
       .filter(([, entries]) => entries.length > 0)
-  }, [colors, googleEvents.data, scored, search])
+
+    if (completedItems.length > 0) {
+      const completedEntries: LocalEntry[] = completedItems.map((item) => ({
+        kind: 'local',
+        section: 'completed',
+        itemId: item.id,
+        completed: true,
+      }))
+      result.push(['completed', completedEntries])
+    }
+
+    return result
+  }, [colors, completedItems, googleEvents.data, scored, search])
 
   return (
     <View style={styles.container}>
@@ -285,9 +300,27 @@ export const TodayScreen = ({ onOpenItemEditor }: TodayScreenProps) => {
             <Text style={styles.emptySubtitle}>No tenes nada pendiente para hoy.</Text>
           </View>
         }
-        renderItem={({ item: [bucket, entries] }) => (
+        renderItem={({ item: [bucket, entries] }) => {
+          const label = (() => {
+            if (bucket === 'overdue' || bucket === 'important' || bucket === 'completed') {
+              return sectionLabel[bucket]
+            }
+            const firstLocal = entries.find((e): e is LocalEntry => e.kind === 'local')
+            if (firstLocal) {
+              const it = localItemsById.get(firstLocal.itemId)
+              const dateStr = it?.startDate ?? it?.deadline
+              if (dateStr) {
+                const d = new Date(dateStr + 'T00:00:00')
+                return isToday(d) ? 'HOY' : format(d, "d 'de' MMMM", { locale: es })
+              }
+            }
+            const firstGoogle = entries.find((e): e is GoogleEntry => e.kind === 'google')
+            if (firstGoogle) return firstGoogle.subtitle
+            return sectionLabel[bucket]
+          })()
+          return (
           <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: resolveSectionColor(bucket, colors) }]}>{sectionLabel[bucket]}</Text>
+            <Text style={[styles.sectionTitle, { color: resolveSectionColor(bucket, colors) }]}>{label}</Text>
             {entries.map((entry) => {
               if (entry.kind === 'local') {
                 const localItem = localItemsById.get(entry.itemId)
@@ -319,7 +352,8 @@ export const TodayScreen = ({ onOpenItemEditor }: TodayScreenProps) => {
               )
             })}
           </View>
-        )}
+          )
+        }}
       />
     </View>
   )

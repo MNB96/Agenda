@@ -24,6 +24,7 @@ import {
   Flag,
   Repeat,
   Star,
+  Tag,
   Trash2,
   X,
 } from 'lucide-react-native'
@@ -42,6 +43,7 @@ import {
 import { es } from 'date-fns/locale'
 import { parseQuickInput } from '../../services/parser/quickInputParser'
 import { useItems } from '../../features/items/useItems'
+import { useSettings } from '../../features/settings/useSettings'
 import type { Item, ReminderConfig, RepeatRule } from '../../domain/items/types'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
@@ -88,11 +90,15 @@ const RULE_TO_UNIT: Partial<Record<RepeatRule, RepeatUnit>> = {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const fmtShort = (dateStr: string) =>
-  format(new Date(dateStr + 'T00:00:00'), "d MMM", { locale: es })
+const fmtShort = (dateStr: string) => {
+  const d = new Date(dateStr + 'T00:00:00')
+  return isToday(d) ? 'HOY' : format(d, 'd MMM', { locale: es })
+}
 
-const fmtFull = (dateStr: string) =>
-  format(new Date(dateStr + 'T00:00:00'), "EEE d 'de' MMM", { locale: es })
+const fmtFull = (dateStr: string) => {
+  const d = new Date(dateStr + 'T00:00:00')
+  return isToday(d) ? 'HOY' : format(d, "EEE d 'de' MMM", { locale: es })
+}
 
 const buildCalendarCells = (month: Date): (Date | null)[] => {
   const first = startOfMonth(month)
@@ -221,6 +227,7 @@ const RowDivider = ({ colors }: { colors: ThemeTokens }) => (
 export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetProps) => {
   const isEditMode = Boolean(editingItemId)
   const { createItem, updateItem, removeItem, items, isSaving } = useItems()
+  const { data: settings } = useSettings()
   const { colors } = useAppTheme()
   const styles = useMemo(() => createStyles(colors), [colors])
   const insets = useSafeAreaInsets()
@@ -241,6 +248,7 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
   const [description, setDescription] = useState('')
 
   const [showDescInput, setShowDescInput] = useState(false)
+  const [categoryId, setCategoryId] = useState<string | undefined>()
 
   // NL dismissal flags (user tapped × on auto-detected chip)
   const [nlDateDismissed, setNlDateDismissed] = useState(false)
@@ -313,6 +321,7 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
       setReminders(editingItem.reminderConfig ?? [])
       setDescription(editingItem.description ?? '')
       setShowDescInput(Boolean(editingItem.description?.trim()))
+      setCategoryId(editingItem.categoryId)
     } else {
       setText('')
       setImportant(false)
@@ -323,6 +332,7 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
       setReminders([])
       setDescription('')
       setShowDescInput(false)
+      setCategoryId(undefined)
       setNlDateDismissed(false)
       setNlTimeDismissed(false)
     }
@@ -407,6 +417,7 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
       repeatRule: repeatRule !== 'none' ? repeatRule : undefined,
       reminderConfig: reminders.length > 0 ? reminders : undefined,
       description: description.trim() || undefined,
+      categoryId,
     }
 
     if (isEditMode && editingItem) {
@@ -505,19 +516,40 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
         />
 
         {showDescInput && (
-          <TextInput
-            ref={descRef}
-            value={description}
-            onChangeText={setDescription}
-            placeholder="Agregar detalles"
-            placeholderTextColor={colors.textMuted}
-            style={styles.inlineDescInput}
-            multiline
-            returnKeyType="default"
-            blurOnSubmit={false}
-            selectionColor={colors.primary}
-            textAlignVertical="top"
-          />
+          <>
+            <TextInput
+              ref={descRef}
+              value={description}
+              onChangeText={setDescription}
+              placeholder="Agregar detalles"
+              placeholderTextColor={colors.textMuted}
+              style={styles.inlineDescInput}
+              multiline
+              returnKeyType="default"
+              blurOnSubmit={false}
+              selectionColor={colors.primary}
+              textAlignVertical="top"
+            />
+            {(settings?.categories ?? []).length > 0 && (
+              <View style={styles.categoryRow}>
+                <Tag size={15} color={categoryId ? colors.primary : colors.textMuted} />
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryChips}>
+                  {(settings?.categories ?? []).map(cat => {
+                    const active = categoryId === cat.id
+                    return (
+                      <Pressable
+                        key={cat.id}
+                        onPress={() => setCategoryId(active ? undefined : cat.id)}
+                        style={[styles.categoryChip, active && { backgroundColor: colors.primary, borderColor: colors.primary }]}
+                      >
+                        <Text style={[styles.categoryChipText, active && { color: colors.onPrimary }]}>{cat.name}</Text>
+                      </Pressable>
+                    )
+                  })}
+                </ScrollView>
+              </View>
+            )}
+          </>
         )}
 
         {/* NL parser chips */}
@@ -1176,6 +1208,29 @@ const createStyles = (colors: ThemeTokens) =>
       marginBottom: 8,
       padding: 0,
       outlineWidth: 0,
+    },
+    categoryRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginBottom: 8,
+    },
+    categoryChips: {
+      flexDirection: 'row',
+      gap: 6,
+      alignItems: 'center',
+    },
+    categoryChip: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 999,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      backgroundColor: colors.surface,
+    },
+    categoryChipText: {
+      fontSize: 12,
+      color: colors.textSecondary,
     },
     chipsRow: {
       flexDirection: 'row',
