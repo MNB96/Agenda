@@ -1,9 +1,10 @@
 import * as WebBrowser from 'expo-web-browser'
 import * as Google from 'expo-auth-session/providers/google'
 import { useEffect, useMemo } from 'react'
-import { Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native'
+import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native'
 import { useGoogleCalendars } from '../../features/calendar/useGoogleCalendar'
 import { useLicenseUsages, useSettings } from '../../features/settings/useSettings'
+import { useItems } from '../../features/items/useItems'
 import { useGoogleAuthStore } from '../../state/googleAuthStore'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
@@ -17,6 +18,7 @@ interface SettingsModalProps {
 
 export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
   const { data: settings, saveSettings } = useSettings()
+  const { items, removeItem } = useItems()
   const { data: usages } = useLicenseUsages()
   const { accessToken, connectedEmail, authIssue, setSession, clearSession } = useGoogleAuthStore()
   const calendarsQuery = useGoogleCalendars()
@@ -177,6 +179,41 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
                 placeholderTextColor={colors.textMuted}
               />
             </View>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Datos</Text>
+              {(() => {
+                const completedCount = items.filter(i => i.status === 'completed').length
+                return (
+                  <Pressable
+                    style={[styles.dangerButton, completedCount === 0 && styles.disabled]}
+                    disabled={completedCount === 0}
+                    onPress={() => {
+                      Alert.alert(
+                        'Borrar completadas',
+                        `¿Borrar las ${completedCount} tareas completadas? Esta acción no se puede deshacer.`,
+                        [
+                          { text: 'Cancelar', style: 'cancel' },
+                          {
+                            text: 'Borrar',
+                            style: 'destructive',
+                            onPress: async () => {
+                              const completed = items.filter(i => i.status === 'completed')
+                              for (const item of completed) {
+                                await removeItem(item)
+                              }
+                            },
+                          },
+                        ],
+                      )
+                    }}
+                  >
+                    <Text style={styles.dangerButtonText}>
+                      Borrar completadas{completedCount > 0 ? ` (${completedCount})` : ''}
+                    </Text>
+                  </Pressable>
+                )
+              })()}
+            </View>
           </ScrollView>
 
           <Pressable style={styles.closeButton} onPress={onClose}>
@@ -251,7 +288,22 @@ const createStyles = (colors: ThemeTokens) => StyleSheet.create({
     paddingVertical: 9,
   },
   secondaryButtonText: { color: colors.textSecondary, fontWeight: '700' },
-  disabled: { opacity: 0.5 },
+  disabled: { opacity: 0.4 },
+  dangerButton: {
+    backgroundColor: colors.danger + '18',
+    borderWidth: 1,
+    borderColor: colors.danger + '55',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 6,
+    alignItems: 'center',
+  },
+  dangerButtonText: {
+    color: colors.danger,
+    fontWeight: '600',
+    fontSize: 14,
+  },
   calendarOption: { marginTop: 6 },
   calendarOptionText: { color: colors.textSecondary, fontSize: 12 },
   switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 },

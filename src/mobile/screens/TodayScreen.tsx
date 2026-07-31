@@ -1,6 +1,6 @@
 ﻿import { useMemo, useState } from 'react'
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
-import { differenceInCalendarDays, format, isToday, parseISO, startOfDay } from 'date-fns'
+import { differenceInCalendarDays, differenceInHours, format, isToday, parseISO, startOfDay } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { CalendarDays } from 'lucide-react-native'
 import { ItemCard } from '../components/ItemCard'
@@ -61,6 +61,21 @@ const resolveDarkChipText = (
     return colors.primarySoft
   }
   return colors.textSecondary
+}
+
+const formatOverdueDuration = (dateStr: string): string => {
+  const past = new Date(dateStr + 'T00:00:00')
+  const now = new Date()
+  const hours = differenceInHours(now, past)
+  if (hours < 24) return hours <= 1 ? 'hace 1 hora' : `hace ${hours} horas`
+  const days = differenceInCalendarDays(startOfDay(now), startOfDay(past))
+  if (days === 1) return 'hace 1 día'
+  if (days < 7) return `hace ${days} días`
+  if (days < 14) return 'hace 1 semana'
+  if (days < 21) return 'hace 2 semanas'
+  if (days < 28) return 'hace 3 semanas'
+  if (days < 60) return 'hace 1 mes'
+  return `hace ${Math.floor(days / 30)} meses`
 }
 
 interface LocalEntry {
@@ -327,11 +342,23 @@ export const TodayScreen = ({ onOpenItemEditor }: TodayScreenProps) => {
                 if (!localItem) {
                   return null
                 }
+                const overdueDeadlineLabel = (() => {
+                  if (bucket !== 'overdue' || !localItem.deadline) return undefined
+                  const days = differenceInCalendarDays(startOfDay(new Date()), startOfDay(new Date(localItem.deadline + 'T00:00:00')))
+                  return days > 0 ? `Venció ${formatOverdueDuration(localItem.deadline)}` : undefined
+                })()
+                const overdueLabel = (() => {
+                  if (bucket !== 'overdue' || !localItem.startDate) return undefined
+                  const days = differenceInCalendarDays(startOfDay(new Date()), startOfDay(new Date(localItem.startDate + 'T00:00:00')))
+                  return days > 0 ? formatOverdueDuration(localItem.startDate) : undefined
+                })()
                 return (
                   <ItemCard
                     key={localItem.id}
                     item={localItem}
                     categoryName={settings?.categories.find((category) => category.id === localItem.categoryId)?.name}
+                    overdueDeadlineLabel={overdueDeadlineLabel}
+                    overdueLabel={overdueLabel}
                     onToggle={async (item) => {
                       await toggleCompleted(item)
                     }}

@@ -8,16 +8,17 @@ import type { ThemeTokens } from '../theme/tokens'
 interface ItemCardProps {
   item: Item
   categoryName?: string
+  overdueLabel?: string
+  overdueDeadlineLabel?: string
   onToggle?: (item: Item) => Promise<void>
   onOpen?: (item: Item) => void
 }
 
-export const ItemCard = ({ item, categoryName, onToggle, onOpen }: ItemCardProps) => {
+export const ItemCard = ({ item, categoryName, overdueLabel, overdueDeadlineLabel, onToggle, onOpen }: ItemCardProps) => {
   const { colors } = useAppTheme()
   const styles = useMemo(() => createStyles(colors), [colors])
 
   const indicatorColor = resolveIndicatorColor(item, colors)
-  const chipBackgroundColor = resolveChipBackground(item, colors)
 
   return (
     <Pressable style={styles.card} onPress={() => onOpen?.(item)}>
@@ -36,25 +37,28 @@ export const ItemCard = ({ item, categoryName, onToggle, onOpen }: ItemCardProps
           <View style={styles.titleRow}>
             <Text style={[styles.title, item.status === 'completed' ? styles.done : undefined]}>{item.title}</Text>
           </View>
+          {overdueDeadlineLabel ? (
+            <Text style={styles.overdueDeadlineLabel}>{overdueDeadlineLabel}</Text>
+          ) : null}
+          {overdueLabel ? (
+            <Text style={styles.overdueLabel}>{overdueLabel}</Text>
+          ) : null}
           {item.description ? (
             <Text style={styles.meta} numberOfLines={1}>{item.description}</Text>
           ) : null}
-          <View style={styles.chipsRow}>
-            {categoryName ? <Text style={[styles.chip, { backgroundColor: chipBackgroundColor }]}>{categoryName}</Text> : null}
-            {item.location ? (
-              <Pressable
-                onPress={() => void Linking.openURL(`https://maps.google.com/?q=${encodeURIComponent(item.location!)}`)}
-                style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
-              >
-                <Text style={[styles.chip, { backgroundColor: colors.secondarySoft }]}>📍 {item.location}</Text>
-              </Pressable>
-            ) : null}
-            {item.goalConfig ? (
-              <Text style={[styles.chip, { backgroundColor: colors.creamSoft }]}>
-                {`${item.goalConfig.currentValue}/${item.goalConfig.targetValue}`}
-              </Text>
-            ) : null}
-          </View>
+          {item.location ? (
+            <Pressable
+              onPress={() => void Linking.openURL(`https://maps.google.com/?q=${encodeURIComponent(item.location!)}`)}
+              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+            >
+              <Text style={styles.locationMeta} numberOfLines={1}>📍 {item.location}</Text>
+            </Pressable>
+          ) : null}
+          {item.goalConfig ? (
+            <Text style={styles.meta}>
+              {`${item.goalConfig.currentValue}/${item.goalConfig.targetValue}`}
+            </Text>
+          ) : null}
         </View>
       </View>
     </Pressable>
@@ -83,15 +87,6 @@ const resolveIndicatorColor = (item: Item, colors: ThemeTokens): string => {
   return colors.primary
 }
 
-const resolveChipBackground = (item: Item, colors: ThemeTokens): string => {
-  if (item.type === 'goal') {
-    return colors.creamSoft
-  }
-  if (item.deadline) {
-    return colors.accentSoft
-  }
-  return colors.primarySoft
-}
 
 const createStyles = (colors: ThemeTokens) =>
   StyleSheet.create({
@@ -136,22 +131,26 @@ const createStyles = (colors: ThemeTokens) =>
       textDecorationLine: 'line-through',
       color: colors.textMuted,
     },
+    overdueDeadlineLabel: {
+      fontSize: 11,
+      color: colors.danger,
+      marginTop: 1,
+      fontWeight: '600',
+    },
+    overdueLabel: {
+      fontSize: 11,
+      color: colors.danger,
+      marginTop: 1,
+      fontWeight: '400',
+    },
     meta: {
       fontSize: 12,
       color: colors.textSecondary,
       marginTop: 2,
     },
-    chipsRow: {
-      flexDirection: 'row',
-      gap: 6,
-      marginTop: 6,
-      flexWrap: 'wrap',
-    },
-    chip: {
-      color: colors.onPrimary,
-      fontSize: 11,
-      paddingHorizontal: 8,
-      paddingVertical: 4,
-      borderRadius: 999,
+    locationMeta: {
+      fontSize: 12,
+      color: colors.textMuted,
+      marginTop: 2,
     },
   })
