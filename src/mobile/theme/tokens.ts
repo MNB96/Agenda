@@ -1,4 +1,6 @@
-export interface AppColors {
+export type ThemeMode = 'light' | 'dark'
+
+export interface ThemeTokens {
   primary: string
   primarySoft: string
   secondary: string
@@ -14,7 +16,9 @@ export interface AppColors {
   background: string
   surface: string
   surfaceSecondary: string
+  surfaceElevated: string
   border: string
+  borderStrong: string
 
   text: string
   textSecondary: string
@@ -23,18 +27,12 @@ export interface AppColors {
   success: string
   warning: string
   danger: string
-  info: string
 
-  interactive: string
-  interactiveMuted: string
+  fabText: string
+  onPrimary: string
 }
 
-export interface AppTheme {
-  dark: boolean
-  colors: AppColors
-}
-
-const lightColors: AppColors = {
+const lightTokens: ThemeTokens = {
   primary: '#69D2E7',
   primarySoft: '#7DD4E2',
   secondary: '#A7DBD8',
@@ -45,27 +43,28 @@ const lightColors: AppColors = {
   accentSoft: '#F58B27',
   accentStrong: '#FA6900',
   accentStrongSoft: '#FB6D00',
-  overlayAccent: 'rgba(255,156,0,0.19)',
+  overlayAccent: 'rgba(38, 50, 56, 0.2)',
 
-  background: '#FAFAF7',
+  background: '#FFFFFF',
   surface: '#FFFFFF',
-  surfaceSecondary: '#F3F5EE',
-  border: '#E6EAE1',
+  surfaceSecondary: '#FFFFFF',
+  surfaceElevated: '#FFFFFF',
+  border: '#E9F1F2',
+  borderStrong: '#D8E8EA',
 
-  text: '#1F2D36',
-  textSecondary: '#4E6771',
-  textMuted: '#7A9099',
+  text: '#263238',
+  textSecondary: '#4D6168',
+  textMuted: '#7A8C93',
 
-  success: '#7CCFC0',
+  success: '#A7DBD8',
   warning: '#F38630',
   danger: '#FA6900',
-  info: '#69D2E7',
 
-  interactive: '#69D2E7',
-  interactiveMuted: '#B9C7CC',
+  fabText: '#FFFFFF',
+  onPrimary: '#263238',
 }
 
-const darkColors: AppColors = {
+const darkTokens: ThemeTokens = {
   primary: '#69D2E7',
   primarySoft: '#7DD4E2',
   secondary: '#A7DBD8',
@@ -76,32 +75,26 @@ const darkColors: AppColors = {
   accentSoft: '#F58B27',
   accentStrong: '#FA6900',
   accentStrongSoft: '#FB6D00',
-  overlayAccent: 'rgba(255,156,0,0.19)',
+  overlayAccent: 'rgba(14, 25, 29, 0.72)',
 
-  background: '#111A22',
-  surface: '#18232D',
-  surfaceSecondary: '#20303A',
-  border: '#2B3D48',
+  background: '#0E191D',
+  surface: '#111F24',
+  surfaceSecondary: '#192B30',
+  surfaceElevated: '#16272C',
+  border: 'rgba(167, 219, 216, 0.14)',
+  borderStrong: 'rgba(167, 219, 216, 0.22)',
 
-  text: '#E9F2F3',
-  textSecondary: '#B5C8CD',
-  textMuted: '#8CA2A8',
+  text: '#F5F7F4',
+  textSecondary: '#B2BEBB',
+  textMuted: '#7F9190',
 
-  success: '#7CCFC0',
-  warning: '#F58B27',
-  danger: '#FB6D00',
-  info: '#69D2E7',
+  success: '#A7DBD8',
+  warning: '#F38630',
+  danger: '#FA6900',
 
-  interactive: '#69D2E7',
-  interactiveMuted: '#5A6F78',
+  fabText: '#FFFFFF',
+  onPrimary: '#0E191D',
 }
 
-export const lightTheme: AppTheme = {
-  dark: false,
-  colors: lightColors,
-}
-
-export const darkTheme: AppTheme = {
-  dark: true,
-  colors: darkColors,
-}
+export const getThemeTokens = (mode: ThemeMode): ThemeTokens =>
+  mode === 'dark' ? darkTokens : lightTokens

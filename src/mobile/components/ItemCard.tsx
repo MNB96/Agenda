@@ -1,7 +1,9 @@
+import { useMemo } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { differenceInCalendarDays, parseISO, startOfDay } from 'date-fns'
 import type { Item } from '../../domain/items/types'
 import { useAppTheme } from '../theme/useAppTheme'
+import type { ThemeTokens } from '../theme/tokens'
 
 interface ItemCardProps {
   item: Item
@@ -12,64 +14,42 @@ interface ItemCardProps {
 
 export const ItemCard = ({ item, categoryName, onToggle, onOpen }: ItemCardProps) => {
   const { colors } = useAppTheme()
+  const styles = useMemo(() => createStyles(colors), [colors])
 
-  const getIndicatorColor = () => {
-    if (item.status === 'completed') {
-      return colors.secondary
-    }
-
-    if (item.deadline) {
-      const days = differenceInCalendarDays(startOfDay(parseISO(item.deadline)), startOfDay(new Date()))
-      if (days <= 0) {
-        return colors.accentStrong
-      }
-      if (days <= 2) {
-        return colors.accent
-      }
-    }
-
-    if (item.type === 'important_date' || item.type === 'date_window') {
-      return colors.accent
-    }
-    if (item.type === 'goal') {
-      return colors.cream
-    }
-    return colors.primary
-  }
-
-  const indicatorColor = getIndicatorColor()
+  const indicatorColor = resolveIndicatorColor(item, colors)
+  const chipBackgroundColor = resolveChipBackground(item, colors)
 
   return (
-    <Pressable
-      style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
-      onPress={() => onOpen?.(item)}
-    >
+    <Pressable style={styles.card} onPress={() => onOpen?.(item)}>
       <View style={styles.row}>
-        <View style={[styles.indicator, { backgroundColor: indicatorColor }]} />
-
         <Pressable
           disabled={!onToggle || item.type === 'event' || item.type === 'important_date' || item.type === 'date_window'}
           onPress={() => void onToggle?.(item)}
           style={[
             styles.checkbox,
-            { borderColor: colors.interactiveMuted },
-            item.status === 'completed' ? [styles.checkboxDone, { backgroundColor: colors.secondary, borderColor: colors.secondary }] : undefined,
+            { borderColor: indicatorColor },
+            item.status === 'completed' ? [styles.checkboxDone, { backgroundColor: colors.success }] : undefined,
           ]}
         />
 
         <View style={styles.content}>
-          <Text style={[styles.title, { color: colors.text }, item.status === 'completed' ? [styles.done, { color: colors.textMuted }] : undefined]}>{item.title}</Text>
-          {item.description ? <Text style={[styles.meta, { color: colors.textSecondary }]}>{item.description}</Text> : null}
-          <Text style={[styles.meta, { color: colors.textMuted }]}>
+          <View style={styles.titleRow}>
+            <View style={[styles.indicator, { backgroundColor: indicatorColor }]} />
+            <Text style={[styles.title, item.status === 'completed' ? styles.done : undefined]}>{item.title}</Text>
+          </View>
+          {item.description ? <Text style={styles.meta}>{item.description}</Text> : null}
+          <Text style={styles.meta}>
             {item.startDate ? item.startDate : ''}
             {item.startTime ? ` ${item.startTime}` : ''}
             {item.deadline ? ` · Vence ${item.deadline}` : ''}
           </Text>
           <View style={styles.chipsRow}>
-            {categoryName ? <Text style={[styles.chip, { backgroundColor: colors.secondarySoft, color: colors.textSecondary }]}>{categoryName}</Text> : null}
-            {item.location ? <Text style={[styles.chip, { backgroundColor: colors.primarySoft, color: colors.textSecondary }]}>📍 {item.location}</Text> : null}
+            {categoryName ? <Text style={[styles.chip, { backgroundColor: chipBackgroundColor }]}>{categoryName}</Text> : null}
+            {item.location ? <Text style={[styles.chip, { backgroundColor: colors.secondarySoft }]}>📍 {item.location}</Text> : null}
             {item.goalConfig ? (
-              <Text style={[styles.chip, { backgroundColor: colors.creamSoft, color: colors.textSecondary }]}>{`${item.goalConfig.currentValue}/${item.goalConfig.targetValue}`}</Text>
+              <Text style={[styles.chip, { backgroundColor: colors.creamSoft }]}>
+                {`${item.goalConfig.currentValue}/${item.goalConfig.targetValue}`}
+              </Text>
             ) : null}
           </View>
         </View>
@@ -78,58 +58,102 @@ export const ItemCard = ({ item, categoryName, onToggle, onOpen }: ItemCardProps
   )
 }
 
-const styles = StyleSheet.create({
-  card: {
-    borderRadius: 16,
-    padding: 12,
-    marginBottom: 10,
-    borderWidth: 1,
-  },
-  row: {
-    flexDirection: 'row',
-    gap: 9,
-    alignItems: 'flex-start',
-  },
-  indicator: {
-    width: 4,
-    borderRadius: 999,
-    height: '100%',
-    minHeight: 24,
-  },
-  checkbox: {
-    width: 20,
-    height: 20,
-    borderRadius: 999,
-    borderWidth: 1,
-    marginTop: 2,
-  },
-  checkboxDone: {
-    transform: [{ scale: 1.04 }],
-  },
-  content: {
-    flex: 1,
-  },
-  title: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  done: {
-    textDecorationLine: 'line-through',
-  },
-  meta: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  chipsRow: {
-    flexDirection: 'row',
-    gap: 6,
-    marginTop: 6,
-    flexWrap: 'wrap',
-  },
-  chip: {
-    fontSize: 11,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
-  },
-})
+const resolveIndicatorColor = (item: Item, colors: ThemeTokens): string => {
+  if (item.status === 'completed') {
+    return colors.success
+  }
+  if (item.deadline) {
+    const days = differenceInCalendarDays(startOfDay(parseISO(item.deadline)), startOfDay(new Date()))
+    if (days <= 0) {
+      return colors.danger
+    }
+    if (days <= 3) {
+      return colors.warning
+    }
+  }
+  if (item.type === 'goal') {
+    return colors.cream
+  }
+  if (item.type === 'important_date' || item.type === 'date_window') {
+    return colors.accent
+  }
+  return colors.primary
+}
+
+const resolveChipBackground = (item: Item, colors: ThemeTokens): string => {
+  if (item.type === 'goal') {
+    return colors.creamSoft
+  }
+  if (item.deadline) {
+    return colors.accentSoft
+  }
+  return colors.primarySoft
+}
+
+const createStyles = (colors: ThemeTokens) =>
+  StyleSheet.create({
+    card: {
+      backgroundColor: colors.surface,
+      borderRadius: 0,
+      paddingVertical: 12,
+      paddingHorizontal: 2,
+      marginBottom: 4,
+      borderBottomWidth: 1,
+      borderColor: colors.border,
+    },
+    row: {
+      flexDirection: 'row',
+      gap: 10,
+    },
+    checkbox: {
+      width: 18,
+      height: 18,
+      borderRadius: 999,
+      borderWidth: 1,
+      marginTop: 2,
+      backgroundColor: colors.surface,
+    },
+    checkboxDone: {
+      borderColor: colors.success,
+    },
+    content: {
+      flex: 1,
+    },
+    titleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    indicator: {
+      width: 9,
+      height: 9,
+      borderRadius: 999,
+    },
+    title: {
+      fontSize: 15,
+      fontWeight: '600',
+      color: colors.text,
+    },
+    done: {
+      textDecorationLine: 'line-through',
+      color: colors.textMuted,
+    },
+    meta: {
+      fontSize: 12,
+      color: colors.textSecondary,
+      marginTop: 2,
+    },
+    chipsRow: {
+      flexDirection: 'row',
+      gap: 6,
+      marginTop: 6,
+      flexWrap: 'wrap',
+    },
+    chip: {
+      color: colors.onPrimary,
+      fontSize: 11,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 999,
+    },
+  })

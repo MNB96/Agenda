@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Modal, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native'
 import type { ItemType } from '../../domain/items/types'
 import { useItems } from '../../features/items/useItems'
+import { useAppTheme } from '../theme/useAppTheme'
+import type { ThemeTokens } from '../theme/tokens'
 
 interface ItemEditorModalProps {
   open: boolean
@@ -17,6 +19,8 @@ const nextType = (current: ItemType): ItemType => {
 
 export const ItemEditorModal = ({ open, itemId, onClose }: ItemEditorModalProps) => {
   const { items, updateItem, removeItem } = useItems()
+  const { colors } = useAppTheme()
+  const styles = useMemo(() => createStyles(colors), [colors])
   const item = items.find((entry) => entry.id === itemId)
 
   const [title, setTitle] = useState('')
@@ -74,18 +78,49 @@ export const ItemEditorModal = ({ open, itemId, onClose }: ItemEditorModalProps)
         <View style={styles.sheet}>
           <Text style={styles.title}>Editar item</Text>
 
-          <TextInput value={title} onChangeText={setTitle} style={styles.input} placeholder="Titulo" />
+          <TextInput
+            value={title}
+            onChangeText={setTitle}
+            style={styles.input}
+            placeholder="Titulo"
+            placeholderTextColor={colors.textMuted}
+          />
           <TextInput
             value={description}
             onChangeText={setDescription}
             style={[styles.input, styles.multiline]}
             multiline
             placeholder="Descripcion"
+            placeholderTextColor={colors.textMuted}
           />
-          <TextInput value={startDate} onChangeText={setStartDate} style={styles.input} placeholder="Fecha (yyyy-mm-dd)" />
-          <TextInput value={startTime} onChangeText={setStartTime} style={styles.input} placeholder="Hora (HH:mm)" />
-          <TextInput value={deadline} onChangeText={setDeadline} style={styles.input} placeholder="Deadline (yyyy-mm-dd)" />
-          <TextInput value={location} onChangeText={setLocation} style={styles.input} placeholder="Ubicacion" />
+          <TextInput
+            value={startDate}
+            onChangeText={setStartDate}
+            style={styles.input}
+            placeholder="Fecha (yyyy-mm-dd)"
+            placeholderTextColor={colors.textMuted}
+          />
+          <TextInput
+            value={startTime}
+            onChangeText={setStartTime}
+            style={styles.input}
+            placeholder="Hora (HH:mm)"
+            placeholderTextColor={colors.textMuted}
+          />
+          <TextInput
+            value={deadline}
+            onChangeText={setDeadline}
+            style={styles.input}
+            placeholder="Deadline (yyyy-mm-dd)"
+            placeholderTextColor={colors.textMuted}
+          />
+          <TextInput
+            value={location}
+            onChangeText={setLocation}
+            style={styles.input}
+            placeholder="Ubicacion"
+            placeholderTextColor={colors.textMuted}
+          />
 
           <Pressable style={styles.typeButton} onPress={() => setType((current) => nextType(current))}>
             <Text style={styles.typeButtonText}>Tipo: {type}</Text>
@@ -113,23 +148,27 @@ export const ItemEditorModal = ({ open, itemId, onClose }: ItemEditorModalProps)
   )
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeTokens) => StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.32)',
+    backgroundColor: colors.overlayAccent,
     justifyContent: 'flex-end',
   },
   sheet: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.surfaceElevated,
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
     padding: 16,
     gap: 8,
+    borderTopWidth: 1,
+    borderColor: colors.border,
   },
-  title: { fontSize: 20, fontWeight: '700', color: '#1c1917', marginBottom: 4 },
+  title: { fontSize: 20, fontWeight: '700', color: colors.text, marginBottom: 4 },
   input: {
     borderWidth: 1,
-    borderColor: '#e7ddd0',
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    color: colors.text,
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 8,
@@ -140,19 +179,19 @@ const styles = StyleSheet.create({
   },
   typeButton: {
     borderWidth: 1,
-    borderColor: '#e7ddd0',
+    borderColor: colors.border,
     borderRadius: 10,
     padding: 10,
-    backgroundColor: '#faf6f0',
+    backgroundColor: colors.creamSoft,
   },
-  typeButtonText: { color: '#57534e', fontWeight: '600' },
+  typeButtonText: { color: colors.onPrimary, fontWeight: '600' },
   switchRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginTop: 4,
   },
-  switchLabel: { color: '#44403c', fontSize: 13 },
+  switchLabel: { color: colors.textSecondary, fontSize: 13 },
   actions: {
     flexDirection: 'row',
     gap: 8,
@@ -161,25 +200,26 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   deleteButton: {
-    backgroundColor: '#fee2e2',
+    backgroundColor: colors.accentStrong,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
-  deleteButtonText: { color: '#9f1239', fontWeight: '700' },
+  deleteButtonText: { color: '#ffffff', fontWeight: '700' },
   secondaryButton: {
     borderWidth: 1,
-    borderColor: '#e7ddd0',
+    borderColor: colors.border,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
+    backgroundColor: colors.surface,
   },
-  secondaryButtonText: { color: '#57534e', fontWeight: '600' },
+  secondaryButtonText: { color: colors.textSecondary, fontWeight: '600' },
   primaryButton: {
-    backgroundColor: '#9a3412',
+    backgroundColor: colors.accent,
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
-  primaryButtonText: { color: '#fff', fontWeight: '700' },
+  primaryButtonText: { color: colors.fabText, fontWeight: '700' },
 })

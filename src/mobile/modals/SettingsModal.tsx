@@ -1,10 +1,12 @@
 import * as WebBrowser from 'expo-web-browser'
 import * as Google from 'expo-auth-session/providers/google'
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native'
 import { useGoogleCalendars } from '../../features/calendar/useGoogleCalendar'
 import { useLicenseUsages, useSettings } from '../../features/settings/useSettings'
 import { useGoogleAuthStore } from '../../state/googleAuthStore'
+import { useAppTheme } from '../theme/useAppTheme'
+import type { ThemeTokens } from '../theme/tokens'
 
 WebBrowser.maybeCompleteAuthSession()
 
@@ -18,6 +20,8 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
   const { data: usages } = useLicenseUsages()
   const { accessToken, connectedEmail, authIssue, setSession, clearSession } = useGoogleAuthStore()
   const calendarsQuery = useGoogleCalendars()
+  const { colors } = useAppTheme()
+  const styles = useMemo(() => createStyles(colors), [colors])
 
   const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
   const nativeClientId =
@@ -64,6 +68,34 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
           <Text style={styles.title}>Ajustes</Text>
 
           <ScrollView showsVerticalScrollIndicator={false}>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Tema</Text>
+              <View style={styles.themeRow}>
+                {(['system', 'light', 'dark'] as const).map((mode) => {
+                  const active = settings.themePreference === mode
+                  const label = mode === 'system' ? 'Sistema' : mode === 'light' ? 'Claro' : 'Oscuro'
+
+                  return (
+                    <Pressable
+                      key={mode}
+                      onPress={() => void saveSettings({ ...settings, themePreference: mode })}
+                      style={[
+                        styles.themeOption,
+                        active &&
+                          (mode === 'light'
+                            ? styles.themeOptionLight
+                            : mode === 'dark'
+                              ? styles.themeOptionDark
+                              : styles.themeOptionSystem),
+                      ]}
+                    >
+                      <Text style={[styles.themeOptionText, active && styles.themeOptionTextActive]}>{label}</Text>
+                    </Pressable>
+                  )
+                })}
+              </View>
+            </View>
+
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Google Calendar</Text>
               <Text style={styles.metaText}>
@@ -125,6 +157,7 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
                 keyboardType="numeric"
                 style={styles.input}
                 placeholder="Minutos antes"
+                placeholderTextColor={colors.textMuted}
               />
             </View>
 
@@ -141,6 +174,7 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
                 keyboardType="numeric"
                 style={styles.input}
                 placeholder="Dias disponibles por ano"
+                placeholderTextColor={colors.textMuted}
               />
             </View>
           </ScrollView>
@@ -154,69 +188,91 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
   )
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeTokens) => StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.32)',
+    backgroundColor: colors.overlayAccent,
     justifyContent: 'flex-end',
   },
   sheet: {
     maxHeight: '88%',
-    backgroundColor: '#fff',
+    backgroundColor: colors.surfaceElevated,
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
     padding: 16,
+    borderTopWidth: 1,
+    borderColor: colors.border,
   },
   title: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#1c1917',
+    color: colors.text,
     marginBottom: 10,
   },
   section: {
     borderWidth: 1,
-    borderColor: '#e7ddd0',
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     borderRadius: 14,
     padding: 10,
     marginBottom: 10,
   },
-  sectionTitle: { fontSize: 14, fontWeight: '700', color: '#292524', marginBottom: 4 },
-  metaText: { color: '#57534e', fontSize: 12 },
-  warnText: { color: '#be123c', fontSize: 12, marginTop: 4 },
+  sectionTitle: { fontSize: 14, fontWeight: '700', color: colors.text, marginBottom: 4 },
+  metaText: { color: colors.textSecondary, fontSize: 12 },
+  warnText: { color: colors.danger, fontSize: 12, marginTop: 4 },
   actionsRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
+  themeRow: { flexDirection: 'row', gap: 8, marginTop: 6, flexWrap: 'wrap' },
+  themeOption: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: colors.surfaceSecondary,
+  },
+  themeOptionSystem: { backgroundColor: colors.primarySoft, borderColor: colors.primary },
+  themeOptionLight: { backgroundColor: colors.secondarySoft, borderColor: colors.secondary },
+  themeOptionDark: { backgroundColor: colors.creamSoft, borderColor: colors.cream },
+  themeOptionText: { color: colors.textSecondary, fontWeight: '600', fontSize: 12 },
+  themeOptionTextActive: { color: colors.onPrimary },
   primaryButton: {
-    backgroundColor: '#9a3412',
+    backgroundColor: colors.accent,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 9,
   },
-  primaryButtonText: { color: '#fff', fontWeight: '700' },
+  primaryButtonText: { color: colors.fabText, fontWeight: '700' },
   secondaryButton: {
     borderWidth: 1,
-    borderColor: '#e7ddd0',
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 9,
   },
-  secondaryButtonText: { color: '#57534e', fontWeight: '700' },
+  secondaryButtonText: { color: colors.textSecondary, fontWeight: '700' },
   disabled: { opacity: 0.5 },
   calendarOption: { marginTop: 6 },
-  calendarOptionText: { color: '#44403c', fontSize: 12 },
+  calendarOptionText: { color: colors.textSecondary, fontSize: 12 },
   switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 },
   input: {
     borderWidth: 1,
-    borderColor: '#e7ddd0',
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceSecondary,
+    color: colors.text,
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 8,
     marginTop: 8,
   },
   closeButton: {
-    backgroundColor: '#292524',
+    backgroundColor: colors.surfaceSecondary,
     borderRadius: 10,
     paddingVertical: 11,
     alignItems: 'center',
     marginTop: 4,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  closeButtonText: { color: '#fff', fontWeight: '700' },
+  closeButtonText: { color: colors.text, fontWeight: '700' },
 })

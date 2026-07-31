@@ -3,6 +3,8 @@ import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-nativ
 import { parseQuickInput } from '../../services/parser/quickInputParser'
 import { useItems } from '../../features/items/useItems'
 import type { ItemType } from '../../domain/items/types'
+import { useAppTheme } from '../theme/useAppTheme'
+import type { ThemeTokens } from '../theme/tokens'
 
 interface QuickAddModalProps {
   open: boolean
@@ -11,6 +13,8 @@ interface QuickAddModalProps {
 
 export const QuickAddModal = ({ open, onClose }: QuickAddModalProps) => {
   const { createItem, isSaving } = useItems()
+  const { colors } = useAppTheme()
+  const styles = useMemo(() => createStyles(colors), [colors])
   const [text, setText] = useState('')
   const parsed = useMemo(() => parseQuickInput(text || ''), [text])
 
@@ -67,6 +71,7 @@ export const QuickAddModal = ({ open, onClose }: QuickAddModalProps) => {
             value={text}
             onChangeText={setText}
             placeholder="¿Que queres agregar?"
+            placeholderTextColor={colors.textMuted}
             multiline
             style={styles.input}
           />
@@ -93,37 +98,43 @@ export const QuickAddModal = ({ open, onClose }: QuickAddModalProps) => {
   )
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeTokens) => StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.32)',
+    backgroundColor: colors.overlayAccent,
     justifyContent: 'flex-end',
   },
   sheet: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.surfaceElevated,
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
     padding: 16,
     gap: 10,
+    borderTopWidth: 1,
+    borderColor: colors.border,
   },
-  title: { fontSize: 20, fontWeight: '700', color: '#1c1917' },
+  title: { fontSize: 20, fontWeight: '700', color: colors.text },
   input: {
     minHeight: 88,
     borderWidth: 1,
-    borderColor: '#e7ddd0',
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    color: colors.text,
     borderRadius: 12,
     paddingHorizontal: 10,
     paddingVertical: 10,
     textAlignVertical: 'top',
   },
   previewBox: {
-    backgroundColor: '#f8f5ef',
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
     borderRadius: 12,
     padding: 10,
   },
-  previewLabel: { fontSize: 12, color: '#6b7280' },
-  previewTitle: { fontSize: 15, color: '#292524', fontWeight: '600', marginTop: 2 },
-  previewMeta: { fontSize: 12, color: '#78716c', marginTop: 4 },
+  previewLabel: { fontSize: 12, color: colors.textMuted },
+  previewTitle: { fontSize: 15, color: colors.text, fontWeight: '600', marginTop: 2 },
+  previewMeta: { fontSize: 12, color: colors.textSecondary, marginTop: 4 },
   actions: {
     flexDirection: 'row',
     gap: 8,
@@ -132,17 +143,18 @@ const styles = StyleSheet.create({
   },
   secondaryButton: {
     borderWidth: 1,
-    borderColor: '#e7ddd0',
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
-  secondaryButtonText: { color: '#57534e', fontWeight: '600' },
+  secondaryButtonText: { color: colors.textSecondary, fontWeight: '600' },
   primaryButton: {
-    backgroundColor: '#9a3412',
+    backgroundColor: colors.accent,
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
-  primaryButtonText: { color: '#fff', fontWeight: '700' },
+  primaryButtonText: { color: colors.fabText, fontWeight: '700' },
 })

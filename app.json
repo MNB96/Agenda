@@ -5,7 +5,8 @@
     "scheme": "agendaapp",
     "version": "1.0.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
     "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": false,
@@ -13,7 +14,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#f7f2ea"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FFFFFF"
       },
       "package": "com.agenda.personal"
     }

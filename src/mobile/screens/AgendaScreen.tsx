@@ -6,6 +6,7 @@ import { useGoogleEvents } from '../../features/calendar/useGoogleCalendar'
 import { useItems } from '../../features/items/useItems'
 import type { Item } from '../../domain/items/types'
 import { useAppTheme } from '../theme/useAppTheme'
+import type { ThemeTokens } from '../theme/tokens'
 
 interface AgendaScreenProps {
   onOpenItemEditor: (itemId: string) => void
@@ -14,11 +15,32 @@ interface AgendaScreenProps {
 const itemDate = (item: Item): string | undefined =>
   item.startDate ?? item.deadline ?? item.dateWindow?.startDate ?? item.dateWindow?.endDate
 
+const resolveAgendaEntryColor = (
+  entry: { source: 'local' | 'google'; subtitle?: string },
+  colors: ThemeTokens,
+): string => {
+  if (entry.source === 'google') {
+    return colors.primary
+  }
+  const subtitle = entry.subtitle?.toLowerCase() ?? ''
+  if (subtitle.includes('urgente') || subtitle.includes('atras')) {
+    return colors.accentStrong
+  }
+  if (subtitle.includes('deadline') || subtitle.includes('fecha')) {
+    return colors.accent
+  }
+  if (subtitle.includes('meta') || subtitle.includes('objetivo')) {
+    return colors.cream
+  }
+  return colors.secondary
+}
+
 export const AgendaScreen = ({ onOpenItemEditor }: AgendaScreenProps) => {
   const [month, setMonth] = useState(new Date())
   const { items } = useItems()
   const googleEvents = useGoogleEvents(month)
   const { colors } = useAppTheme()
+  const styles = useMemo(() => createStyles(colors), [colors])
 
   const localEntries = useMemo(
     () =>
@@ -69,19 +91,13 @@ export const AgendaScreen = ({ onOpenItemEditor }: AgendaScreenProps) => {
   const dates = Object.keys(grouped)
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}> 
+    <View style={styles.container}>
       <View style={styles.monthHeader}>
-        <Pressable
-          style={[styles.monthButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          onPress={() => setMonth((current) => subMonths(current, 1))}
-        >
+        <Pressable style={styles.monthButton} onPress={() => setMonth((current) => subMonths(current, 1))}>
           <ChevronLeft size={16} color={colors.textSecondary} />
         </Pressable>
-        <Text style={[styles.monthTitle, { color: colors.text }]}>{format(month, 'MMMM yyyy')}</Text>
-        <Pressable
-          style={[styles.monthButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          onPress={() => setMonth((current) => addMonths(current, 1))}
-        >
+        <Text style={styles.monthTitle}>{format(month, 'MMMM yyyy')}</Text>
+        <Pressable style={styles.monthButton} onPress={() => setMonth((current) => addMonths(current, 1))}>
           <ChevronRight size={16} color={colors.textSecondary} />
         </Pressable>
       </View>
@@ -90,34 +106,34 @@ export const AgendaScreen = ({ onOpenItemEditor }: AgendaScreenProps) => {
         data={dates}
         keyExtractor={(date) => date}
         renderItem={({ item: date }) => (
-          <View style={[styles.dayGroup, { backgroundColor: colors.surface, borderColor: colors.border }]}> 
-            <Text style={[styles.dayTitle, { color: colors.textSecondary }]}>{new Date(`${date}T00:00:00`).toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })}</Text>
+          <View style={styles.dayGroup}>
+            <View style={styles.dayTitleRow}>
+              <Text style={styles.dayTitle}>{new Date(`${date}T00:00:00`).toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })}</Text>
+              {date === new Date().toISOString().slice(0, 10) ? <View style={styles.todayBadge}><Text style={styles.todayBadgeText}>Hoy</Text></View> : null}
+            </View>
             {grouped[date].map((entry) => (
               <Pressable
                 key={entry.id}
-                style={[styles.entryCard, { borderColor: colors.border, backgroundColor: colors.surfaceSecondary }]}
+                style={styles.entryCard}
                 onPress={() => (entry.source === 'local' ? onOpenItemEditor(entry.id) : undefined)}
               >
-                <View style={styles.entryHead}>
+                <View style={styles.entryRow}>
                   <View
                     style={[
                       styles.entryDot,
                       {
-                        backgroundColor:
-                          entry.source === 'google'
-                            ? colors.primary
-                            : entry.subtitle?.includes('Ventana')
-                              ? colors.accent
-                              : colors.secondary,
+                        backgroundColor: resolveAgendaEntryColor(entry, colors),
                       },
                     ]}
                   />
-                  <Text style={[styles.entryTitle, { color: colors.text }]}>{entry.title}</Text>
+                  <View style={styles.entryContent}>
+                    <Text style={styles.entryTitle}>{entry.title}</Text>
+                    <Text style={styles.entryMeta}>
+                      {entry.time ? `${entry.time} · ` : ''}
+                      {entry.subtitle || (entry.source === 'google' ? 'Google Calendar' : 'Agenda')}
+                    </Text>
+                  </View>
                 </View>
-                <Text style={[styles.entryMeta, { color: colors.textSecondary }]}>
-                  {entry.time ? `${entry.time} · ` : ''}
-                  {entry.subtitle || (entry.source === 'google' ? 'Google Calendar' : 'Agenda')}
-                </Text>
               </Pressable>
             ))}
           </View>
@@ -127,9 +143,10 @@ export const AgendaScreen = ({ onOpenItemEditor }: AgendaScreenProps) => {
   )
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeTokens) => StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: colors.background,
     paddingHorizontal: 14,
     paddingTop: 10,
   },
@@ -140,40 +157,73 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   monthButton: {
+    backgroundColor: colors.surface,
     borderRadius: 999,
     borderWidth: 1,
+    borderColor: colors.border,
     padding: 8,
   },
   monthTitle: {
     fontSize: 22,
     fontWeight: '700',
     textTransform: 'capitalize',
+    color: colors.text,
   },
   dayGroup: {
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: 12,
+    backgroundColor: colors.surface,
+    paddingVertical: 8,
     marginBottom: 10,
+  },
+  dayTitleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
   },
   dayTitle: {
     fontSize: 12,
     textTransform: 'uppercase',
-    marginBottom: 8,
+    color: colors.textMuted,
+  },
+  todayBadge: {
+    backgroundColor: colors.primarySoft,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  todayBadgeText: {
+    color: colors.onPrimary,
+    fontSize: 11,
+    fontWeight: '700',
   },
   entryCard: {
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 10,
-    marginBottom: 8,
+    borderBottomWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: 10,
+    backgroundColor: colors.surface,
   },
-  entryHead: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  entryDot: { width: 8, height: 8, borderRadius: 999 },
+  entryRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  entryContent: {
+    flex: 1,
+  },
+  entryDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    marginTop: 5,
+  },
   entryTitle: {
     fontSize: 14,
     fontWeight: '600',
+    color: colors.text,
   },
   entryMeta: {
     marginTop: 2,
     fontSize: 12,
+    color: colors.textSecondary,
   },
 })
