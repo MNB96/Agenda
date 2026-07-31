@@ -127,7 +127,7 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
       })
     }
     onClose()
-  }, [item, title, description, important, scheduledDate, scheduledTime, deadline, updateItem, onClose])
+  }, [item, title, description, important, scheduledDate, scheduledTime, deadline, categoryId, location, updateItem, onClose])
 
   useEffect(() => {
     if (!open) return

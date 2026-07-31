@@ -134,7 +134,11 @@ export const useItems = () => {
       next = updateItem(next, { notificationId: notificationId ?? undefined })
       return itemRepository.save(next)
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ITEMS_KEY }),
+    onSuccess: (savedItem) => {
+      queryClient.setQueryData<Item[]>(ITEMS_KEY, (old) =>
+        (old ?? []).map((i) => (i.id === savedItem.id ? savedItem : i)),
+      )
+    },
   })
 
   const removeMutation = useMutation({
