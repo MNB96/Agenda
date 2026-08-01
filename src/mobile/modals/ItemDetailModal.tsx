@@ -91,8 +91,7 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
   const { colors } = useAppTheme()
   const styles = useMemo(() => createStyles(colors), [colors])
   const insets = useSafeAreaInsets()
-  const titleRef = useRef<TextInput>(null)
-  const descRef = useRef<TextInput>(null)
+
 
   const item = useMemo(() => items.find(i => i.id === itemId), [items, itemId])
   const subtasks = useMemo(() => items.filter(i => i.parentId === itemId), [items, itemId])
@@ -329,7 +328,6 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
           >
             {/* Title */}
             <TextInput
-              ref={titleRef}
               value={title}
               onChangeText={setTitle}
               style={[styles.titleInput, isCompleted && styles.titleCompleted]}
@@ -343,7 +341,6 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
             <View style={styles.detailRow}>
               <AlignLeft size={20} color={description.trim() ? colors.text : colors.textMuted} style={styles.rowIcon} />
               <TextInput
-                ref={descRef}
                 value={description}
                 onChangeText={setDescription}
                 style={[styles.detailRowInput, description.trim() ? { color: colors.text } : {}]}
@@ -1178,11 +1175,6 @@ const createStyles = (colors: ThemeTokens) =>
     customReminderBeforeLabel: {
       fontSize: 13,
       color: colors.textSecondary,
-    },
-    customReminderUnit: {
-      fontSize: 13,
-      color: colors.textSecondary,
-      flex: 1,
     },
     customReminderAdd: {
       paddingHorizontal: 14,

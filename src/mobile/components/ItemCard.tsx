@@ -7,7 +7,6 @@ import type { ThemeTokens } from '../theme/tokens'
 
 interface ItemCardProps {
   item: Item
-  categoryName?: string
   overdueLabel?: string
   overdueDeadlineLabel?: string
   subtaskTotal?: number
@@ -16,7 +15,7 @@ interface ItemCardProps {
   onOpen?: (item: Item) => void
 }
 
-export const ItemCard = ({ item, categoryName, overdueLabel, overdueDeadlineLabel, subtaskTotal, subtaskDone, onToggle, onOpen }: ItemCardProps) => {
+export const ItemCard = ({ item, overdueLabel, overdueDeadlineLabel, subtaskTotal, subtaskDone, onToggle, onOpen }: ItemCardProps) => {
   const { colors } = useAppTheme()
   const styles = useMemo(() => createStyles(colors), [colors])
 

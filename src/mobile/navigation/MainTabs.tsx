@@ -1,6 +1,6 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import { GraduationCap, ListTodo, Settings } from 'lucide-react-native'
-import { Pressable, StyleSheet, View } from 'react-native'
+import { Pressable, StyleSheet } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -11,12 +11,11 @@ import { useAppTheme } from '../theme/useAppTheme'
 const Tab = createBottomTabNavigator()
 
 interface MainTabsProps {
-  onOpenQuickAdd: () => void
   onOpenSettings: () => void
   onOpenItemEditor: (itemId: string) => void
 }
 
-export const MainTabs = ({ onOpenQuickAdd, onOpenSettings, onOpenItemEditor }: MainTabsProps) => {
+export const MainTabs = ({ onOpenSettings, onOpenItemEditor }: MainTabsProps) => {
   const { colors } = useAppTheme()
   const { bottom } = useSafeAreaInsets()
 
@@ -27,7 +26,7 @@ export const MainTabs = ({ onOpenQuickAdd, onOpenSettings, onOpenItemEditor }: M
         headerTitleStyle: { fontSize: 22, fontWeight: '700', color: colors.text },
         headerTintColor: colors.text,
         tabBarStyle: {
-          height: 62 + bottom,
+          height: 70 + bottom,
           paddingTop: 8,
           paddingBottom: 8 + bottom,
           backgroundColor: colors.surface,

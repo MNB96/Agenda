@@ -106,7 +106,6 @@ const AppShellInner = ({
     <>
       <NavigationContainer theme={navTheme}>
         <MainTabs
-          onOpenQuickAdd={() => setQuickAddOpen(true)}
           onOpenSettings={() => setSettingsOpen(true)}
           onOpenItemEditor={(itemId) => setEditingItemId(itemId)}
         />

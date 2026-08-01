@@ -1,4 +1,4 @@
-import { differenceInCalendarDays, format, isPast, parseISO } from 'date-fns'
+import { differenceInCalendarDays, format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { useMemo } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'

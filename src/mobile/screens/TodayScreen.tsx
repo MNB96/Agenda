@@ -276,7 +276,6 @@ export const TodayScreen = ({ onOpenItemEditor }: TodayScreenProps) => {
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.filtersRow}
-        style={styles.filtersScroller}
       >
         <Pressable onPress={() => setActiveCategory('all')} style={[styles.filterChip, activeCategory === 'all' && styles.filterChipActive]}>
           <Text
@@ -393,7 +392,6 @@ export const TodayScreen = ({ onOpenItemEditor }: TodayScreenProps) => {
                   <ItemCard
                     key={localItem.id}
                     item={localItem}
-                    categoryName={settings?.categories.find((category) => category.id === localItem.categoryId)?.name}
                     overdueDeadlineLabel={overdueDeadlineLabel}
                     overdueLabel={overdueLabel}
                     subtaskTotal={subtaskInfo?.total}
@@ -451,12 +449,6 @@ const createStyles = (colors: ThemeTokens) =>
       paddingHorizontal: 16,
       paddingTop: 10,
     },
-    dateTitle: {
-      fontSize: 16,
-      color: colors.textSecondary,
-      marginBottom: 10,
-      textTransform: 'capitalize',
-    },
     searchInput: {
       backgroundColor: colors.surface,
       borderWidth: 1,
@@ -472,7 +464,6 @@ const createStyles = (colors: ThemeTokens) =>
       marginBottom: 14,
       paddingVertical: 4,
     },
-    filtersScroller: {},
     filtersRow: {
       flexDirection: 'row',
       gap: 8,
