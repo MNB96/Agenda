@@ -19,6 +19,7 @@ export interface ReminderConfig {
   minutesBefore?: number
   dateTime?: string
   persistent?: boolean
+  alarmType?: 'notification' | 'alarm'
 }
 
 export interface TravelConfig {
@@ -84,6 +85,7 @@ export interface Item {
   googleCalendarLink?: GoogleCalendarLink
   calendarSyncPending?: boolean
   notificationId?: string
+  notificationIds?: string[]
   createdAt: string
   updatedAt: string
   completedAt?: string

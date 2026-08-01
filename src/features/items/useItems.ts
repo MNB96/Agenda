@@ -6,7 +6,7 @@ import { createItem, resolveEventDateTimes, updateItem } from './itemService'
 import { useGoogleAuthStore } from '../../state/googleAuthStore'
 import { useSettings } from '../settings/useSettings'
 import { isGoogleCalendarAuthError } from '../../providers/calendar/errors'
-import { cancelItemNotification, notifyCalendarDeleteFailed, scheduleItemNotification } from '../../services/notifications/itemNotifications'
+import { cancelItemNotifications, notifyCalendarDeleteFailed, scheduleItemNotifications } from '../../services/notifications/itemNotifications'
 import { enqueueDelete } from '../../services/calendar/calendarDeleteQueue'
 
 const ITEMS_KEY = ['items']
@@ -56,10 +56,8 @@ export const useItems = () => {
         }
       }
 
-      const notificationId = await scheduleItemNotification(item)
-      if (notificationId) {
-        item = updateItem(item, { notificationId })
-      }
+      const notificationIds = await scheduleItemNotifications(item)
+      item = updateItem(item, { notificationIds })
       return itemRepository.save(item)
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ITEMS_KEY }),
@@ -140,9 +138,9 @@ export const useItems = () => {
         }
       }
 
-      await cancelItemNotification(current.notificationId)
-      const notificationId = await scheduleItemNotification(next)
-      next = updateItem(next, { notificationId: notificationId ?? undefined })
+      await cancelItemNotifications(current)
+      const notificationIds = await scheduleItemNotifications(next)
+      next = updateItem(next, { notificationIds })
       return itemRepository.save(next)
     },
     onSuccess: (savedItem) => {
@@ -154,7 +152,7 @@ export const useItems = () => {
 
   const removeMutation = useMutation({
     mutationFn: async (item: Item) => {
-      await cancelItemNotification(item.notificationId)
+      await cancelItemNotifications(item)
       const link = item.googleCalendarLink
       if (link && accessToken) {
         try {
@@ -197,11 +195,11 @@ export const useItems = () => {
         completedAt: completing ? new Date().toISOString() : undefined,
       })
       if (completing) {
-        await cancelItemNotification(item.notificationId)
-        next = updateItem(next, { notificationId: undefined })
+        await cancelItemNotifications(item)
+        next = updateItem(next, { notificationIds: [] })
       } else {
-        const notificationId = await scheduleItemNotification(next)
-        next = updateItem(next, { notificationId: notificationId ?? undefined })
+        const notificationIds = await scheduleItemNotifications(next)
+        next = updateItem(next, { notificationIds })
       }
       return itemRepository.save(next)
     },

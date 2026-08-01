@@ -16,13 +16,17 @@ import {
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
+  AlarmClock,
   AlignLeft,
+  Bell,
+  Check,
   ChevronLeft,
   CircleCheck,
   Clock,
   CornerDownRight,
   MapPin,
   MoreVertical,
+  Navigation,
   Star,
   Tag,
   X,
@@ -35,6 +39,9 @@ import { useItems } from '../../features/items/useItems'
 import { useSettings } from '../../features/settings/useSettings'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
+import type { ReminderConfig } from '../../domain/items/types'
+import { createId } from '../../utils/id'
+import { fetchTravelTime, getCurrentLocation } from '../../services/travelTime'
 
 interface ItemDetailModalProps {
   open: boolean
@@ -46,6 +53,33 @@ const fmtDate = (dateStr: string): string => {
   const d = new Date(dateStr + 'T00:00:00')
   if (isToday(d)) return 'HOY'
   return format(d, "EEE d 'de' MMM", { locale: es })
+}
+
+const REMINDER_PRESETS_DETAIL = [
+  { label: 'A la hora', minutesBefore: 0 },
+  { label: '10 min antes', minutesBefore: 10 },
+  { label: '30 min antes', minutesBefore: 30 },
+  { label: '1 hora antes', minutesBefore: 60 },
+  { label: '1 día antes', minutesBefore: 1440 },
+]
+
+const formatReminderLabelDetail = (r: ReminderConfig): string => {
+  const mins = r.minutesBefore
+  if (mins === undefined) return 'Recordatorio'
+  if (r.mode === 'departure') {
+    if (mins < 60) return `Salir ${mins} min antes`
+    const h = Math.floor(mins / 60)
+    const m = mins % 60
+    return m > 0 ? `Salir ${h}h ${m}min antes` : `Salir ${h}h antes`
+  }
+  if (mins === 0) return 'A la hora'
+  if (mins < 60) return `${mins} min antes`
+  if (mins < 1440) {
+    const h = mins / 60
+    return Number.isInteger(h) ? (h === 1 ? '1 hora antes' : `${h} horas antes`) : `${mins} min antes`
+  }
+  const d = mins / 1440
+  return Number.isInteger(d) ? (d === 1 ? '1 día antes' : `${d} días antes`) : `${Math.floor(mins / 60)}h antes`
 }
 
 export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps) => {
@@ -74,6 +108,15 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
   const [newSubtaskText, setNewSubtaskText] = useState('')
   const subtaskInputRef = useRef<TextInput>(null)
 
+  const [reminders, setReminders] = useState<ReminderConfig[]>([])
+  const [expandReminders, setExpandReminders] = useState(false)
+  const [selectedAlarmType, setSelectedAlarmType] = useState<'notification' | 'alarm'>('notification')
+  const [customMinutesText, setCustomMinutesText] = useState('')
+  const [customUnit, setCustomUnit] = useState<'min' | 'h' | 'días'>('min')
+  const [showCustomInput, setShowCustomInput] = useState(false)
+  const [travelTimeLoading, setTravelTimeLoading] = useState(false)
+  const [travelTimeResult, setTravelTimeResult] = useState<string | null>(null)
+
   const [showDatePicker, setShowDatePicker] = useState(false)
   const [showTimePicker, setShowTimePicker] = useState(false)
   const [showDeadlinePicker, setShowDeadlinePicker] = useState(false)
@@ -90,6 +133,11 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
     setLocation(item.location)
     setLocationQuery(item.location ?? '')
     setLocationSuggestions([])
+    setReminders(item.reminderConfig ?? [])
+    setExpandReminders(false)
+    setShowCustomInput(false)
+    setCustomMinutesText('')
+    setTravelTimeResult(null)
   }, [open, item?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -123,11 +171,12 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
           deadline,
           categoryId,
           location: location || undefined,
+          reminderConfig: reminders.length > 0 ? reminders : undefined,
         },
       })
     }
     onClose()
-  }, [item, title, description, important, scheduledDate, scheduledTime, deadline, categoryId, location, updateItem, onClose])
+  }, [item, title, description, important, scheduledDate, scheduledTime, deadline, categoryId, location, reminders, updateItem, onClose])
 
   useEffect(() => {
     if (!open) return
@@ -162,6 +211,29 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
     setNewSubtaskText('')
     await createItem({ title: text, parentId: item.id, type: 'task' })
     setTimeout(() => subtaskInputRef.current?.focus(), 100)
+  }
+
+  const handleCalculateTravelTime = async () => {
+    if (!location) return
+    setTravelTimeLoading(true)
+    setTravelTimeResult(null)
+    try {
+      const pos = await getCurrentLocation()
+      if (!pos) { setTravelTimeResult('Sin permiso de ubicación'); return }
+      const result = await fetchTravelTime(pos, location)
+      if (!result) { setTravelTimeResult('No se pudo calcular'); return }
+      setTravelTimeResult(result.summary)
+      // Agrega automáticamente el reminder con buffer de 5 min extra
+      const totalMins = result.minutes + 5
+      if (!reminders.some((r) => r.mode === 'departure')) {
+        setReminders((prev) => [
+          ...prev,
+          { id: createId(), mode: 'departure', minutesBefore: totalMins, alarmType: selectedAlarmType },
+        ])
+      }
+    } finally {
+      setTravelTimeLoading(false)
+    }
   }
 
   if (!open) return null
@@ -366,6 +438,164 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
                 <Text style={styles.detailRowPlaceholder}>Agregar fecha</Text>
               )}
             </Pressable>
+
+            <View style={styles.rowDivider} />
+
+            {/* Reminders row */}
+            <Pressable style={styles.detailRow} onPress={() => setExpandReminders((v) => !v)}>
+              <Bell size={20} color={reminders.length > 0 ? colors.primary : colors.textMuted} style={styles.rowIcon} />
+              <Text style={reminders.length > 0 ? [styles.detailRowPlaceholder, { color: colors.primary }] : styles.detailRowPlaceholder}>
+                {reminders.length > 0 ? `${reminders.length} recordatorio${reminders.length !== 1 ? 's' : ''}` : 'Agregar recordatorio'}
+              </Text>
+              {reminders.length > 0 && (
+                <Pressable onPress={() => setReminders([])} hitSlop={8}>
+                  <X size={16} color={colors.textMuted} />
+                </Pressable>
+              )}
+            </Pressable>
+
+            {expandReminders && (
+              <View style={styles.remindersPanel}>
+                {/* Added reminders */}
+                {reminders.map((r) => (
+                  <View key={r.id} style={styles.reminderAddedRow}>
+                    <Text style={styles.reminderAddedText}>{formatReminderLabelDetail(r)}</Text>
+                    <View style={[styles.reminderTypePill, r.alarmType === 'alarm' && styles.reminderTypePillAlarm]}>
+                      {r.alarmType === 'alarm'
+                        ? <AlarmClock size={11} color={colors.accent} />
+                        : <Bell size={11} color={colors.primary} />}
+                      <Text style={[styles.reminderTypePillText, r.alarmType === 'alarm' && { color: colors.accent }]}>
+                        {r.alarmType === 'alarm' ? 'Alarma' : 'Notif.'}
+                      </Text>
+                    </View>
+                    <Pressable onPress={() => setReminders(reminders.filter((x) => x.id !== r.id))} hitSlop={8}>
+                      <X size={14} color={colors.textMuted} />
+                    </Pressable>
+                  </View>
+                ))}
+
+                {/* Type selector */}
+                <View style={styles.reminderTypeRow}>
+                  <Text style={styles.reminderTypeLabel}>Tipo:</Text>
+                  <Pressable
+                    style={[styles.reminderTypeBtn, selectedAlarmType === 'notification' && styles.reminderTypeBtnActive]}
+                    onPress={() => setSelectedAlarmType('notification')}
+                  >
+                    <Bell size={12} color={selectedAlarmType === 'notification' ? colors.primary : colors.textMuted} />
+                    <Text style={[styles.reminderTypeBtnText, selectedAlarmType === 'notification' && { color: colors.primary, fontWeight: '600' }]}>
+                      Notificación
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.reminderTypeBtn, selectedAlarmType === 'alarm' && styles.reminderTypeBtnAlarmActive]}
+                    onPress={() => setSelectedAlarmType('alarm')}
+                  >
+                    <AlarmClock size={12} color={selectedAlarmType === 'alarm' ? colors.accent : colors.textMuted} />
+                    <Text style={[styles.reminderTypeBtnText, selectedAlarmType === 'alarm' && { color: colors.accent, fontWeight: '600' }]}>
+                      Alarma
+                    </Text>
+                  </Pressable>
+                </View>
+
+                {/* Presets */}
+                {REMINDER_PRESETS_DETAIL.map((preset) => {
+                  const active = reminders.some((r) => r.minutesBefore === preset.minutesBefore)
+                  return (
+                    <Pressable
+                      key={preset.minutesBefore}
+                      style={styles.reminderPresetRow}
+                      onPress={() => {
+                        if (active) {
+                          setReminders(reminders.filter((r) => r.minutesBefore !== preset.minutesBefore))
+                        } else {
+                          setReminders([...reminders, { id: createId(), mode: 'relative', minutesBefore: preset.minutesBefore, alarmType: selectedAlarmType }])
+                        }
+                      }}
+                    >
+                      <Text style={[styles.reminderPresetText, active && { color: colors.primary, fontWeight: '600' }]}>
+                        {preset.label}
+                      </Text>
+                      {active && <Check size={16} color={colors.primary} />}
+                    </Pressable>
+                  )
+                })}
+
+                {/* Travel time — solo si la tarea tiene dirección */}
+                {location && (scheduledDate || deadline) && (
+                  <Pressable
+                    style={styles.reminderPresetRow}
+                    onPress={() => void handleCalculateTravelTime()}
+                    disabled={travelTimeLoading}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                      <Navigation size={14} color={colors.primary} />
+                      <Text style={[styles.reminderPresetText, { color: colors.primary }]}>
+                        {travelTimeLoading ? 'Calculando...' : 'Recordarme cuándo salir'}
+                      </Text>
+                    </View>
+                    {travelTimeResult && (
+                      <Text style={{ fontSize: 12, color: colors.textMuted }}>{travelTimeResult}</Text>
+                    )}
+                  </Pressable>
+                )}
+
+                {/* Custom */}
+                <Pressable style={styles.reminderPresetRow} onPress={() => setShowCustomInput((v) => !v)}>
+                  <Text style={styles.reminderPresetText}>Personalizado...</Text>
+                </Pressable>
+                {showCustomInput && (
+                  <View style={styles.customReminderRow}>
+                    <TextInput
+                      style={styles.customReminderInput}
+                      value={customMinutesText}
+                      onChangeText={setCustomMinutesText}
+                      keyboardType="numeric"
+                      placeholder="0"
+                      placeholderTextColor={colors.textMuted}
+                      returnKeyType="done"
+                      onSubmitEditing={() => {
+                        const val = parseInt(customMinutesText, 10)
+                        if (isNaN(val) || val < 0) return
+                        const mins = customUnit === 'h' ? val * 60 : customUnit === 'días' ? val * 1440 : val
+                        if (!reminders.some((r) => r.minutesBefore === mins)) {
+                          setReminders([...reminders, { id: createId(), mode: 'relative', minutesBefore: mins, alarmType: selectedAlarmType }])
+                        }
+                        setCustomMinutesText('')
+                        setShowCustomInput(false)
+                      }}
+                      selectionColor={colors.primary}
+                    />
+                    <View style={styles.customUnitRow}>
+                      {(['min', 'h', 'días'] as const).map((u) => (
+                        <Pressable
+                          key={u}
+                          style={[styles.customUnitBtn, customUnit === u && styles.customUnitBtnActive]}
+                          onPress={() => setCustomUnit(u)}
+                        >
+                          <Text style={[styles.customUnitText, customUnit === u && { color: colors.primary, fontWeight: '600' }]}>{u}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                    <Text style={styles.customReminderBeforeLabel}>antes</Text>
+                    <Pressable
+                      style={styles.customReminderAdd}
+                      onPress={() => {
+                        const val = parseInt(customMinutesText, 10)
+                        if (isNaN(val) || val < 0) return
+                        const mins = customUnit === 'h' ? val * 60 : customUnit === 'días' ? val * 1440 : val
+                        if (!reminders.some((r) => r.minutesBefore === mins)) {
+                          setReminders([...reminders, { id: createId(), mode: 'relative', minutesBefore: mins, alarmType: selectedAlarmType }])
+                        }
+                        setCustomMinutesText('')
+                        setShowCustomInput(false)
+                      }}
+                    >
+                      <Text style={styles.customReminderAddText}>+</Text>
+                    </Pressable>
+                  </View>
+                )}
+              </View>
+            )}
 
             <View style={styles.rowDivider} />
 
@@ -632,5 +862,153 @@ const createStyles = (colors: ThemeTokens) =>
       fontSize: 15,
       fontWeight: '600',
       color: colors.primary,
+    },
+
+    // Reminder styles
+    remindersPanel: {
+      backgroundColor: colors.surfaceSecondary,
+      borderRadius: 10,
+      marginLeft: 36,
+      marginBottom: 4,
+      overflow: 'hidden',
+    },
+    reminderAddedRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      borderBottomWidth: 1,
+      borderColor: colors.border,
+    },
+    reminderAddedText: {
+      flex: 1,
+      fontSize: 14,
+      color: colors.text,
+    },
+    reminderTypePill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: colors.primary + '60',
+      backgroundColor: colors.primary + '15',
+    },
+    reminderTypePillAlarm: {
+      borderColor: colors.accent + '60',
+      backgroundColor: colors.accent + '15',
+    },
+    reminderTypePillText: {
+      fontSize: 11,
+      color: colors.primary,
+      fontWeight: '600',
+    },
+    reminderTypeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      borderBottomWidth: 1,
+      borderColor: colors.border,
+    },
+    reminderTypeLabel: {
+      fontSize: 13,
+      color: colors.textMuted,
+    },
+    reminderTypeBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    reminderTypeBtnActive: {
+      borderColor: colors.primary,
+      backgroundColor: colors.primary + '15',
+    },
+    reminderTypeBtnAlarmActive: {
+      borderColor: colors.accent,
+      backgroundColor: colors.accent + '15',
+    },
+    reminderTypeBtnText: {
+      fontSize: 12,
+      color: colors.textSecondary,
+    },
+    reminderPresetRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      borderBottomWidth: 1,
+      borderColor: colors.border,
+    },
+    reminderPresetText: {
+      fontSize: 14,
+      color: colors.text,
+    },
+    customReminderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+    },
+    customReminderInput: {
+      borderWidth: 1,
+      borderColor: colors.borderStrong,
+      borderRadius: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      fontSize: 15,
+      color: colors.text,
+      width: 72,
+      textAlign: 'center',
+    } as object,
+    customUnitRow: {
+      flexDirection: 'row',
+      gap: 4,
+    },
+    customUnitBtn: {
+      paddingHorizontal: 8,
+      paddingVertical: 5,
+      borderRadius: 6,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    customUnitBtnActive: {
+      borderColor: colors.primary,
+      backgroundColor: colors.primary + '15',
+    },
+    customUnitText: {
+      fontSize: 12,
+      color: colors.textSecondary,
+    },
+    customReminderBeforeLabel: {
+      fontSize: 13,
+      color: colors.textSecondary,
+    },
+    customReminderUnit: {
+      fontSize: 13,
+      color: colors.textSecondary,
+      flex: 1,
+    },
+    customReminderAdd: {
+      paddingHorizontal: 14,
+      paddingVertical: 7,
+      borderRadius: 8,
+      backgroundColor: colors.primary,
+    },
+    customReminderAddText: {
+      fontSize: 13,
+      color: colors.onPrimary,
+      fontWeight: '600',
     },
   })

@@ -14,6 +14,7 @@ import {
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
+  AlarmClock,
   AlignLeft,
   Bell,
   Check,
@@ -23,6 +24,7 @@ import {
   Clock,
   Flag,
   MapPin,
+  Navigation,
   Repeat,
   Star,
   Tag,
@@ -30,6 +32,7 @@ import {
   X,
 } from 'lucide-react-native'
 import { searchPlaceSuggestions, type PlaceSuggestion } from '../../services/googlePlaces'
+import { fetchTravelTime, getCurrentLocation } from '../../services/travelTime'
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker'
 import {
   addMonths,
@@ -268,6 +271,12 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
   const [tempDeadline, setTempDeadline] = useState<string | undefined>()
   const [tempRepeat, setTempRepeat] = useState<RepeatRule>('none')
   const [tempReminders, setTempReminders] = useState<ReminderConfig[]>([])
+  const [selectedAlarmType, setSelectedAlarmType] = useState<'notification' | 'alarm'>('notification')
+  const [customMinutesText, setCustomMinutesText] = useState('')
+  const [customUnit, setCustomUnit] = useState<'min' | 'h' | 'días'>('min')
+  const [showCustomInput, setShowCustomInput] = useState(false)
+  const [travelTimeLoading, setTravelTimeLoading] = useState(false)
+  const [travelTimeResult, setTravelTimeResult] = useState<string | null>(null)
   const [viewMonth, setViewMonth] = useState(new Date())
   const [timeEnabled, setTimeEnabled] = useState(false)
   const [showNativeTime, setShowNativeTime] = useState(false)
@@ -483,13 +492,60 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
     setTempTime(format(date, 'HH:mm'))
   }
 
-  const toggleReminder = (minutesBefore: number) => {
-    const exists = tempReminders.some((r) => r.mode === 'relative' && r.minutesBefore === minutesBefore)
-    if (exists) {
-      setTempReminders(tempReminders.filter((r) => !(r.mode === 'relative' && r.minutesBefore === minutesBefore)))
-    } else {
-      setTempReminders([...tempReminders, { id: createId(), mode: 'relative', minutesBefore }])
+  const handleCalculateTravelTime = async () => {
+    if (!location) return
+    setTravelTimeLoading(true)
+    setTravelTimeResult(null)
+    try {
+      const pos = await getCurrentLocation()
+      if (!pos) { setTravelTimeResult('Sin permiso de ubicación'); return }
+      const result = await fetchTravelTime(pos, location)
+      if (!result) { setTravelTimeResult('No se pudo calcular'); return }
+      setTravelTimeResult(result.summary)
+      const totalMins = result.minutes + 5
+      if (!tempReminders.some((r) => r.mode === 'departure')) {
+        setTempReminders((prev) => [
+          ...prev,
+          { id: createId(), mode: 'departure', minutesBefore: totalMins, alarmType: selectedAlarmType },
+        ])
+      }
+    } finally {
+      setTravelTimeLoading(false)
     }
+  }
+
+  const togglePresetReminder = (minutesBefore: number) => {
+    const exists = tempReminders.some((r) => r.minutesBefore === minutesBefore)
+    if (exists) {
+      setTempReminders(tempReminders.filter((r) => r.minutesBefore !== minutesBefore))
+    } else {
+      setTempReminders([...tempReminders, { id: createId(), mode: 'relative', minutesBefore, alarmType: selectedAlarmType }])
+    }
+  }
+
+  const addCustomReminder = () => {
+    const val = parseInt(customMinutesText, 10)
+    if (isNaN(val) || val < 0) return
+    const mins = customUnit === 'h' ? val * 60 : customUnit === 'días' ? val * 1440 : val
+    const exists = tempReminders.some((r) => r.minutesBefore === mins)
+    if (!exists) {
+      setTempReminders([...tempReminders, { id: createId(), mode: 'relative', minutesBefore: mins, alarmType: selectedAlarmType }])
+    }
+    setCustomMinutesText('')
+    setShowCustomInput(false)
+  }
+
+  const formatReminderLabel = (r: ReminderConfig): string => {
+    const mins = r.minutesBefore
+    if (mins === undefined) return 'Recordatorio'
+    if (mins === 0) return 'A la hora'
+    if (mins < 60) return `${mins} min antes`
+    if (mins < 1440) {
+      const h = mins / 60
+      return Number.isInteger(h) ? (h === 1 ? '1 hora antes' : `${h} horas antes`) : `${mins} min antes`
+    }
+    const d = mins / 1440
+    return Number.isInteger(d) ? (d === 1 ? '1 día antes' : `${d} días antes`) : `${Math.floor(mins / 60)}h antes`
   }
 
   const handleBackdropPress = () => {
@@ -947,15 +1003,55 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
           />
           {expandReminder && (
             <View style={styles.expandedList}>
+              {/* Recordatorios ya agregados */}
+              {tempReminders.map((r) => (
+                <View key={r.id} style={styles.reminderAddedRow}>
+                  <Text style={styles.reminderAddedText}>{formatReminderLabel(r)}</Text>
+                  <View style={[styles.reminderTypePill, r.alarmType === 'alarm' && styles.reminderTypePillAlarm]}>
+                    {r.alarmType === 'alarm'
+                      ? <AlarmClock size={11} color={colors.accent} />
+                      : <Bell size={11} color={colors.primary} />}
+                    <Text style={[styles.reminderTypePillText, r.alarmType === 'alarm' && { color: colors.accent }]}>
+                      {r.alarmType === 'alarm' ? 'Alarma' : 'Notif.'}
+                    </Text>
+                  </View>
+                  <Pressable onPress={() => setTempReminders(tempReminders.filter((x) => x.id !== r.id))} hitSlop={8}>
+                    <X size={14} color={colors.textMuted} />
+                  </Pressable>
+                </View>
+              ))}
+
+              {/* Selector de tipo */}
+              <View style={styles.reminderTypeRow}>
+                <Text style={styles.reminderTypeLabel}>Tipo:</Text>
+                <Pressable
+                  style={[styles.reminderTypeBtn, selectedAlarmType === 'notification' && styles.reminderTypeBtnActive]}
+                  onPress={() => setSelectedAlarmType('notification')}
+                >
+                  <Bell size={12} color={selectedAlarmType === 'notification' ? colors.primary : colors.textMuted} />
+                  <Text style={[styles.reminderTypeBtnText, selectedAlarmType === 'notification' && { color: colors.primary, fontWeight: '600' }]}>
+                    Notificación
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.reminderTypeBtn, selectedAlarmType === 'alarm' && styles.reminderTypeBtnAlarmActive]}
+                  onPress={() => setSelectedAlarmType('alarm')}
+                >
+                  <AlarmClock size={12} color={selectedAlarmType === 'alarm' ? colors.accent : colors.textMuted} />
+                  <Text style={[styles.reminderTypeBtnText, selectedAlarmType === 'alarm' && { color: colors.accent, fontWeight: '600' }]}>
+                    Alarma
+                  </Text>
+                </Pressable>
+              </View>
+
+              {/* Presets */}
               {REMINDER_PRESETS.map((preset) => {
-                const active = tempReminders.some(
-                  (r) => r.mode === 'relative' && r.minutesBefore === preset.minutesBefore,
-                )
+                const active = tempReminders.some((r) => r.minutesBefore === preset.minutesBefore)
                 return (
                   <Pressable
                     key={preset.minutesBefore}
                     style={styles.expandedItem}
-                    onPress={() => toggleReminder(preset.minutesBefore)}
+                    onPress={() => togglePresetReminder(preset.minutesBefore)}
                   >
                     <Text style={[styles.expandedItemText, active && { color: colors.primary, fontWeight: '600' }]}>
                       {preset.label}
@@ -964,6 +1060,65 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
                   </Pressable>
                 )
               })}
+
+              {/* Travel time — solo si hay dirección y fecha */}
+              {location && tempDate && (
+                <Pressable
+                  style={styles.expandedItem}
+                  onPress={() => void handleCalculateTravelTime()}
+                  disabled={travelTimeLoading}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Navigation size={13} color={colors.primary} />
+                    <Text style={[styles.expandedItemText, { color: colors.primary }]}>
+                      {travelTimeLoading ? 'Calculando...' : 'Recordarme cuándo salir'}
+                    </Text>
+                  </View>
+                  {travelTimeResult && (
+                    <Text style={{ fontSize: 12, color: colors.textMuted }}>{travelTimeResult}</Text>
+                  )}
+                </Pressable>
+              )}
+
+              {/* Personalizado */}
+              <Pressable style={styles.expandedItem} onPress={() => setShowCustomInput((v) => !v)}>
+                <Text style={styles.expandedItemText}>Personalizado...</Text>
+                <ChevronDown
+                  size={14}
+                  color={colors.textMuted}
+                  style={{ transform: [{ rotate: showCustomInput ? '180deg' : '0deg' }] }}
+                />
+              </Pressable>
+              {showCustomInput && (
+                <View style={styles.customReminderRow}>
+                  <TextInput
+                    style={styles.customReminderInput}
+                    value={customMinutesText}
+                    onChangeText={setCustomMinutesText}
+                    keyboardType="numeric"
+                    placeholder="0"
+                    placeholderTextColor={colors.textMuted}
+                    returnKeyType="done"
+                    onSubmitEditing={addCustomReminder}
+                    selectionColor={colors.primary}
+                  />
+                  <View style={styles.customUnitRow}>
+                    {(['min', 'h', 'días'] as const).map((u) => (
+                      <Pressable
+                        key={u}
+                        style={[styles.customUnitBtn, customUnit === u && styles.customUnitBtnActive]}
+                        onPress={() => setCustomUnit(u)}
+                      >
+                        <Text style={[styles.customUnitText, customUnit === u && { color: colors.primary, fontWeight: '600' }]}>{u}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  <Text style={styles.customReminderBeforeLabel}>antes</Text>
+                  <Pressable style={styles.customReminderAdd} onPress={addCustomReminder}>
+                    <Text style={styles.customReminderAddText}>+</Text>
+                  </Pressable>
+                </View>
+              )}
             </View>
           )}
 
@@ -1685,5 +1840,134 @@ const createStyles = (colors: ThemeTokens) =>
       fontSize: 13,
       color: colors.text,
       lineHeight: 18,
+    },
+
+    // Reminder UI
+    reminderAddedRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      borderBottomWidth: 1,
+      borderColor: colors.border,
+    },
+    reminderAddedText: {
+      flex: 1,
+      fontSize: 14,
+      color: colors.text,
+    },
+    reminderTypePill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: colors.primary + '60',
+      backgroundColor: colors.primary + '15',
+    },
+    reminderTypePillAlarm: {
+      borderColor: colors.accent + '60',
+      backgroundColor: colors.accent + '15',
+    },
+    reminderTypePillText: {
+      fontSize: 11,
+      color: colors.primary,
+      fontWeight: '600',
+    },
+    reminderTypeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      borderBottomWidth: 1,
+      borderColor: colors.border,
+    },
+    reminderTypeLabel: {
+      fontSize: 13,
+      color: colors.textMuted,
+      marginRight: 2,
+    },
+    reminderTypeBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    reminderTypeBtnActive: {
+      borderColor: colors.primary,
+      backgroundColor: colors.primary + '15',
+    },
+    reminderTypeBtnAlarmActive: {
+      borderColor: colors.accent,
+      backgroundColor: colors.accent + '15',
+    },
+    reminderTypeBtnText: {
+      fontSize: 12,
+      color: colors.textSecondary,
+    },
+    customReminderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+    },
+    customReminderInput: {
+      borderWidth: 1,
+      borderColor: colors.borderStrong,
+      borderRadius: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      fontSize: 15,
+      color: colors.text,
+      width: 72,
+      textAlign: 'center',
+    },
+    customUnitRow: {
+      flexDirection: 'row',
+      gap: 4,
+    },
+    customUnitBtn: {
+      paddingHorizontal: 8,
+      paddingVertical: 5,
+      borderRadius: 6,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    customUnitBtnActive: {
+      borderColor: colors.primary,
+      backgroundColor: colors.primary + '15',
+    },
+    customUnitText: {
+      fontSize: 12,
+      color: colors.textSecondary,
+    },
+    customReminderBeforeLabel: {
+      fontSize: 13,
+      color: colors.textSecondary,
+    },
+    customReminderUnit: {
+      fontSize: 13,
+      color: colors.textSecondary,
+      flex: 1,
+    },
+    customReminderAdd: {
+      paddingHorizontal: 14,
+      paddingVertical: 7,
+      borderRadius: 8,
+      backgroundColor: colors.primary,
+    },
+    customReminderAddText: {
+      fontSize: 13,
+      color: colors.onPrimary,
+      fontWeight: '600',
     },
   })

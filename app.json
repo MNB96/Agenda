@@ -17,7 +17,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#FFFFFF"
+        "backgroundColor": "#FFF9EE"
       },
       "package": "com.agenda.personal",
       "permissions": [
@@ -28,6 +28,12 @@
     },
     "plugins": [
       "@react-native-community/datetimepicker",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "La app necesita tu ubicación para calcular el tiempo de viaje."
+        }
+      ],
       [
         "expo-notifications",
         {
