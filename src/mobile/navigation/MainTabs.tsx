@@ -1,6 +1,7 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
-import { GraduationCap, ListTodo, Plus, Settings } from 'lucide-react-native'
+import { GraduationCap, ListTodo, Settings } from 'lucide-react-native'
 import { Pressable, StyleSheet, View } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { AgendaScreen } from '../screens/AgendaScreen'
@@ -17,6 +18,7 @@ interface MainTabsProps {
 
 export const MainTabs = ({ onOpenQuickAdd, onOpenSettings, onOpenItemEditor }: MainTabsProps) => {
   const { colors } = useAppTheme()
+  const { bottom } = useSafeAreaInsets()
 
   return (
     <Tab.Navigator
@@ -25,9 +27,9 @@ export const MainTabs = ({ onOpenQuickAdd, onOpenSettings, onOpenItemEditor }: M
         headerTitleStyle: { fontSize: 22, fontWeight: '700', color: colors.text },
         headerTintColor: colors.text,
         tabBarStyle: {
-          height: 70,
+          height: 62 + bottom,
           paddingTop: 8,
-          paddingBottom: 8,
+          paddingBottom: 8 + bottom,
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
           borderTopWidth: 1,
@@ -57,14 +59,6 @@ export const MainTabs = ({ onOpenQuickAdd, onOpenSettings, onOpenItemEditor }: M
         name="Facultad"
         options={{
           tabBarIcon: ({ color, size }) => <GraduationCap color={color} size={size} />,
-          headerRight: () => (
-            <Pressable
-              onPress={onOpenQuickAdd}
-              style={[styles.headerButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
-            >
-              <Plus color={colors.textSecondary} size={18} />
-            </Pressable>
-          ),
         }}
       >
         {() => <AgendaScreen onOpenItemEditor={onOpenItemEditor} />}
