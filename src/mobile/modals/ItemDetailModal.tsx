@@ -36,12 +36,14 @@ import DateTimePicker from '@react-native-community/datetimepicker'
 import { format, isToday, parse } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { useItems } from '../../features/items/useItems'
-import { useSettings } from '../../features/settings/useSettings'
+import { useSettings, useLicenseUsages } from '../../features/settings/useSettings'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
 import type { ReminderConfig } from '../../domain/items/types'
 import { createId } from '../../utils/id'
 import { fetchTravelTime, getCurrentLocation } from '../../services/travelTime'
+import { detectCategoryFromText } from '../../services/parser/categoryDetector'
+import { isExamTask } from '../../services/parser/examDetector'
 
 interface ItemDetailModalProps {
   open: boolean
@@ -85,6 +87,7 @@ const formatReminderLabelDetail = (r: ReminderConfig): string => {
 export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps) => {
   const { items, createItem, updateItem, removeItem, toggleCompleted } = useItems()
   const { data: settings } = useSettings()
+  const { data: licenseUsages, saveUsage, deleteUsage } = useLicenseUsages()
   const { colors } = useAppTheme()
   const styles = useMemo(() => createStyles(colors), [colors])
   const insets = useSafeAreaInsets()
@@ -116,6 +119,8 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
   const [showCustomInput, setShowCustomInput] = useState(false)
   const [travelTimeLoading, setTravelTimeLoading] = useState(false)
   const [travelTimeResult, setTravelTimeResult] = useState<string | null>(null)
+  const [categorySuggestionDismissed, setCategorySuggestionDismissed] = useState(false)
+  const [studyTimeBefore, setStudyTimeBefore] = useState<'half' | 'full' | undefined>()
 
   const [showDatePicker, setShowDatePicker] = useState(false)
   const [showTimePicker, setShowTimePicker] = useState(false)
@@ -138,6 +143,8 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
     setShowCustomInput(false)
     setCustomMinutesText('')
     setTravelTimeResult(null)
+    setCategorySuggestionDismissed(false)
+    setStudyTimeBefore(item?.academicConfig?.studyTimeBefore)
   }, [open, item?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -172,11 +179,27 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
           categoryId,
           location: location || undefined,
           reminderConfig: reminders.length > 0 ? reminders : undefined,
+          academicConfig: studyTimeBefore ? { studyTimeBefore } : item?.academicConfig,
         },
       })
+
+      // Sync license usage
+      const existingUsage = (licenseUsages ?? []).find(u => u.itemId === item.id)
+      const days = studyTimeBefore === 'half' ? 0.5 : studyTimeBefore === 'full' ? 1 : undefined
+      if (days !== undefined) {
+        await saveUsage({
+          id: existingUsage?.id ?? createId(),
+          itemId: item.id,
+          date: scheduledDate ?? deadline ?? new Date().toISOString().slice(0, 10),
+          days,
+          note: title.trim(),
+        })
+      } else if (existingUsage) {
+        await deleteUsage(existingUsage.id)
+      }
     }
     onClose()
-  }, [item, title, description, important, scheduledDate, scheduledTime, deadline, categoryId, location, reminders, updateItem, onClose])
+  }, [item, title, description, important, scheduledDate, scheduledTime, deadline, categoryId, location, reminders, studyTimeBefore, licenseUsages, saveUsage, deleteUsage, updateItem, onClose])
 
   useEffect(() => {
     if (!open) return
@@ -235,6 +258,16 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
       setTravelTimeLoading(false)
     }
   }
+
+  const suggestedCategoryId = useMemo(() => {
+    if (categoryId || categorySuggestionDismissed) return undefined
+    return detectCategoryFromText(title, settings?.categories ?? [])
+  }, [title, categoryId, categorySuggestionDismissed, settings?.categories])
+
+  const showCategorySuggestion = Boolean(suggestedCategoryId)
+  const suggestedCategory = suggestedCategoryId
+    ? (settings?.categories ?? []).find(c => c.id === suggestedCategoryId)
+    : undefined
 
   if (!open) return null
 
@@ -329,6 +362,54 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
                     )
                   })}
                 </ScrollView>
+              </View>
+            )}
+
+            {/* Category auto-suggestion */}
+            {showCategorySuggestion && suggestedCategory && (
+              <View style={styles.categorySuggestionRow}>
+                <Text style={styles.categorySuggestionLabel}>
+                  ¿Categoría: <Text style={styles.categorySuggestionName}>{suggestedCategory.name}</Text>?
+                </Text>
+                <Pressable
+                  onPress={() => setCategoryId(suggestedCategoryId)}
+                  style={styles.categorySuggestionAccept}
+                  hitSlop={8}
+                >
+                  <Text style={styles.categorySuggestionAcceptText}>Sí</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => setCategorySuggestionDismissed(true)}
+                  hitSlop={8}
+                  style={{ marginLeft: 4 }}
+                >
+                  <X size={14} color={colors.textMuted} />
+                </Pressable>
+              </View>
+            )}
+
+            {/* Study time (only for exam tasks in facultad category) */}
+            {(categoryId === 'facultad' || suggestedCategoryId === 'facultad') && isExamTask(title) && (
+              <View style={styles.studyTimeRow}>
+                <Text style={styles.studyTimeLabel}>Día de estudio</Text>
+                <View style={styles.studyTimeChips}>
+                  {([
+                    { value: undefined, label: 'Ninguno' },
+                    { value: 'half' as const, label: '½ día laboral' },
+                    { value: 'full' as const, label: '1 día laboral' },
+                  ] as { value: 'half' | 'full' | undefined; label: string }[]).map(({ value, label }) => {
+                    const active = studyTimeBefore === value
+                    return (
+                      <Pressable
+                        key={label}
+                        onPress={() => setStudyTimeBefore(value)}
+                        style={[styles.studyTimeChip, active && { backgroundColor: colors.primary, borderColor: colors.primary }]}
+                      >
+                        <Text style={[styles.studyTimeChipText, active && { color: colors.onPrimary }]}>{label}</Text>
+                      </Pressable>
+                    )
+                  })}
+                </View>
               </View>
             )}
 
@@ -797,6 +878,61 @@ const createStyles = (colors: ThemeTokens) =>
       backgroundColor: colors.surface,
     },
     categoryChipText: {
+      fontSize: 13,
+      color: colors.textSecondary,
+      fontWeight: '500',
+    },
+    categorySuggestionRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginLeft: 36,
+      marginTop: -4,
+      marginBottom: 6,
+      gap: 6,
+    },
+    categorySuggestionLabel: {
+      fontSize: 13,
+      color: colors.textMuted,
+      flex: 1,
+    },
+    categorySuggestionName: {
+      color: colors.primary,
+      fontWeight: '600',
+    },
+    categorySuggestionAccept: {
+      backgroundColor: colors.primary,
+      borderRadius: 999,
+      paddingHorizontal: 10,
+      paddingVertical: 3,
+    },
+    categorySuggestionAcceptText: {
+      fontSize: 12,
+      color: colors.onPrimary,
+      fontWeight: '600',
+    },
+    studyTimeRow: {
+      paddingHorizontal: 4,
+      paddingVertical: 10,
+    },
+    studyTimeLabel: {
+      fontSize: 13,
+      color: colors.textMuted,
+      marginBottom: 8,
+      marginLeft: 2,
+    },
+    studyTimeChips: {
+      flexDirection: 'row',
+      gap: 8,
+    },
+    studyTimeChip: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 999,
+      paddingHorizontal: 12,
+      paddingVertical: 5,
+      backgroundColor: colors.surface,
+    },
+    studyTimeChipText: {
       fontSize: 13,
       color: colors.textSecondary,
       fontWeight: '500',

@@ -65,8 +65,8 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
 
   return (
     <Modal visible={open} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <View style={styles.sheet}>
+      <Pressable style={styles.backdrop} onPress={onClose}>
+        <Pressable style={styles.sheet} onPress={e => e.stopPropagation?.()}>
           <Text style={styles.title}>Ajustes</Text>
 
           <ScrollView showsVerticalScrollIndicator={false}>
@@ -151,33 +151,22 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
                   onValueChange={(value) => void saveSettings({ ...settings, remindersEnabled: value })}
                 />
               </View>
-              <TextInput
-                value={String(settings.defaultReminderMinutes)}
-                onChangeText={(value) =>
-                  void saveSettings({ ...settings, defaultReminderMinutes: Number(value) || 0 })
-                }
-                keyboardType="numeric"
-                style={styles.input}
-                placeholder="Minutos antes"
-                placeholderTextColor={colors.textMuted}
-              />
             </View>
 
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Licencias por examen</Text>
-              <Text style={styles.metaText}>
-                Usadas: {totalUsedDays} · Disponibles: {settings.availableExamLeaveDaysPerYear} · Restantes: {remaining}
-              </Text>
-              <TextInput
-                value={String(settings.availableExamLeaveDaysPerYear)}
-                onChangeText={(value) =>
-                  void saveSettings({ ...settings, availableExamLeaveDaysPerYear: Number(value) || 0 })
-                }
-                keyboardType="numeric"
-                style={styles.input}
-                placeholder="Dias disponibles por ano"
-                placeholderTextColor={colors.textMuted}
-              />
+              <View style={styles.inputWithUnit}>
+                <TextInput
+                  value={String(settings.availableExamLeaveDaysPerYear)}
+                  onChangeText={(value) =>
+                    void saveSettings({ ...settings, availableExamLeaveDaysPerYear: Number(value) || 0 })
+                  }
+                  keyboardType="numeric"
+                  style={[styles.input, { width: 60 }]}
+                  placeholderTextColor={colors.textMuted}
+                />
+                <Text style={styles.metaText}>días disponibles por año</Text>
+              </View>
             </View>
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Datos</Text>
@@ -219,8 +208,8 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
           <Pressable style={styles.closeButton} onPress={onClose}>
             <Text style={styles.closeButtonText}>Cerrar</Text>
           </Pressable>
-        </View>
-      </View>
+        </Pressable>
+      </Pressable>
     </Modal>
   )
 }
@@ -315,6 +304,12 @@ const createStyles = (colors: ThemeTokens) => StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 8,
+    marginTop: 8,
+  },
+  inputWithUnit: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
     marginTop: 8,
   },
   closeButton: {

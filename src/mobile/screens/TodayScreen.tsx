@@ -211,9 +211,29 @@ export const TodayScreen = ({ onOpenItemEditor }: TodayScreenProps) => {
         map[entry.section].push(entry)
       })
 
-    const result: [TodaySectionKey, TodayEntry[]][] = (['overdue', 'next', 'important', 'later'] as Array<ActiveSectionKey>)
-      .map((key): [TodaySectionKey, TodayEntry[]] => [key, map[key]])
-      .filter(([, entries]) => entries.length > 0)
+    const itemById = new Map(filteredItems.map(i => [i.id, i]))
+
+    const splitByDate = (bucket: ActiveSectionKey): [TodaySectionKey, TodayEntry[]][] => {
+      const byDate = new Map<string, TodayEntry[]>()
+      map[bucket].forEach(entry => {
+        let key = 'zzz-sin-fecha'
+        if (entry.kind === 'local') {
+          const it = itemById.get(entry.itemId)
+          key = it?.startDate ?? it?.deadline ?? 'zzz-sin-fecha'
+        }
+        if (!byDate.has(key)) byDate.set(key, [])
+        byDate.get(key)!.push(entry)
+      })
+      return Array.from(byDate.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([, entries]) => [bucket, entries])
+    }
+
+    const result: [TodaySectionKey, TodayEntry[]][] = []
+    if (map.overdue.length > 0) result.push(['overdue', map.overdue])
+    result.push(...splitByDate('next'))
+    if (map.important.length > 0) result.push(['important', map.important])
+    result.push(...splitByDate('later'))
 
     if (completedItems.length > 0) {
       const completedEntries: LocalEntry[] = completedItems.map((item) => ({
@@ -226,11 +246,10 @@ export const TodayScreen = ({ onOpenItemEditor }: TodayScreenProps) => {
     }
 
     return result
-  }, [colors, completedItems, googleEvents.data, scored, search])
+  }, [colors, completedItems, filteredItems, googleEvents.data, scored, search])
 
   return (
     <View style={styles.container}>
-      <Text style={styles.dateTitle}>{format(new Date(), 'EEEE d MMMM', { locale: es })}</Text>
       <TextInput
         placeholder="Buscar por titulo, categoria o ubicacion"
         placeholderTextColor={colors.textMuted}
@@ -239,6 +258,7 @@ export const TodayScreen = ({ onOpenItemEditor }: TodayScreenProps) => {
         style={styles.searchInput}
       />
 
+      <View style={styles.filtersWrapper}>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -300,10 +320,11 @@ export const TodayScreen = ({ onOpenItemEditor }: TodayScreenProps) => {
           )
         })}
       </ScrollView>
+      </View>
 
       <FlatList
         data={sections}
-        keyExtractor={([bucket]) => `section-${bucket}`}
+        keyExtractor={([bucket], index) => `section-${bucket}-${index}`}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
@@ -328,6 +349,7 @@ export const TodayScreen = ({ onOpenItemEditor }: TodayScreenProps) => {
                 const d = new Date(dateStr + 'T00:00:00')
                 return isToday(d) ? 'HOY' : format(d, "d 'de' MMMM", { locale: es })
               }
+              return 'Sin fecha'
             }
             const firstGoogle = entries.find((e): e is GoogleEntry => e.kind === 'google')
             if (firstGoogle) return firstGoogle.subtitle
@@ -411,15 +433,15 @@ const createStyles = (colors: ThemeTokens) =>
       color: colors.text,
       fontSize: 15,
     },
-    filtersScroller: {
+    filtersWrapper: {
       marginBottom: 14,
-      maxHeight: 46,
+      paddingVertical: 4,
     },
+    filtersScroller: {},
     filtersRow: {
       flexDirection: 'row',
       gap: 8,
       alignItems: 'center',
-      paddingVertical: 2,
       paddingRight: 12,
     },
     filterChip: {

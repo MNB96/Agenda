@@ -39,6 +39,7 @@ export interface AcademicConfig {
   licenseRequested?: boolean
   openReminderDaysBefore?: number[]
   closeReminderDaysBefore?: number[]
+  studyTimeBefore?: 'half' | 'full'
 }
 
 export interface DateWindow {

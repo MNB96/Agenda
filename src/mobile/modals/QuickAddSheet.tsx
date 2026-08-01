@@ -47,8 +47,10 @@ import {
 } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { parseQuickInput } from '../../services/parser/quickInputParser'
+import { detectCategoryFromText } from '../../services/parser/categoryDetector'
+import { isExamTask } from '../../services/parser/examDetector'
 import { useItems } from '../../features/items/useItems'
-import { useSettings } from '../../features/settings/useSettings'
+import { useSettings, useLicenseUsages } from '../../features/settings/useSettings'
 import type { Item, ReminderConfig, RepeatRule } from '../../domain/items/types'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
@@ -233,6 +235,7 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
   const isEditMode = Boolean(editingItemId)
   const { createItem, updateItem, removeItem, items, isSaving } = useItems()
   const { data: settings } = useSettings()
+  const { data: licenseUsages, saveUsage, deleteUsage } = useLicenseUsages()
   const { colors } = useAppTheme()
   const styles = useMemo(() => createStyles(colors), [colors])
   const insets = useSafeAreaInsets()
@@ -264,6 +267,8 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
   // NL dismissal flags (user tapped × on auto-detected chip)
   const [nlDateDismissed, setNlDateDismissed] = useState(false)
   const [nlTimeDismissed, setNlTimeDismissed] = useState(false)
+  const [nlCategoryDismissed, setNlCategoryDismissed] = useState(false)
+  const [studyTimeBefore, setStudyTimeBefore] = useState<'half' | 'full' | undefined>()
 
   // ── Date panel temp state (committed on "Listo") ──
   const [tempDate, setTempDate] = useState<string | undefined>()
@@ -311,6 +316,14 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
   const showNlDate = !isEditMode && !scheduledDate && !nlDateDismissed && Boolean(parsed?.inferred.startDate)
   const showNlTime = !isEditMode && !scheduledTime && !nlTimeDismissed && Boolean(parsed?.inferred.startTime)
 
+  // Category auto-detection
+  const suggestedCategoryId = useMemo(() => {
+    if (categoryId || nlCategoryDismissed || isEditMode) return undefined
+    return detectCategoryFromText(text, settings?.categories ?? [])
+  }, [text, categoryId, nlCategoryDismissed, isEditMode, settings?.categories])
+  const effectiveCategoryId = categoryId ?? suggestedCategoryId
+  const showNlCategory = Boolean(suggestedCategoryId) && !categoryId && !nlCategoryDismissed
+
   // Editing item reference
   const editingItem: Item | undefined = useMemo(
     () => (editingItemId ? items.find((i) => i.id === editingItemId) : undefined),
@@ -355,6 +368,8 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
       setCategoryId(undefined)
       setNlDateDismissed(false)
       setNlTimeDismissed(false)
+      setNlCategoryDismissed(false)
+      setStudyTimeBefore(undefined)
       setLocation(undefined)
       setLocationQuery('')
       setLocationSuggestions([])
@@ -459,18 +474,43 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
       repeatRule: repeatRule !== 'none' ? repeatRule : undefined,
       reminderConfig: reminders.length > 0 ? reminders : undefined,
       description: description.trim() || undefined,
-      categoryId,
+      categoryId: effectiveCategoryId,
       location: location || undefined,
+      academicConfig: studyTimeBefore ? { studyTimeBefore } : undefined,
     }
 
     if (isEditMode && editingItem) {
       await updateItem({ id: editingItem.id, patch: payload })
+      // Sync license usage for edit mode
+      const existingUsage = (licenseUsages ?? []).find(u => u.itemId === editingItem.id)
+      const days = studyTimeBefore === 'half' ? 0.5 : studyTimeBefore === 'full' ? 1 : undefined
+      if (days !== undefined) {
+        await saveUsage({
+          id: existingUsage?.id ?? createId(),
+          itemId: editingItem.id,
+          date: effectiveDate ?? effectiveDeadline ?? new Date().toISOString().slice(0, 10),
+          days,
+          note: title,
+        })
+      } else if (existingUsage) {
+        await deleteUsage(existingUsage.id)
+      }
     } else {
-      await createItem({
+      const created = await createItem({
         ...payload,
         dateWindow: parsed?.inferred.dateWindow,
         goalConfig: parsed?.inferred.goalConfig,
       })
+      if (studyTimeBefore && created) {
+        const days = studyTimeBefore === 'half' ? 0.5 : 1
+        await saveUsage({
+          id: createId(),
+          itemId: created.id,
+          date: effectiveDate ?? effectiveDeadline ?? new Date().toISOString().slice(0, 10),
+          days,
+          note: title,
+        })
+      }
     }
     onClose()
   }
@@ -696,7 +736,7 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
         )}
 
         {/* NL parser chips */}
-        {(showNlDate || showNlTime) && (
+        {(showNlDate || showNlTime || showNlCategory) && (
           <View style={styles.chipsRow}>
             {showNlDate && parsed?.inferred.startDate && (
               <NlChip
@@ -712,6 +752,38 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
                 colors={colors}
               />
             )}
+            {showNlCategory && suggestedCategoryId && (
+              <NlChip
+                label={`🏷 ${settings?.categories.find((c) => c.id === suggestedCategoryId)?.name ?? suggestedCategoryId}`}
+                onDismiss={() => setNlCategoryDismissed(true)}
+                colors={colors}
+              />
+            )}
+          </View>
+        )}
+
+        {/* Study time selector (facultad + exam keywords) */}
+        {effectiveCategoryId === 'facultad' && isExamTask(text) && (
+          <View style={styles.studyTimeRow}>
+            <Text style={styles.studyTimeLabel}>Día de estudio</Text>
+            <View style={styles.studyTimeChips}>
+              {([
+                { value: undefined, label: 'Ninguno' },
+                { value: 'half' as const, label: '½ día' },
+                { value: 'full' as const, label: '1 día' },
+              ] as { value: 'half' | 'full' | undefined; label: string }[]).map(({ value, label }) => {
+                const active = studyTimeBefore === value
+                return (
+                  <Pressable
+                    key={label}
+                    onPress={() => setStudyTimeBefore(value)}
+                    style={[styles.studyTimeChip, active && { backgroundColor: colors.primary, borderColor: colors.primary }]}
+                  >
+                    <Text style={[styles.studyTimeChipText, active && { color: colors.onPrimary }]}>{label}</Text>
+                  </Pressable>
+                )
+              })}
+            </View>
           </View>
         )}
 
@@ -1497,6 +1569,31 @@ const createStyles = (colors: ThemeTokens) =>
       flexWrap: 'wrap',
       gap: 6,
       marginBottom: 8,
+    },
+    studyTimeRow: {
+      marginBottom: 8,
+    },
+    studyTimeLabel: {
+      fontSize: 12,
+      color: colors.textMuted,
+      marginBottom: 6,
+    },
+    studyTimeChips: {
+      flexDirection: 'row',
+      gap: 6,
+    },
+    studyTimeChip: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 999,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      backgroundColor: colors.surface,
+    },
+    studyTimeChipText: {
+      fontSize: 12,
+      color: colors.textSecondary,
+      fontWeight: '500',
     },
     dateBadge: {
       flexDirection: 'row',

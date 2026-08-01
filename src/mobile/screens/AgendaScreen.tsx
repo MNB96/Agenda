@@ -1,230 +1,468 @@
-import { addMonths, format, parseISO, subMonths } from 'date-fns'
-import { useMemo, useState } from 'react'
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native'
-import { ChevronLeft, ChevronRight } from 'lucide-react-native'
-import { useGoogleEvents } from '../../features/calendar/useGoogleCalendar'
+import { differenceInCalendarDays, format, isPast, parseISO } from 'date-fns'
+import { es } from 'date-fns/locale'
+import { useMemo } from 'react'
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Bell, BookOpen, CheckCircle, Clock } from 'lucide-react-native'
 import { useItems } from '../../features/items/useItems'
-import type { Item } from '../../domain/items/types'
+import { useLicenseUsages, useSettings } from '../../features/settings/useSettings'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
+import { isExamTask } from '../../services/parser/examDetector'
+import type { Item } from '../../domain/items/types'
 
 interface AgendaScreenProps {
   onOpenItemEditor: (itemId: string) => void
 }
 
-const itemDate = (item: Item): string | undefined =>
-  item.startDate ?? item.deadline ?? item.dateWindow?.startDate ?? item.dateWindow?.endDate
+const fmtDate = (dateStr: string) =>
+  format(new Date(`${dateStr}T00:00:00`), "d 'de' MMMM", { locale: es })
 
-const resolveAgendaEntryColor = (
-  entry: { source: 'local' | 'google'; subtitle?: string },
-  colors: ThemeTokens,
-): string => {
-  if (entry.source === 'google') {
-    return colors.primary
-  }
-  const subtitle = entry.subtitle?.toLowerCase() ?? ''
-  if (subtitle.includes('urgente') || subtitle.includes('atras')) {
-    return colors.accentStrong
-  }
-  if (subtitle.includes('deadline') || subtitle.includes('fecha')) {
-    return colors.accent
-  }
-  if (subtitle.includes('meta') || subtitle.includes('objetivo')) {
-    return colors.cream
-  }
-  return colors.secondary
+const urgencyColor = (days: number, colors: ThemeTokens): string => {
+  if (days <= 3) return colors.danger
+  if (days <= 7) return '#F38630'
+  if (days <= 14) return colors.primary
+  return colors.textMuted
 }
 
+const studyLabel = (v: 'half' | 'full') => (v === 'half' ? '½ día' : '1 día')
+
 export const AgendaScreen = ({ onOpenItemEditor }: AgendaScreenProps) => {
-  const [month, setMonth] = useState(new Date())
   const { items } = useItems()
-  const googleEvents = useGoogleEvents(month)
+  const { data: settings } = useSettings()
+  const { data: licenseUsages } = useLicenseUsages()
   const { colors } = useAppTheme()
   const styles = useMemo(() => createStyles(colors), [colors])
 
-  const localEntries = useMemo(
-    () =>
-      items
-        .map((item) => {
-          const date = itemDate(item)
-          if (!date) {
-            return null
-          }
-          return {
-            id: item.id,
-            title: item.title,
-            source: 'local' as const,
-            date,
-            time: item.startTime,
-            subtitle: item.type === 'date_window' ? 'Ventana de fecha' : undefined,
-          }
-        })
-        .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry)),
-    [items],
-  )
+  const availableDays = settings?.availableExamLeaveDaysPerYear ?? 0
 
-  const externalEntries = useMemo(
-    () =>
-      (googleEvents.data ?? []).map((event) => ({
-        id: `google-${event.calendarId}-${event.id}`,
-        title: event.title,
-        source: 'google' as const,
-        date: event.startDateTime.slice(0, 10),
-        time: event.allDay ? undefined : format(parseISO(event.startDateTime), 'HH:mm'),
-        subtitle: event.location,
-      })),
-    [googleEvents.data],
-  )
+  const licenseStats = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10)
+    const usages = licenseUsages ?? []
+    const past = usages.filter(u => u.date < today).sort((a, b) => b.date.localeCompare(a.date))
+    const planned = usages.filter(u => u.date >= today).sort((a, b) => a.date.localeCompare(b.date))
+    const usedDays = past.reduce((acc, u) => acc + u.days, 0)
+    const plannedDays = planned.reduce((acc, u) => acc + u.days, 0)
+    const remaining = availableDays - usedDays - plannedDays
+    return { past, planned, usedDays, plannedDays, remaining }
+  }, [licenseUsages, availableDays])
 
-  const allEntries = [...localEntries, ...externalEntries].sort((a, b) =>
-    `${a.date} ${a.time ?? '00:00'}`.localeCompare(`${b.date} ${b.time ?? '00:00'}`),
-  )
+  const { semesterSummary, upcomingExams, otherFacultad, completedExams } = useMemo(() => {
+    const now = new Date()
+    const today = now.toISOString().slice(0, 10)
+    const m = now.getMonth() + 1
+    const y = now.getFullYear()
 
-  const grouped = allEntries.reduce<Record<string, typeof allEntries>>((acc, entry) => {
-    if (!acc[entry.date]) {
-      acc[entry.date] = []
+    let label: string, start: string, end: string
+    if (m >= 3 && m <= 7) {
+      label = `1er cuatrimestre ${y}`; start = `${y}-03-01`; end = `${y}-07-31`
+    } else if (m >= 8 && m <= 11) {
+      label = `2do cuatrimestre ${y}`; start = `${y}-08-01`; end = `${y}-11-30`
+    } else {
+      const ny = m === 12 ? y + 1 : y
+      label = `1er cuatrimestre ${ny}`; start = `${ny}-03-01`; end = `${ny}-07-31`
     }
-    acc[entry.date].push(entry)
-    return acc
-  }, {})
 
-  const dates = Object.keys(grouped)
+    const facultadItems = items.filter(i => i.categoryId === 'facultad')
+    const activeExams = facultadItems.filter(i => i.status === 'active' && isExamTask(i.title))
+    const semesterExams = activeExams.filter(i => {
+      const d = i.startDate ?? i.deadline; return d && d >= start && d <= end
+    })
+    const upcoming = semesterExams
+      .filter(i => (i.startDate ?? i.deadline ?? '') >= today)
+      .sort((a, b) => (a.startDate ?? a.deadline ?? '').localeCompare(b.startDate ?? b.deadline ?? ''))
 
-  return (
-    <View style={styles.container}>
-      <View style={styles.monthHeader}>
-        <Pressable style={styles.monthButton} onPress={() => setMonth((current) => subMonths(current, 1))}>
-          <ChevronLeft size={16} color={colors.textSecondary} />
-        </Pressable>
-        <Text style={styles.monthTitle}>{format(month, 'MMMM yyyy')}</Text>
-        <Pressable style={styles.monthButton} onPress={() => setMonth((current) => addMonths(current, 1))}>
-          <ChevronRight size={16} color={colors.textSecondary} />
-        </Pressable>
-      </View>
+    const next = upcoming[0]
+    const nextDays = next
+      ? differenceInCalendarDays(new Date(`${next.startDate ?? next.deadline}T00:00:00`), now)
+      : null
 
-      <FlatList
-        data={dates}
-        keyExtractor={(date) => date}
-        renderItem={({ item: date }) => (
-          <View style={styles.dayGroup}>
-            <View style={styles.dayTitleRow}>
-              <Text style={styles.dayTitle}>{new Date(`${date}T00:00:00`).toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })}</Text>
-              {date === new Date().toISOString().slice(0, 10) ? <View style={styles.todayBadge}><Text style={styles.todayBadgeText}>Hoy</Text></View> : null}
-            </View>
-            {grouped[date].map((entry) => (
-              <Pressable
-                key={entry.id}
-                style={styles.entryCard}
-                onPress={() => (entry.source === 'local' ? onOpenItemEditor(entry.id) : undefined)}
-              >
-                <View style={styles.entryRow}>
-                  <View
-                    style={[
-                      styles.entryDot,
-                      {
-                        backgroundColor: resolveAgendaEntryColor(entry, colors),
-                      },
-                    ]}
-                  />
-                  <View style={styles.entryContent}>
-                    <Text style={styles.entryTitle}>{entry.title}</Text>
-                    <Text style={styles.entryMeta}>
-                      {entry.time ? `${entry.time} · ` : ''}
-                      {entry.subtitle || (entry.source === 'google' ? 'Google Calendar' : 'Agenda')}
-                    </Text>
-                  </View>
-                </View>
-              </Pressable>
-            ))}
+    const otherFacultad = facultadItems
+      .filter(i => i.status === 'active' && !isExamTask(i.title))
+      .sort((a, b) => {
+        const da = a.startDate ?? a.deadline ?? 'zzz'
+        const db = b.startDate ?? b.deadline ?? 'zzz'
+        return da.localeCompare(db)
+      })
+
+    const completedExams = facultadItems
+      .filter(i => i.status === 'completed' && isExamTask(i.title))
+      .sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''))
+      .slice(0, 5)
+
+    return {
+      semesterSummary: { label, total: semesterExams.length, upcoming, next, nextDays },
+      upcomingExams: upcoming,
+      otherFacultad,
+      completedExams,
+    }
+  }, [items])
+
+  const renderExamRow = (exam: Item, i: number) => {
+    const examDate = exam.startDate ?? exam.deadline
+    const days = examDate
+      ? differenceInCalendarDays(new Date(`${examDate}T00:00:00`), new Date())
+      : null
+    const dayColor = days !== null ? urgencyColor(days, colors) : colors.textMuted
+    const study = exam.academicConfig?.studyTimeBefore
+    const hasReminders = (exam.reminderConfig?.length ?? 0) > 0
+
+    return (
+      <Pressable key={exam.id} style={[styles.examRow, i > 0 && styles.examRowBorder]} onPress={() => onOpenItemEditor(exam.id)}>
+        <View style={[styles.examUrgencyBar, { backgroundColor: dayColor }]} />
+        <View style={styles.examContent}>
+          <Text style={styles.examTitle} numberOfLines={1}>{exam.title}</Text>
+          <View style={styles.examMeta}>
+            {examDate && (
+              <View style={styles.examMetaItem}>
+                <Clock size={11} color={colors.textMuted} />
+                <Text style={styles.examMetaText}>{fmtDate(examDate)}</Text>
+              </View>
+            )}
+            {study && (
+              <View style={styles.examMetaItem}>
+                <BookOpen size={11} color={colors.textMuted} />
+                <Text style={styles.examMetaText}>{studyLabel(study)}</Text>
+              </View>
+            )}
+            {hasReminders && (
+              <View style={styles.examMetaItem}>
+                <Bell size={11} color={colors.textMuted} />
+                <Text style={styles.examMetaText}>{exam.reminderConfig!.length}</Text>
+              </View>
+            )}
+          </View>
+        </View>
+        {days !== null && (
+          <View style={[styles.daysBadge, { borderColor: dayColor }]}>
+            <Text style={[styles.daysNumber, { color: dayColor }]}>{days}</Text>
+            <Text style={[styles.daysLabel, { color: dayColor }]}>días</Text>
           </View>
         )}
-      />
-    </View>
+      </Pressable>
+    )
+  }
+
+  return (
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+
+      {/* Resumen del cuatrimestre */}
+      <View style={styles.summaryCard}>
+        <Text style={styles.summaryTitle}>{semesterSummary.label}</Text>
+        {semesterSummary.next ? (
+          <View style={styles.summaryNextRow}>
+            <View style={styles.summaryNextDot} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.summaryNextLabel}>Próximo examen</Text>
+              <Text style={styles.summaryNextExam} numberOfLines={1}>{semesterSummary.next.title}</Text>
+            </View>
+            {semesterSummary.nextDays !== null && (
+              <View style={styles.summaryDaysBadge}>
+                <Text style={styles.summaryDaysNumber}>{semesterSummary.nextDays}</Text>
+                <Text style={styles.summaryDaysLabel}>días</Text>
+              </View>
+            )}
+          </View>
+        ) : (
+          <Text style={styles.summaryEmpty}>Sin exámenes próximos cargados</Text>
+        )}
+        <View style={styles.summaryFooter}>
+          <Text style={styles.summaryFooterText}>
+            <Text style={styles.summaryFooterValue}>{semesterSummary.total}</Text>
+            {semesterSummary.total === 1 ? ' examen' : ' exámenes'}
+          </Text>
+          {availableDays > 0 && (
+            <>
+              <Text style={styles.summaryFooterDot}>·</Text>
+              <Text style={[styles.summaryFooterText, licenseStats.remaining < 1 && { color: colors.danger }]}>
+                <Text style={styles.summaryFooterValue}>{licenseStats.remaining}</Text> licencias libres
+              </Text>
+            </>
+          )}
+        </View>
+      </View>
+
+      {/* Licencias */}
+      {availableDays > 0 && (
+        <>
+          <Text style={styles.sectionHeader}>Licencias por examen</Text>
+          <View style={styles.card}>
+
+            {/* Barra de progreso */}
+            <View style={styles.licenseBarSection}>
+              <View style={styles.licenseBarTrack}>
+                {licenseStats.usedDays > 0 && (
+                  <View style={[styles.licenseBarFill, {
+                    flex: licenseStats.usedDays / availableDays,
+                    backgroundColor: colors.danger,
+                  }]} />
+                )}
+                {licenseStats.plannedDays > 0 && (
+                  <View style={[styles.licenseBarFill, {
+                    flex: licenseStats.plannedDays / availableDays,
+                    backgroundColor: '#F38630',
+                  }]} />
+                )}
+                {licenseStats.remaining > 0 && (
+                  <View style={[styles.licenseBarFill, {
+                    flex: Math.max(licenseStats.remaining, 0) / availableDays,
+                    backgroundColor: colors.border,
+                  }]} />
+                )}
+              </View>
+              <View style={styles.licenseBarLegend}>
+                {licenseStats.usedDays > 0 && (
+                  <View style={styles.legendItem}>
+                    <View style={[styles.legendDot, { backgroundColor: colors.danger }]} />
+                    <Text style={styles.legendText}>{licenseStats.usedDays} usadas</Text>
+                  </View>
+                )}
+                {licenseStats.plannedDays > 0 && (
+                  <View style={styles.legendItem}>
+                    <View style={[styles.legendDot, { backgroundColor: '#F38630' }]} />
+                    <Text style={styles.legendText}>{licenseStats.plannedDays} planificadas</Text>
+                  </View>
+                )}
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: colors.border }]} />
+                  <Text style={[styles.legendText, licenseStats.remaining < 1 && { color: colors.danger }]}>
+                    {licenseStats.remaining} libres
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Planificadas (próximas) */}
+            {licenseStats.planned.length > 0 && (
+              <View style={styles.licenseListSection}>
+                <Text style={styles.licenseListTitle}>Planificadas</Text>
+                {licenseStats.planned.map((u, i) => (
+                  <View key={u.id} style={[styles.licenseRow, i > 0 && styles.licenseRowBorder]}>
+                    <View style={[styles.licenseDot, { backgroundColor: '#F38630' }]} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.licenseNote} numberOfLines={1}>{u.note ?? '—'}</Text>
+                      <Text style={styles.licenseDate}>{fmtDate(u.date)}</Text>
+                    </View>
+                    <Text style={styles.licenseDays}>{u.days === 0.5 ? '½ día' : `${u.days} día${u.days !== 1 ? 's' : ''}`}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* Usadas (pasadas) */}
+            {licenseStats.past.length > 0 && (
+              <View style={styles.licenseListSection}>
+                <Text style={styles.licenseListTitle}>Usadas</Text>
+                {licenseStats.past.map((u, i) => (
+                  <View key={u.id} style={[styles.licenseRow, i > 0 && styles.licenseRowBorder]}>
+                    <View style={[styles.licenseDot, { backgroundColor: colors.danger }]} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.licenseNote, { color: colors.textMuted }]} numberOfLines={1}>{u.note ?? '—'}</Text>
+                      <Text style={styles.licenseDate}>{fmtDate(u.date)}</Text>
+                    </View>
+                    <Text style={[styles.licenseDays, { color: colors.textMuted }]}>{u.days === 0.5 ? '½ día' : `${u.days} día${u.days !== 1 ? 's' : ''}`}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {licenseStats.past.length === 0 && licenseStats.planned.length === 0 && (
+              <View style={styles.licenseEmpty}>
+                <Text style={styles.summaryEmpty}>Ninguna licencia registrada aún.</Text>
+                <Text style={[styles.summaryEmpty, { marginTop: 2 }]}>Seteá el "Día de estudio" en un examen para planificar.</Text>
+              </View>
+            )}
+
+          </View>
+        </>
+      )}
+
+      {/* Exámenes próximos */}
+      {upcomingExams.length > 0 && (
+        <>
+          <Text style={styles.sectionHeader}>Exámenes</Text>
+          <View style={styles.card}>
+            {upcomingExams.map((exam, i) => renderExamRow(exam, i))}
+          </View>
+        </>
+      )}
+
+      {/* Otras tareas de facultad */}
+      {otherFacultad.length > 0 && (
+        <>
+          <Text style={styles.sectionHeader}>Otras tareas</Text>
+          <View style={styles.card}>
+            {otherFacultad.map((item, i) => {
+              const dateStr = item.startDate ?? item.deadline
+              const today = new Date().toISOString().slice(0, 10)
+              const isOverdue = !!dateStr && dateStr < today
+              return (
+                <Pressable key={item.id} style={[styles.taskRow, i > 0 && styles.taskRowBorder]} onPress={() => onOpenItemEditor(item.id)}>
+                  <View style={[styles.taskDot, isOverdue && { backgroundColor: colors.danger }]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.taskTitle, isOverdue && { color: colors.danger }]} numberOfLines={1}>{item.title}</Text>
+                    {dateStr && (
+                      <Text style={[styles.taskDate, isOverdue && { color: colors.danger }]}>
+                        {isOverdue ? 'Venció ' : ''}{fmtDate(dateStr)}
+                      </Text>
+                    )}
+                  </View>
+                  {isOverdue && (
+                    <View style={styles.overdueBadge}>
+                      <Text style={styles.overdueBadgeText}>Vencida</Text>
+                    </View>
+                  )}
+                </Pressable>
+              )
+            })}
+          </View>
+        </>
+      )}
+
+      {/* Exámenes rendidos */}
+      {completedExams.length > 0 && (
+        <>
+          <Text style={styles.sectionHeader}>Rendidos</Text>
+          <View style={styles.card}>
+            {completedExams.map((exam, i) => (
+              <View key={exam.id} style={[styles.taskRow, i > 0 && styles.taskRowBorder]}>
+                <CheckCircle size={14} color={colors.textMuted} />
+                <Text style={styles.completedTitle} numberOfLines={1}>{exam.title}</Text>
+              </View>
+            ))}
+          </View>
+        </>
+      )}
+
+    </ScrollView>
   )
 }
 
 const createStyles = (colors: ThemeTokens) => StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-    paddingHorizontal: 14,
-    paddingTop: 10,
-  },
-  monthHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  monthButton: {
+  container: { flex: 1, backgroundColor: colors.background, paddingHorizontal: 14, paddingTop: 10 },
+  content: { paddingBottom: 32 },
+
+  // Summary card
+  summaryCard: {
     backgroundColor: colors.surface,
-    borderRadius: 999,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: 8,
+    padding: 14,
+    marginBottom: 16,
+    gap: 10,
   },
-  monthTitle: {
-    fontSize: 22,
+  summaryTitle: {
+    fontSize: 11,
     fontWeight: '700',
-    textTransform: 'capitalize',
-    color: colors.text,
-  },
-  dayGroup: {
-    backgroundColor: colors.surface,
-    paddingVertical: 10,
-    marginBottom: 12,
-  },
-  dayTitleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  dayTitle: {
-    fontSize: 13,
-    textTransform: 'uppercase',
     color: colors.textMuted,
-    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
   },
-  todayBadge: {
-    backgroundColor: colors.primarySoft,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  todayBadgeText: {
-    color: colors.onPrimary,
+  summaryNextRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  summaryNextDot: { width: 8, height: 8, borderRadius: 999, backgroundColor: colors.primary },
+  summaryNextLabel: { fontSize: 11, color: colors.primary, fontWeight: '600', marginBottom: 1 },
+  summaryNextExam: { fontSize: 15, fontWeight: '600', color: colors.text },
+  summaryDaysBadge: { backgroundColor: colors.primarySoft, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4, alignItems: 'center' },
+  summaryDaysNumber: { fontSize: 18, fontWeight: '700', color: colors.primary, lineHeight: 22 },
+  summaryDaysLabel: { fontSize: 10, color: colors.primary, fontWeight: '500' },
+  summaryEmpty: { fontSize: 13, color: colors.textMuted, fontStyle: 'italic' },
+  summaryFooter: { flexDirection: 'row', alignItems: 'center', gap: 6, borderTopWidth: 1, borderColor: colors.border, paddingTop: 8 },
+  summaryFooterText: { fontSize: 12, color: colors.textMuted },
+  summaryFooterValue: { fontWeight: '700', color: colors.textSecondary },
+  summaryFooterDot: { fontSize: 12, color: colors.border },
+
+  // Section
+  sectionHeader: {
     fontSize: 12,
     fontWeight: '700',
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
+    marginBottom: 8,
+    marginLeft: 2,
   },
-  entryCard: {
-    borderBottomWidth: 1,
-    borderColor: colors.border,
-    paddingVertical: 14,
+  card: {
     backgroundColor: colors.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: 16,
+    overflow: 'hidden',
   },
-  entryRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 14,
+
+  // Exam rows
+  examRow: { flexDirection: 'row', alignItems: 'center', padding: 12, gap: 10 },
+  examRowBorder: { borderTopWidth: 1, borderColor: colors.border },
+  examUrgencyBar: { width: 3, height: 36, borderRadius: 2 },
+  examContent: { flex: 1 },
+  examTitle: { fontSize: 15, fontWeight: '600', color: colors.text, marginBottom: 4 },
+  examMeta: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  examMetaItem: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  examMetaText: { fontSize: 11, color: colors.textMuted },
+  daysBadge: {
+    borderWidth: 1.5,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    alignItems: 'center',
+    minWidth: 44,
   },
-  entryContent: {
-    flex: 1,
-  },
-  entryDot: {
-    width: 10,
+  daysNumber: { fontSize: 16, fontWeight: '700', lineHeight: 20 },
+  daysLabel: { fontSize: 9, fontWeight: '500' },
+
+  // Task rows
+  taskRow: { flexDirection: 'row', alignItems: 'center', padding: 12, gap: 10 },
+  taskRowBorder: { borderTopWidth: 1, borderColor: colors.border },
+  taskDot: { width: 6, height: 6, borderRadius: 999, backgroundColor: colors.border },
+  taskTitle: { fontSize: 14, fontWeight: '500', color: colors.text },
+  taskDate: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  completedTitle: { fontSize: 14, color: colors.textMuted, textDecorationLine: 'line-through', flex: 1, marginLeft: 6 },
+  // License card
+  licenseBarSection: { padding: 14, gap: 10 },
+  licenseBarTrack: {
     height: 10,
     borderRadius: 999,
-    marginTop: 5,
+    flexDirection: 'row',
+    overflow: 'hidden',
+    backgroundColor: colors.border,
   },
-  entryTitle: {
-    fontSize: 17,
-    fontWeight: '500',
-    color: colors.text,
+  licenseBarFill: { height: 10 },
+  licenseBarLegend: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  legendDot: { width: 8, height: 8, borderRadius: 999 },
+  legendText: { fontSize: 12, color: colors.textSecondary },
+  licenseListSection: {
+    borderTopWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 0,
   },
-  entryMeta: {
-    marginTop: 3,
-    fontSize: 14,
-    color: colors.textSecondary,
+  licenseListTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: 8,
+  },
+  licenseRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, gap: 10 },
+  licenseRowBorder: { borderTopWidth: 1, borderColor: colors.border },
+  licenseDot: { width: 8, height: 8, borderRadius: 999 },
+  licenseNote: { fontSize: 14, fontWeight: '500', color: colors.text },
+  licenseDate: { fontSize: 11, color: colors.textMuted, marginTop: 1 },
+  licenseDays: { fontSize: 13, fontWeight: '600', color: colors.text },
+  licenseEmpty: { padding: 14, gap: 2 },
+
+  overdueBadge: {
+    backgroundColor: colors.danger + '20',
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  overdueBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.danger,
   },
 })

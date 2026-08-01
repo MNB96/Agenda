@@ -1,6 +1,8 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
-import { CalendarDays, Plus, SunMedium } from 'lucide-react-native'
+import { GraduationCap, ListTodo, Plus, Settings } from 'lucide-react-native'
 import { Pressable, StyleSheet, View } from 'react-native'
+import { format } from 'date-fns'
+import { es } from 'date-fns/locale'
 import { AgendaScreen } from '../screens/AgendaScreen'
 import { TodayScreen } from '../screens/TodayScreen'
 import { useAppTheme } from '../theme/useAppTheme'
@@ -35,15 +37,16 @@ export const MainTabs = ({ onOpenQuickAdd, onOpenSettings, onOpenItemEditor }: M
       }}
     >
       <Tab.Screen
-        name="Hoy"
+        name="Tareas"
         options={{
-          tabBarIcon: ({ color, size }) => <SunMedium color={color} size={size} />,
+          headerTitle: format(new Date(), "EEEE d 'de' MMMM", { locale: es }).replace(/^\w/, c => c.toUpperCase()),
+          tabBarIcon: ({ color, size }) => <ListTodo color={color} size={size} />,
           headerRight: () => (
             <Pressable
               onPress={onOpenSettings}
               style={[styles.headerButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
             >
-              <CalendarDays color={colors.textSecondary} size={18} />
+              <Settings color={colors.textSecondary} size={18} />
             </Pressable>
           ),
         }}
@@ -51,9 +54,9 @@ export const MainTabs = ({ onOpenQuickAdd, onOpenSettings, onOpenItemEditor }: M
         {() => <TodayScreen onOpenItemEditor={onOpenItemEditor} />}
       </Tab.Screen>
       <Tab.Screen
-        name="Agenda"
+        name="Facultad"
         options={{
-          tabBarIcon: ({ color, size }) => <CalendarDays color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <GraduationCap color={color} size={size} />,
           headerRight: () => (
             <Pressable
               onPress={onOpenQuickAdd}
