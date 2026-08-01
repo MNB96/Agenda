@@ -1,5 +1,6 @@
 ﻿import { useMemo, useState } from 'react'
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import Swipeable from 'react-native-gesture-handler/Swipeable'
 import { differenceInCalendarDays, differenceInHours, format, isToday, parseISO, startOfDay } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { CalendarDays } from 'lucide-react-native'
@@ -180,6 +181,18 @@ export const TodayScreen = ({ onOpenItemEditor }: TodayScreenProps) => {
   }, [activeCategory, items, search])
 
   const scored = scoreItemsForToday(filteredItems)
+
+  const subtaskMap = useMemo(() => {
+    const map = new Map<string, { total: number; done: number }>()
+    items.filter(i => i.parentId).forEach(sub => {
+      const existing = map.get(sub.parentId!) ?? { total: 0, done: 0 }
+      map.set(sub.parentId!, {
+        total: existing.total + 1,
+        done: existing.done + (sub.status === 'completed' ? 1 : 0),
+      })
+    })
+    return map
+  }, [items])
 
   const localItemsById = useMemo(
     () => new Map([...filteredItems, ...completedItems].map((item) => [item.id, item])),
@@ -374,18 +387,40 @@ export const TodayScreen = ({ onOpenItemEditor }: TodayScreenProps) => {
                   const days = differenceInCalendarDays(startOfDay(new Date()), startOfDay(new Date(localItem.startDate + 'T00:00:00')))
                   return days > 0 ? formatOverdueDuration(localItem.startDate) : undefined
                 })()
-                return (
+                const subtaskInfo = subtaskMap.get(localItem.id)
+                const isActiveItem = localItem.status !== 'completed'
+                const card = (
                   <ItemCard
                     key={localItem.id}
                     item={localItem}
                     categoryName={settings?.categories.find((category) => category.id === localItem.categoryId)?.name}
                     overdueDeadlineLabel={overdueDeadlineLabel}
                     overdueLabel={overdueLabel}
+                    subtaskTotal={subtaskInfo?.total}
+                    subtaskDone={subtaskInfo?.done}
                     onToggle={async (item) => {
                       await toggleCompleted(item)
                     }}
                     onOpen={() => onOpenItemEditor(localItem.id)}
                   />
+                )
+                if (!isActiveItem) return card
+                return (
+                  <Swipeable
+                    key={localItem.id}
+                    friction={2}
+                    rightThreshold={80}
+                    renderRightActions={() => (
+                      <View style={styles.swipeCompleteAction}>
+                        <Text style={styles.swipeCompleteText}>✓</Text>
+                      </View>
+                    )}
+                    onSwipeableOpen={(dir) => {
+                      if (dir === 'right') void toggleCompleted(localItem)
+                    }}
+                  >
+                    {card}
+                  </Swipeable>
                 )
               }
 
@@ -510,4 +545,15 @@ const createStyles = (colors: ThemeTokens) =>
     },
     emptyTitle: { color: colors.text, fontSize: 16, fontWeight: '600' },
     emptySubtitle: { color: colors.textSecondary, fontSize: 14, marginTop: 4, textAlign: 'center' },
+    swipeCompleteAction: {
+      backgroundColor: colors.success,
+      justifyContent: 'center',
+      alignItems: 'center',
+      width: 72,
+    },
+    swipeCompleteText: {
+      color: '#FFFFFF',
+      fontSize: 22,
+      fontWeight: '700',
+    },
   })

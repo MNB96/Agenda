@@ -40,6 +40,7 @@ export interface AcademicConfig {
   openReminderDaysBefore?: number[]
   closeReminderDaysBefore?: number[]
   studyTimeBefore?: 'half' | 'full'
+  grade?: number
 }
 
 export interface DateWindow {

@@ -323,12 +323,26 @@ export const AgendaScreen = ({ onOpenItemEditor }: AgendaScreenProps) => {
         <>
           <Text style={styles.sectionHeader}>Rendidos</Text>
           <View style={styles.card}>
-            {completedExams.map((exam, i) => (
-              <View key={exam.id} style={[styles.taskRow, i > 0 && styles.taskRowBorder]}>
-                <CheckCircle size={14} color={colors.textMuted} />
-                <Text style={styles.completedTitle} numberOfLines={1}>{exam.title}</Text>
-              </View>
-            ))}
+            {completedExams.map((exam, i) => {
+              const grade = exam.academicConfig?.grade
+              const passed = grade !== undefined ? grade >= 4 : undefined
+              return (
+                <Pressable key={exam.id} style={[styles.taskRow, i > 0 && styles.taskRowBorder]} onPress={() => onOpenItemEditor(exam.id)}>
+                  <CheckCircle size={14} color={colors.textMuted} />
+                  <Text style={styles.completedTitle} numberOfLines={1}>{exam.title}</Text>
+                  {grade !== undefined && (
+                    <View style={[styles.gradeBadge, {
+                      backgroundColor: (passed ? colors.success : colors.danger) + '20',
+                      borderColor: (passed ? colors.success : colors.danger) + '55',
+                    }]}>
+                      <Text style={[styles.gradeBadgeText, { color: passed ? colors.success : colors.danger }]}>
+                        {passed ? `${grade} ✓` : `${grade} — Recuperar`}
+                      </Text>
+                    </View>
+                  )}
+                </Pressable>
+              )
+            })}
           </View>
         </>
       )}
@@ -464,5 +478,15 @@ const createStyles = (colors: ThemeTokens) => StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     color: colors.danger,
+  },
+  gradeBadge: {
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  gradeBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
 })

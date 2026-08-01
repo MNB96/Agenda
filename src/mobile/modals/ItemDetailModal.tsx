@@ -121,6 +121,7 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
   const [travelTimeResult, setTravelTimeResult] = useState<string | null>(null)
   const [categorySuggestionDismissed, setCategorySuggestionDismissed] = useState(false)
   const [studyTimeBefore, setStudyTimeBefore] = useState<'half' | 'full' | undefined>()
+  const [gradeText, setGradeText] = useState('')
 
   const [showDatePicker, setShowDatePicker] = useState(false)
   const [showTimePicker, setShowTimePicker] = useState(false)
@@ -145,6 +146,7 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
     setTravelTimeResult(null)
     setCategorySuggestionDismissed(false)
     setStudyTimeBefore(item?.academicConfig?.studyTimeBefore)
+    setGradeText(item?.academicConfig?.grade !== undefined ? String(item.academicConfig.grade) : '')
   }, [open, item?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -179,7 +181,15 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
           categoryId,
           location: location || undefined,
           reminderConfig: reminders.length > 0 ? reminders : undefined,
-          academicConfig: studyTimeBefore ? { studyTimeBefore } : item?.academicConfig,
+          academicConfig: (() => {
+            const ac = { ...(item?.academicConfig ?? {}) }
+            if (studyTimeBefore !== undefined) ac.studyTimeBefore = studyTimeBefore
+            else delete ac.studyTimeBefore
+            const grade = gradeText.trim() ? parseInt(gradeText.trim(), 10) : undefined
+            if (grade !== undefined && !isNaN(grade)) ac.grade = grade
+            else delete ac.grade
+            return Object.keys(ac).length > 0 ? ac : undefined
+          })(),
         },
       })
 
@@ -199,7 +209,7 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
       }
     }
     onClose()
-  }, [item, title, description, important, scheduledDate, scheduledTime, deadline, categoryId, location, reminders, studyTimeBefore, licenseUsages, saveUsage, deleteUsage, updateItem, onClose])
+  }, [item, title, description, important, scheduledDate, scheduledTime, deadline, categoryId, location, reminders, studyTimeBefore, gradeText, licenseUsages, saveUsage, deleteUsage, updateItem, onClose])
 
   useEffect(() => {
     if (!open) return
@@ -409,6 +419,44 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
                       </Pressable>
                     )
                   })}
+                </View>
+              </View>
+            )}
+
+            {/* Grade (only for exam tasks in facultad) */}
+            {(categoryId === 'facultad' || suggestedCategoryId === 'facultad') && isExamTask(title) && (
+              <View style={styles.gradeRow}>
+                <Text style={styles.studyTimeLabel}>Nota del examen</Text>
+                <View style={styles.gradeInputRow}>
+                  <TextInput
+                    value={gradeText}
+                    onChangeText={(text) => {
+                      const digits = text.replace(/[^0-9]/g, '')
+                      const n = parseInt(digits, 10)
+                      if (digits === '') { setGradeText(''); return }
+                      setGradeText(String(Math.min(10, Math.max(1, n))))
+                    }}
+                    keyboardType="numeric"
+                    style={styles.gradeInput}
+                    placeholder="1-10"
+                    placeholderTextColor={colors.textMuted}
+                    maxLength={2}
+                    selectionColor={colors.primary}
+                  />
+                  {gradeText.trim() !== '' && (() => {
+                    const g = parseInt(gradeText, 10)
+                    const passed = !isNaN(g) && g >= 4
+                    return (
+                      <View style={[styles.gradeResultBadge, {
+                        backgroundColor: (passed ? colors.success : colors.danger) + '22',
+                        borderColor: (passed ? colors.success : colors.danger) + '55',
+                      }]}>
+                        <Text style={[styles.gradeResultText, { color: passed ? colors.success : colors.danger }]}>
+                          {passed ? 'Aprobado' : 'Recuperar'}
+                        </Text>
+                      </View>
+                    )
+                  })()}
                 </View>
               </View>
             )}
@@ -1145,6 +1193,39 @@ const createStyles = (colors: ThemeTokens) =>
     customReminderAddText: {
       fontSize: 13,
       color: colors.onPrimary,
+      fontWeight: '600',
+    },
+    gradeRow: {
+      paddingHorizontal: 4,
+      paddingVertical: 10,
+    },
+    gradeInputRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      marginTop: 4,
+    },
+    gradeInput: {
+      borderWidth: 1,
+      borderColor: colors.borderStrong,
+      backgroundColor: colors.surfaceSecondary,
+      color: colors.text,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      fontSize: 16,
+      fontWeight: '600',
+      width: 72,
+      textAlign: 'center',
+    } as object,
+    gradeResultBadge: {
+      borderWidth: 1,
+      borderRadius: 999,
+      paddingHorizontal: 12,
+      paddingVertical: 5,
+    },
+    gradeResultText: {
+      fontSize: 13,
       fontWeight: '600',
     },
   })

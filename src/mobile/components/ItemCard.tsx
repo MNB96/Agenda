@@ -10,11 +10,13 @@ interface ItemCardProps {
   categoryName?: string
   overdueLabel?: string
   overdueDeadlineLabel?: string
+  subtaskTotal?: number
+  subtaskDone?: number
   onToggle?: (item: Item) => Promise<void>
   onOpen?: (item: Item) => void
 }
 
-export const ItemCard = ({ item, categoryName, overdueLabel, overdueDeadlineLabel, onToggle, onOpen }: ItemCardProps) => {
+export const ItemCard = ({ item, categoryName, overdueLabel, overdueDeadlineLabel, subtaskTotal, subtaskDone, onToggle, onOpen }: ItemCardProps) => {
   const { colors } = useAppTheme()
   const styles = useMemo(() => createStyles(colors), [colors])
 
@@ -35,7 +37,14 @@ export const ItemCard = ({ item, categoryName, overdueLabel, overdueDeadlineLabe
 
         <View style={styles.content}>
           <View style={styles.titleRow}>
-            <Text style={[styles.title, item.status === 'completed' ? styles.done : undefined]}>{item.title}</Text>
+            <Text style={[styles.title, item.status === 'completed' ? styles.done : undefined, { flex: 1 }]}>{item.title}</Text>
+            {(subtaskTotal ?? 0) > 0 && (
+              <View style={[styles.subtaskBadge, subtaskDone === subtaskTotal && { backgroundColor: colors.success + '22', borderColor: colors.success + '55' }]}>
+                <Text style={[styles.subtaskBadgeText, subtaskDone === subtaskTotal && { color: colors.success }]}>
+                  {subtaskDone}/{subtaskTotal}
+                </Text>
+              </View>
+            )}
           </View>
           {overdueDeadlineLabel ? (
             <Text style={styles.overdueDeadlineLabel}>{overdueDeadlineLabel}</Text>
@@ -152,5 +161,20 @@ const createStyles = (colors: ThemeTokens) =>
       fontSize: 14,
       color: colors.textMuted,
       marginTop: 3,
+    },
+    subtaskBadge: {
+      borderWidth: 1,
+      borderColor: colors.borderStrong,
+      borderRadius: 999,
+      paddingHorizontal: 7,
+      paddingVertical: 2,
+      marginLeft: 6,
+      alignSelf: 'flex-start',
+      backgroundColor: colors.surfaceSecondary,
+    },
+    subtaskBadgeText: {
+      fontSize: 11,
+      color: colors.textMuted,
+      fontWeight: '600',
     },
   })
