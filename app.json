@@ -10,6 +10,10 @@
     "assetBundlePatterns": [
       "**/*"
     ],
+    "web": {
+      "favicon": "./assets/icon.png",
+      "bundler": "metro"
+    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.agenda.personal"
