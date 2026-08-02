@@ -3,6 +3,7 @@ import { Plus } from 'lucide-react-native'
 import { Animated, Pressable, StyleSheet, ViewStyle } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAppTheme } from '../theme/useAppTheme'
+import { TAB_BAR_HEIGHT } from '../navigation/MainTabs'
 
 interface FloatingAddButtonProps {
   onPress: () => void
@@ -49,7 +50,7 @@ export const FloatingAddButton = ({ onPress, style }: FloatingAddButtonProps) =>
             backgroundColor: pressed || isHovered ? colors.accentStrong : colors.accent,
             borderColor: colors.accentSoft,
             shadowColor: colors.accent,
-            bottom: Math.max(insets.bottom + 18, 86),
+            bottom: insets.bottom + TAB_BAR_HEIGHT + 28,
             shadowOpacity: isDark ? 0.34 : 0.24,
           },
           style,

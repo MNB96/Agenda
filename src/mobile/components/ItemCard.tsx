@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native'
 import { differenceInCalendarDays, parseISO, startOfDay } from 'date-fns'
+import { AlarmClock, Bell } from 'lucide-react-native'
 import type { Item } from '../../domain/items/types'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
@@ -20,6 +21,9 @@ export const ItemCard = ({ item, overdueLabel, overdueDeadlineLabel, subtaskTota
   const styles = useMemo(() => createStyles(colors), [colors])
 
   const indicatorColor = resolveIndicatorColor(item, colors)
+  const reminders = item.reminderConfig ?? []
+  const hasAlarmReminder = reminders.some((r) => r.alarmType === 'alarm')
+  const hasNotificationReminder = reminders.some((r) => r.alarmType !== 'alarm')
 
   return (
     <Pressable style={styles.card} onPress={() => onOpen?.(item)}>
@@ -68,6 +72,12 @@ export const ItemCard = ({ item, overdueLabel, overdueDeadlineLabel, subtaskTota
             </Text>
           ) : null}
         </View>
+
+        {hasAlarmReminder ? (
+          <AlarmClock size={17} color={colors.accent} style={styles.reminderIndicator} />
+        ) : hasNotificationReminder ? (
+          <Bell size={17} color={colors.primary} style={styles.reminderIndicator} />
+        ) : null}
       </View>
     </Pressable>
   )
@@ -124,6 +134,9 @@ const createStyles = (colors: ThemeTokens) =>
     },
     content: {
       flex: 1,
+    },
+    reminderIndicator: {
+      alignSelf: 'center',
     },
     titleRow: {
       flexDirection: 'row',

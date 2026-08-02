@@ -545,7 +545,7 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
                     onPress={() => setShowDatePicker(true)}
                   >
                     <Text style={[styles.chipText, { color: colors.primary }]}>
-                      {dateLabel}{scheduledTime ? `, ${scheduledTime}` : ''}
+                      {dateLabel}
                     </Text>
                     <Pressable
                       onPress={(e) => { e.stopPropagation?.(); setScheduledDate(undefined); setScheduledTime(undefined) }}

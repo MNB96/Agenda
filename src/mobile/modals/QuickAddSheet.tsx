@@ -623,7 +623,6 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
   // ─────────────────────────────────────────────────────────────────────────────
 
   const renderMainPanel = () => (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View
         style={[styles.sheet, { paddingBottom: Math.max(insets.bottom + 8, 16) }]}
         onStartShouldSetResponder={() => true}
@@ -886,7 +885,6 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
           </Pressable>
         </View>
       </View>
-    </KeyboardAvoidingView>
   )
 
   const renderCalendarGrid = (
@@ -1219,7 +1217,6 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
   )
 
   const renderDetailsPanel = () => (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View
         style={[styles.sheet, { paddingBottom: Math.max(insets.bottom + 8, 16) }]}
         onStartShouldSetResponder={() => true}
@@ -1261,7 +1258,6 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
           </View>
         </View>
       </View>
-    </KeyboardAvoidingView>
   )
 
   const renderRepeatPanel = () => (
@@ -1430,8 +1426,9 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
         onClose()
       }}
     >
-      {/* Root: flex: 1, overlay color */}
-      <View style={{ flex: 1 }}>
+      {/* Root: flex: 1, overlay color. KeyboardAvoidingView here (not nested inside the
+          absolutely-positioned sheet) so it has the real screen height to react to. */}
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         {/* Backdrop — tap closes the sheet (only from main panel) */}
         <Pressable
           style={[StyleSheet.absoluteFill, { backgroundColor: colors.overlayAccent }]}
@@ -1448,7 +1445,7 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
 
         {/* Deadline picker — centered dialog over everything */}
         {panel === 'date' && deadlinePickerOpen && renderDeadlinePicker()}
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
 
     {/* Pickers outside Modal to avoid Android nested dialog issue */}

@@ -41,12 +41,13 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/icon.png",
-          "color": "#ffffff",
+          "icon": "./assets/notification-icon.png",
+          "color": "#72CBDC",
           "defaultChannel": "recordatorios",
           "sounds": []
         }
-      ]
+      ],
+      "@react-native-google-signin/google-signin"
     ]
   }
 }

@@ -10,6 +10,8 @@ import { useAppTheme } from '../theme/useAppTheme'
 
 const Tab = createBottomTabNavigator()
 
+export const TAB_BAR_HEIGHT = 70
+
 interface MainTabsProps {
   onOpenSettings: () => void
   onOpenItemEditor: (itemId: string) => void
@@ -23,10 +25,10 @@ export const MainTabs = ({ onOpenSettings, onOpenItemEditor }: MainTabsProps) =>
     <Tab.Navigator
       screenOptions={{
         headerStyle: { backgroundColor: colors.background },
-        headerTitleStyle: { fontSize: 22, fontWeight: '700', color: colors.text },
+        headerTitleStyle: { fontSize: 28, fontWeight: '800', color: colors.text },
         headerTintColor: colors.text,
         tabBarStyle: {
-          height: 70 + bottom,
+          height: TAB_BAR_HEIGHT + bottom,
           paddingTop: 8,
           paddingBottom: 8 + bottom,
           backgroundColor: colors.surface,

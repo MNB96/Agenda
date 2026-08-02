@@ -1,6 +1,32 @@
-import { Platform } from 'react-native'
+import { Linking, Platform } from 'react-native'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as Notifications from 'expo-notifications'
 import type { Item, ReminderConfig } from '../../domain/items/types'
+
+const CHANNEL_MIGRATION_KEY = 'agenda:notification-channels-v3-alarm-stream'
+
+export const NOTIFICATION_PACKAGE = 'com.agenda.personal'
+
+export const openExactAlarmSettings = async (): Promise<void> => {
+  if (Platform.OS !== 'android') return
+  try {
+    await Linking.sendIntent('android.settings.REQUEST_SCHEDULE_EXACT_ALARM')
+  } catch {
+    // Older Android versions (pre-12) don't have this screen; nothing to do.
+  }
+}
+
+// Android 8+ controls sound/vibration per notification channel, and the system already
+// ships a full ringtone picker for it — no need to build a custom one in-app. The app-level
+// settings screen lists both channels (Recordatorios, Alarmas), so one entry point covers both.
+export const openNotificationSoundSettings = async (): Promise<void> => {
+  if (Platform.OS !== 'android') return
+  try {
+    await Linking.sendIntent('android.settings.APP_NOTIFICATION_SETTINGS', [
+      { key: 'android.provider.extra.APP_PACKAGE', value: NOTIFICATION_PACKAGE },
+    ])
+  } catch {}
+}
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -14,11 +40,28 @@ Notifications.setNotificationHandler({
 
 export const initNotificationChannel = async (): Promise<void> => {
   if (Platform.OS !== 'android') return
+
+  // One-time migration: channels created before this fix have no sound configured, and
+  // Android locks channel settings after creation — recreating is the only way to fix
+  // existing installs. Only runs once, so it won't clobber a sound the user later picks
+  // themselves via openChannelSoundSettings.
+  const migrated = await AsyncStorage.getItem(CHANNEL_MIGRATION_KEY)
+  if (!migrated) {
+    try {
+      await Notifications.deleteNotificationChannelAsync('recordatorios')
+      await Notifications.deleteNotificationChannelAsync('alarmas')
+    } catch {
+      // Channels may not exist yet on a fresh install; nothing to clean up.
+    }
+    await AsyncStorage.setItem(CHANNEL_MIGRATION_KEY, '1')
+  }
+
   await Notifications.setNotificationChannelAsync('recordatorios', {
     name: 'Recordatorios',
     importance: Notifications.AndroidImportance.HIGH,
     vibrationPattern: [0, 250, 250, 250],
     enableLights: true,
+    sound: 'default',
   })
   await Notifications.setNotificationChannelAsync('alarmas', {
     name: 'Alarmas',
@@ -26,6 +69,18 @@ export const initNotificationChannel = async (): Promise<void> => {
     vibrationPattern: [0, 500, 200, 500],
     enableLights: true,
     bypassDnd: true,
+    sound: 'default',
+    // Use the ALARM audio stream, not NOTIFICATION: the notification stream is silenced
+    // by the phone's ringer mode (vibrate/silent), which is exactly why a plain
+    // notification sound never played. The alarm stream ignores that, like a real alarm clock.
+    audioAttributes: {
+      usage: Notifications.AndroidAudioUsage.ALARM,
+      contentType: Notifications.AndroidAudioContentType.SONIFICATION,
+      flags: {
+        enforceAudibility: true,
+        requestHardwareAudioVideoSynchronization: false,
+      },
+    },
   })
 }
 
@@ -34,7 +89,13 @@ export const requestNotificationPermissions = async (): Promise<boolean> => {
   const { status: existing } = await Notifications.getPermissionsAsync()
   if (existing === 'granted') return true
   const { status } = await Notifications.requestPermissionsAsync()
-  return status === 'granted'
+  const granted = status === 'granted'
+  if (granted) {
+    // First time granting notifications: also surface the exact-alarm toggle,
+    // otherwise Android may silently delay or drop precisely-timed reminders.
+    void openExactAlarmSettings()
+  }
+  return granted
 }
 
 const resolveBaseDate = (item: Item): Date | null => {

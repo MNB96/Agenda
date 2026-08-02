@@ -1,11 +1,13 @@
 import * as WebBrowser from 'expo-web-browser'
 import * as Google from 'expo-auth-session/providers/google'
+import { GoogleSignin } from '@react-native-google-signin/google-signin'
 import { useEffect, useMemo } from 'react'
 import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native'
 import { useGoogleCalendars } from '../../features/calendar/useGoogleCalendar'
 import { useLicenseUsages, useSettings } from '../../features/settings/useSettings'
 import { useItems } from '../../features/items/useItems'
 import { useGoogleAuthStore } from '../../state/googleAuthStore'
+import { openNotificationSoundSettings, openExactAlarmSettings } from '../../services/notifications/itemNotifications'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
 
@@ -31,7 +33,11 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
     process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ??
     process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID
   const isWeb = Platform.OS === 'web'
-  const canUseGoogleAuth = isWeb ? Boolean(webClientId) : Boolean(nativeClientId)
+  // Native uses the on-device Google Sign-In SDK (Play Services), which validates the app by
+  // package name + signing fingerprint instead of a redirect URI — Google no longer allows the
+  // custom-scheme browser redirect for Android OAuth clients created after mid-2022, which is
+  // what kept causing redirect_uri_mismatch / "Custom URI scheme is not enabled" errors.
+  const canUseGoogleAuth = isWeb ? Boolean(webClientId) : true
 
   const [request, response, promptAsync] = Google.useAuthRequest({
     responseType: 'token',
@@ -41,6 +47,7 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
   })
 
   useEffect(() => {
+    if (!isWeb) return
     if (response?.type !== 'success') {
       return
     }
@@ -54,7 +61,39 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
       accessToken: token,
       expiresIn: response.authentication?.expiresIn ?? 3600,
     })
-  }, [response, setSession])
+  }, [isWeb, response, setSession])
+
+  useEffect(() => {
+    if (isWeb) return
+    GoogleSignin.configure({ scopes: ['https://www.googleapis.com/auth/calendar'] })
+  }, [isWeb])
+
+  const handleConnect = async () => {
+    if (isWeb) {
+      void promptAsync()
+      return
+    }
+    try {
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true })
+      const result = await GoogleSignin.signIn()
+      if (result.type !== 'success') return
+      const tokens = await GoogleSignin.getTokens()
+      setSession({
+        accessToken: tokens.accessToken,
+        expiresIn: 3600,
+        connectedEmail: result.data.user.email,
+      })
+    } catch {
+      // El usuario cancelo el flujo o Play Services no esta disponible.
+    }
+  }
+
+  const handleDisconnect = () => {
+    if (!isWeb) {
+      void GoogleSignin.signOut()
+    }
+    clearSession()
+  }
 
   if (!settings) {
     return null
@@ -106,20 +145,18 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
               {authIssue ? <Text style={styles.warnText}>La sesion necesita reconexion: {authIssue}</Text> : null}
               {!canUseGoogleAuth ? (
                 <Text style={styles.warnText}>
-                  {isWeb
-                    ? 'Falta EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID para conectar Google en web.'
-                    : 'Falta configurar un Client ID de Google para esta plataforma.'}
+                  Falta EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID para conectar Google en web.
                 </Text>
               ) : null}
               <View style={styles.actionsRow}>
                 <Pressable
-                  disabled={!request || !canUseGoogleAuth}
-                  onPress={() => void promptAsync()}
-                  style={[styles.primaryButton, (!request || !canUseGoogleAuth) && styles.disabled]}
+                  disabled={isWeb && (!request || !canUseGoogleAuth)}
+                  onPress={() => void handleConnect()}
+                  style={[styles.primaryButton, isWeb && (!request || !canUseGoogleAuth) && styles.disabled]}
                 >
                   <Text style={styles.primaryButtonText}>{accessToken ? 'Reconectar' : 'Conectar'}</Text>
                 </Pressable>
-                <Pressable onPress={clearSession} style={styles.secondaryButton}>
+                <Pressable onPress={handleDisconnect} style={styles.secondaryButton}>
                   <Text style={styles.secondaryButtonText}>Desconectar</Text>
                 </Pressable>
               </View>
@@ -151,6 +188,19 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
                   onValueChange={(value) => void saveSettings({ ...settings, remindersEnabled: value })}
                 />
               </View>
+              {Platform.OS === 'android' ? (
+                <>
+                  <Pressable style={[styles.secondaryButton, { marginTop: 8 }]} onPress={() => void openExactAlarmSettings()}>
+                    <Text style={styles.secondaryButtonText}>Permitir alarmas exactas</Text>
+                  </Pressable>
+                  <Text style={[styles.metaText, { marginTop: 6 }]}>
+                    Sin este permiso, Android puede demorar o no disparar los recordatorios a la hora exacta.
+                  </Text>
+                  <Pressable style={[styles.secondaryButton, { marginTop: 8 }]} onPress={() => void openNotificationSoundSettings()}>
+                    <Text style={styles.secondaryButtonText}>Sonido de notificaciones</Text>
+                  </Pressable>
+                </>
+              ) : null}
             </View>
 
             <View style={styles.section}>

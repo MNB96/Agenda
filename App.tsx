@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DefaultTheme, NavigationContainer } from '@react-navigation/native'
-import { useColorScheme, View } from 'react-native'
+import { StatusBar, useColorScheme, View } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { useSettings } from './src/features/settings/useSettings'
 import { MainTabs } from './src/mobile/navigation/MainTabs'
@@ -72,7 +72,7 @@ const AppShellInner = ({
   setSettingsOpen,
   setEditingItemId,
 }: AppShellInnerProps) => {
-  const { colors } = useAppTheme()
+  const { colors, isDark } = useAppTheme()
 
   useGoogleSessionLifecycleMobile()
 
@@ -104,6 +104,11 @@ const AppShellInner = ({
 
   return (
     <>
+      <StatusBar
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor="transparent"
+        translucent
+      />
       <NavigationContainer theme={navTheme}>
         <MainTabs
           onOpenSettings={() => setSettingsOpen(true)}
