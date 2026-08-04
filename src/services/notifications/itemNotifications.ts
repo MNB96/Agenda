@@ -169,6 +169,9 @@ export const scheduleItemNotifications = async (item: Item): Promise<string[]> =
             body: formatReminderBody(r),
             data: { itemId: item.id },
             sound: true,
+            // "Persistente": no se puede descartar deslizando, para recordatorios que no
+            // se pueden pasar por alto (ej. tomar una medicación).
+            sticky: r.persistent ?? false,
           },
           trigger: {
             type: Notifications.SchedulableTriggerInputTypes.DATE,
@@ -188,12 +191,9 @@ export const scheduleItemNotifications = async (item: Item): Promise<string[]> =
 }
 
 export const cancelItemNotifications = async (
-  item: { notificationId?: string; notificationIds?: string[] },
+  item: { notificationIds?: string[] },
 ): Promise<void> => {
-  const toCancel = [
-    ...(item.notificationIds ?? []),
-    ...(item.notificationId ? [item.notificationId] : []),
-  ]
+  const toCancel = item.notificationIds ?? []
   await Promise.all(
     toCancel.map(async (id) => {
       try {

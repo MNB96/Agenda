@@ -1,7 +1,8 @@
 import { useMemo } from 'react'
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native'
-import { differenceInCalendarDays, parseISO, startOfDay } from 'date-fns'
-import { AlarmClock, Bell } from 'lucide-react-native'
+import { differenceInCalendarDays, format, parseISO, startOfDay } from 'date-fns'
+import { es } from 'date-fns/locale'
+import { AlarmClock, Bell, Repeat } from 'lucide-react-native'
 import type { Item } from '../../domain/items/types'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
@@ -24,6 +25,18 @@ export const ItemCard = ({ item, overdueLabel, overdueDeadlineLabel, subtaskTota
   const reminders = item.reminderConfig ?? []
   const hasAlarmReminder = reminders.some((r) => r.alarmType === 'alarm')
   const hasNotificationReminder = reminders.some((r) => r.alarmType !== 'alarm')
+  const repeats = Boolean(item.repeatRule) && item.repeatRule !== 'none'
+
+  const rawDate = item.startDate ?? item.deadline
+  const dateLabel =
+    item.type === 'date_window' && (item.dateWindow?.startDate || item.dateWindow?.endDate)
+      ? [item.dateWindow.startDate, item.dateWindow.endDate]
+          .filter((d): d is string => Boolean(d))
+          .map((d) => format(parseISO(d), 'd MMM', { locale: es }))
+          .join(' - ')
+      : rawDate && !overdueDeadlineLabel && !overdueLabel
+        ? `${format(parseISO(rawDate), "d 'de' MMM", { locale: es })}${item.startTime ? ` · ${item.startTime}` : ''}`
+        : undefined
 
   return (
     <Pressable style={styles.card} onPress={() => onOpen?.(item)}>
@@ -55,6 +68,9 @@ export const ItemCard = ({ item, overdueLabel, overdueDeadlineLabel, subtaskTota
           {overdueLabel ? (
             <Text style={styles.overdueLabel}>{overdueLabel}</Text>
           ) : null}
+          {dateLabel ? (
+            <Text style={styles.meta}>{dateLabel}</Text>
+          ) : null}
           {item.description ? (
             <Text style={styles.meta} numberOfLines={1}>{item.description}</Text>
           ) : null}
@@ -73,11 +89,16 @@ export const ItemCard = ({ item, overdueLabel, overdueDeadlineLabel, subtaskTota
           ) : null}
         </View>
 
-        {hasAlarmReminder ? (
-          <AlarmClock size={17} color={colors.accent} style={styles.reminderIndicator} />
-        ) : hasNotificationReminder ? (
-          <Bell size={17} color={colors.primary} style={styles.reminderIndicator} />
-        ) : null}
+        {(repeats || hasAlarmReminder || hasNotificationReminder) && (
+          <View style={styles.indicatorStack}>
+            {repeats && <Repeat size={16} color={colors.textMuted} />}
+            {hasAlarmReminder ? (
+              <AlarmClock size={17} color={colors.accent} />
+            ) : hasNotificationReminder ? (
+              <Bell size={17} color={colors.primary} />
+            ) : null}
+          </View>
+        )}
       </View>
     </Pressable>
   )
@@ -135,8 +156,11 @@ const createStyles = (colors: ThemeTokens) =>
     content: {
       flex: 1,
     },
-    reminderIndicator: {
+    indicatorStack: {
+      flexDirection: 'row',
+      alignItems: 'center',
       alignSelf: 'center',
+      gap: 6,
     },
     titleRow: {
       flexDirection: 'row',

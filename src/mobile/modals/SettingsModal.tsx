@@ -66,6 +66,9 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
   useEffect(() => {
     if (isWeb) return
     GoogleSignin.configure({ scopes: ['https://www.googleapis.com/auth/calendar'] })
+    // Actual silent-refresh (on mount + periodically before the token expires) lives in
+    // useGoogleSessionLifecycleMobile, which runs for the whole app lifetime — doing it
+    // here too would just race it.
   }, [isWeb])
 
   const handleConnect = async () => {

@@ -1,5 +1,17 @@
 export type RepeatRule = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'
 
+export interface RepeatConfig {
+  unit: 'day' | 'week' | 'month' | 'year'
+  interval: number
+  daysOfWeek?: number[]
+  time?: string
+  end: 'never' | 'on_date' | 'after_occurrences'
+  endDate?: string
+  occurrences?: number
+  /** How many instances of this series have been completed so far (including this one). */
+  occurrencesDone?: number
+}
+
 export type ItemType =
   | 'task'
   | 'event'
@@ -36,9 +48,6 @@ export interface GoalConfig {
 }
 
 export interface AcademicConfig {
-  licenseRequested?: boolean
-  openReminderDaysBefore?: number[]
-  closeReminderDaysBefore?: number[]
   studyTimeBefore?: 'half' | 'full'
   grade?: number
 }
@@ -70,6 +79,7 @@ export interface Item {
   status: ItemStatus
   important?: boolean
   repeatRule?: RepeatRule
+  repeatConfig?: RepeatConfig
   parentId?: string
   categoryId?: string
   location?: string
@@ -86,7 +96,6 @@ export interface Item {
   syncToGoogleCalendar?: boolean
   googleCalendarLink?: GoogleCalendarLink
   calendarSyncPending?: boolean
-  notificationId?: string
   notificationIds?: string[]
   createdAt: string
   updatedAt: string
@@ -99,6 +108,7 @@ export interface NewItemInput {
   type?: ItemType
   important?: boolean
   repeatRule?: RepeatRule
+  repeatConfig?: RepeatConfig
   parentId?: string
   categoryId?: string
   location?: string

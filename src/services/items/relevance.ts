@@ -16,7 +16,13 @@ export interface ScoredItem {
 }
 
 const itemDate = (item: Item): Date | undefined => {
-  const raw = item.startDate ?? item.deadline ?? item.dateWindow?.startDate ?? item.endDate
+  if (item.type === 'date_window') {
+    // The closing date is what drives urgency — a window that already opened shouldn't
+    // read as overdue just because its start date is in the past.
+    const raw = item.dateWindow?.endDate ?? item.dateWindow?.startDate
+    return raw ? parseISO(raw) : undefined
+  }
+  const raw = item.startDate ?? item.deadline ?? item.endDate
   return raw ? parseISO(raw) : undefined
 }
 

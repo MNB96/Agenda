@@ -94,6 +94,7 @@ interface GoogleEntry {
   subtitle: string
   secondary?: string
   color: string
+  dateKey: string
 }
 
 type TodayEntry = LocalEntry | GoogleEntry
@@ -137,6 +138,7 @@ const mapGoogleEventToEntry = (event: CalendarEvent, colors: ThemeTokens): Googl
     subtitle: when,
     secondary: event.location,
     color: section === 'important' ? colors.accent : section === 'later' ? colors.cream : colors.primary,
+    dateKey: format(start, 'yyyy-MM-dd'),
   }
 }
 
@@ -233,6 +235,8 @@ export const TodayScreen = ({ onOpenItemEditor }: TodayScreenProps) => {
         if (entry.kind === 'local') {
           const it = itemById.get(entry.itemId)
           key = it?.startDate ?? it?.deadline ?? 'zzz-sin-fecha'
+        } else {
+          key = entry.dateKey
         }
         if (!byDate.has(key)) byDate.set(key, [])
         byDate.get(key)!.push(entry)
@@ -245,7 +249,7 @@ export const TodayScreen = ({ onOpenItemEditor }: TodayScreenProps) => {
     const result: [TodaySectionKey, TodayEntry[]][] = []
     if (map.overdue.length > 0) result.push(['overdue', map.overdue])
     result.push(...splitByDate('next'))
-    if (map.important.length > 0) result.push(['important', map.important])
+    result.push(...splitByDate('important'))
     result.push(...splitByDate('later'))
 
     if (completedItems.length > 0) {
@@ -350,7 +354,7 @@ export const TodayScreen = ({ onOpenItemEditor }: TodayScreenProps) => {
         }
         renderItem={({ item: [bucket, entries] }) => {
           const label = (() => {
-            if (bucket === 'overdue' || bucket === 'important' || bucket === 'completed') {
+            if (bucket === 'overdue' || bucket === 'completed') {
               return sectionLabel[bucket]
             }
             const firstLocal = entries.find((e): e is LocalEntry => e.kind === 'local')

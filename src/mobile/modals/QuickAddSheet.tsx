@@ -8,6 +8,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -25,6 +26,7 @@ import {
   Flag,
   MapPin,
   Navigation,
+  Pin,
   Repeat,
   Star,
   Tag,
@@ -51,7 +53,9 @@ import { detectCategoryFromText } from '../../services/parser/categoryDetector'
 import { isExamTask } from '../../services/parser/examDetector'
 import { useItems } from '../../features/items/useItems'
 import { useSettings, useLicenseUsages } from '../../features/settings/useSettings'
-import type { Item, ReminderConfig, RepeatRule } from '../../domain/items/types'
+import { useGoogleAuthStore } from '../../state/googleAuthStore'
+import { computeNextDate } from '../../services/items/recurrence'
+import type { Item, ReminderConfig, RepeatConfig, RepeatRule, TravelConfig } from '../../domain/items/types'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
 import { createId } from '../../utils/id'
@@ -236,6 +240,7 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
   const { createItem, updateItem, removeItem, items, isSaving } = useItems()
   const { data: settings } = useSettings()
   const { data: licenseUsages, saveUsage, deleteUsage } = useLicenseUsages()
+  const { accessToken } = useGoogleAuthStore()
   const { colors } = useAppTheme()
   const styles = useMemo(() => createStyles(colors), [colors])
   const insets = useSafeAreaInsets()
@@ -250,8 +255,11 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
   const [important, setImportant] = useState(false)
   const [scheduledDate, setScheduledDate] = useState<string | undefined>()
   const [scheduledTime, setScheduledTime] = useState<string | undefined>()
+  const [endTime, setEndTime] = useState<string | undefined>()
   const [deadline, setDeadline] = useState<string | undefined>()
+  const [syncToGoogleCalendar, setSyncToGoogleCalendar] = useState(true)
   const [repeatRule, setRepeatRule] = useState<RepeatRule>('none')
+  const [repeatConfig, setRepeatConfig] = useState<RepeatConfig | undefined>()
   const [reminders, setReminders] = useState<ReminderConfig[]>([])
   const [description, setDescription] = useState('')
 
@@ -273,15 +281,19 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
   // ── Date panel temp state (committed on "Listo") ──
   const [tempDate, setTempDate] = useState<string | undefined>()
   const [tempTime, setTempTime] = useState<string | undefined>()
+  const [tempEndTime, setTempEndTime] = useState<string | undefined>()
+  const [showNativeEndTime, setShowNativeEndTime] = useState(false)
   const [tempDeadline, setTempDeadline] = useState<string | undefined>()
   const [tempRepeat, setTempRepeat] = useState<RepeatRule>('none')
   const [tempReminders, setTempReminders] = useState<ReminderConfig[]>([])
   const [selectedAlarmType, setSelectedAlarmType] = useState<'notification' | 'alarm'>('notification')
+  const [selectedPersistent, setSelectedPersistent] = useState(false)
   const [customMinutesText, setCustomMinutesText] = useState('')
   const [customUnit, setCustomUnit] = useState<'min' | 'h' | 'días'>('min')
   const [showCustomInput, setShowCustomInput] = useState(false)
   const [travelTimeLoading, setTravelTimeLoading] = useState(false)
   const [travelTimeResult, setTravelTimeResult] = useState<string | null>(null)
+  const [travelConfig, setTravelConfig] = useState<TravelConfig | undefined>()
   const [viewMonth, setViewMonth] = useState(new Date())
   const [timeEnabled, setTimeEnabled] = useState(false)
   const [showNativeTime, setShowNativeTime] = useState(false)
@@ -346,9 +358,13 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
       setImportant(editingItem.important ?? false)
       setScheduledDate(editingItem.startDate)
       setScheduledTime(editingItem.startTime)
+      setEndTime(editingItem.endTime)
       setDeadline(editingItem.deadline)
+      setSyncToGoogleCalendar(editingItem.syncToGoogleCalendar ?? true)
       setRepeatRule(editingItem.repeatRule ?? 'none')
+      setRepeatConfig(editingItem.repeatConfig)
       setReminders(editingItem.reminderConfig ?? [])
+      setTravelConfig(editingItem.travelConfig)
       setDescription(editingItem.description ?? '')
       setShowDescInput(Boolean(editingItem.description?.trim()))
       setCategoryId(editingItem.categoryId)
@@ -360,9 +376,13 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
       setImportant(false)
       setScheduledDate(undefined)
       setScheduledTime(undefined)
+      setEndTime(undefined)
       setDeadline(undefined)
+      setSyncToGoogleCalendar(true)
       setRepeatRule('none')
+      setRepeatConfig(undefined)
       setReminders([])
+      setTravelConfig(undefined)
       setDescription('')
       setShowDescInput(false)
       setCategoryId(undefined)
@@ -416,14 +436,21 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
     setTempTime(effectiveTime)
     setTempDeadline(effectiveDeadline)
     setTempRepeat(repeatRule)
+    setTempRepeatInterval(repeatConfig?.interval ?? 1)
+    setTempRepeatDays(repeatConfig?.daysOfWeek ?? [])
+    setTempRepeatTime(repeatConfig?.time)
+    setTempRepeatEnd(repeatConfig?.end ?? 'never')
+    setTempRepeatEndDate(repeatConfig?.endDate)
+    setTempRepeatOccurrences(repeatConfig?.occurrences ?? 13)
     setTempReminders(reminders)
+    setTempEndTime(endTime)
     setTimeEnabled(Boolean(effectiveTime))
     setShowRepeatUnitPicker(false)
     setExpandReminder(false)
     setDeadlinePickerOpen(false)
     setViewMonth(effectiveDate ? new Date(effectiveDate + 'T00:00:00') : new Date())
     setPanel('date')
-  }, [effectiveDate, effectiveTime, effectiveDeadline, repeatRule, reminders])
+  }, [effectiveDate, effectiveTime, effectiveDeadline, repeatRule, repeatConfig, reminders, endTime])
 
   const openDetailsPanel = useCallback(() => {
     Keyboard.dismiss()
@@ -433,15 +460,27 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
 
   const openRepeatPanel = useCallback(() => {
     setTempRepeatUnit(RULE_TO_UNIT[tempRepeat] ?? 'week')
-    setTempRepeatInterval(1)
     setShowRepeatUnitPicker(false)
     setPanel('repeat')
   }, [tempRepeat])
 
   const commitRepeat = useCallback(() => {
     setTempRepeat(UNIT_TO_RULE[tempRepeatUnit])
+    // Si todavía no eligieron un día en el calendario, la fecha se infiere de la
+    // repetición misma (ej. "todos los días" -> mañana; "cada semana" siendo hoy
+    // lunes -> el próximo lunes), en vez de dejar la tarea sin fecha.
+    if (!tempDate) {
+      const nextDate = computeNextDate(new Date(), {
+        unit: tempRepeatUnit,
+        interval: tempRepeatInterval,
+        daysOfWeek: tempRepeatUnit === 'week' ? tempRepeatDays : undefined,
+        end: 'never',
+      })
+      setTempDate(format(nextDate, 'yyyy-MM-dd'))
+      setViewMonth(nextDate)
+    }
     setPanel('date')
-  }, [tempRepeatUnit])
+  }, [tempRepeatUnit, tempDate, tempRepeatInterval, tempRepeatDays])
 
   const toggleRepeatDay = (idx: number) => {
     setTempRepeatDays(prev =>
@@ -452,14 +491,43 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
   const commitDate = useCallback(() => {
     setScheduledDate(tempDate)
     setScheduledTime(timeEnabled ? tempTime : undefined)
+    setEndTime(timeEnabled ? tempEndTime : undefined)
     setDeadline(tempDeadline)
     setRepeatRule(tempRepeat)
+    setRepeatConfig(
+      tempRepeat !== 'none'
+        ? {
+            unit: tempRepeatUnit,
+            interval: tempRepeatInterval,
+            daysOfWeek: tempRepeatUnit === 'week' ? tempRepeatDays : undefined,
+            time: tempRepeatTime,
+            end: tempRepeatEnd,
+            endDate: tempRepeatEnd === 'on_date' ? tempRepeatEndDate : undefined,
+            occurrences: tempRepeatEnd === 'after_occurrences' ? tempRepeatOccurrences : undefined,
+          }
+        : undefined,
+    )
     setReminders(tempReminders)
     if (tempDate) setNlDateDismissed(true)
     if (timeEnabled && tempTime) setNlTimeDismissed(true)
     setPanel('main')
     setTimeout(() => titleRef.current?.focus(), 150)
-  }, [tempDate, timeEnabled, tempTime, tempDeadline, tempRepeat, tempReminders])
+  }, [
+    tempDate,
+    timeEnabled,
+    tempTime,
+    tempEndTime,
+    tempDeadline,
+    tempRepeat,
+    tempRepeatUnit,
+    tempRepeatInterval,
+    tempRepeatDays,
+    tempRepeatTime,
+    tempRepeatEnd,
+    tempRepeatEndDate,
+    tempRepeatOccurrences,
+    tempReminders,
+  ])
 
   const handleSave = async () => {
     const title = text.trim()
@@ -470,9 +538,14 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
       important,
       startDate: effectiveDate,
       startTime: effectiveTime,
+      endDate: effectiveTime && endTime ? effectiveDate : undefined,
+      endTime: effectiveTime ? endTime : undefined,
       deadline: effectiveDeadline,
+      syncToGoogleCalendar,
       repeatRule: repeatRule !== 'none' ? repeatRule : undefined,
+      repeatConfig: repeatRule !== 'none' ? repeatConfig : undefined,
       reminderConfig: reminders.length > 0 ? reminders : undefined,
+      travelConfig,
       description: description.trim() || undefined,
       categoryId: effectiveCategoryId,
       location: location || undefined,
@@ -542,13 +615,13 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
       const result = await fetchTravelTime(pos, location)
       if (!result) { setTravelTimeResult('No se pudo calcular'); return }
       setTravelTimeResult(result.summary)
+      // Recalcula con el tráfico actual y reemplaza el recordatorio de salida anterior.
       const totalMins = result.minutes + 5
-      if (!tempReminders.some((r) => r.mode === 'departure')) {
-        setTempReminders((prev) => [
-          ...prev,
-          { id: createId(), mode: 'departure', minutesBefore: totalMins, alarmType: selectedAlarmType },
-        ])
-      }
+      setTempReminders((prev) => [
+        ...prev.filter((r) => r.mode !== 'departure'),
+        { id: createId(), mode: 'departure', minutesBefore: totalMins, alarmType: selectedAlarmType, persistent: selectedPersistent },
+      ])
+      setTravelConfig({ transport: 'driving', extraMinutes: 5, departureReminderEnabled: true })
     } finally {
       setTravelTimeLoading(false)
     }
@@ -559,7 +632,7 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
     if (exists) {
       setTempReminders(tempReminders.filter((r) => r.minutesBefore !== minutesBefore))
     } else {
-      setTempReminders([...tempReminders, { id: createId(), mode: 'relative', minutesBefore, alarmType: selectedAlarmType }])
+      setTempReminders([...tempReminders, { id: createId(), mode: 'relative', minutesBefore, alarmType: selectedAlarmType, persistent: selectedPersistent }])
     }
   }
 
@@ -569,7 +642,7 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
     const mins = customUnit === 'h' ? val * 60 : customUnit === 'días' ? val * 1440 : val
     const exists = tempReminders.some((r) => r.minutesBefore === mins)
     if (!exists) {
-      setTempReminders([...tempReminders, { id: createId(), mode: 'relative', minutesBefore: mins, alarmType: selectedAlarmType }])
+      setTempReminders([...tempReminders, { id: createId(), mode: 'relative', minutesBefore: mins, alarmType: selectedAlarmType, persistent: selectedPersistent }])
     }
     setCustomMinutesText('')
     setShowCustomInput(false)
@@ -906,25 +979,24 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
           const isSel = dayStr === selected
           const today = isToday(day)
           return (
-            <Pressable
-              key={idx}
-              style={[
-                styles.calCell,
-                isSel && { backgroundColor: accentColor, borderRadius: 999 },
-                today && !isSel && { borderWidth: 1, borderColor: accentColor, borderRadius: 999 },
-              ]}
-              onPress={() => onSelect(day)}
-              hitSlop={2}
-            >
-              <Text
+            <Pressable key={idx} style={styles.calCell} onPress={() => onSelect(day)} hitSlop={2}>
+              <View
                 style={[
-                  styles.calDayText,
-                  isSel && styles.calDayTextSelected,
-                  today && !isSel && { color: accentColor, fontWeight: '700' },
+                  styles.calDayMarker,
+                  isSel && { backgroundColor: accentColor },
+                  today && !isSel && { borderWidth: 1, borderColor: accentColor },
                 ]}
               >
-                {format(day, 'd')}
-              </Text>
+                <Text
+                  style={[
+                    styles.calDayText,
+                    isSel && styles.calDayTextSelected,
+                    today && !isSel && { color: accentColor, fontWeight: '700' },
+                  ]}
+                >
+                  {format(day, 'd')}
+                </Text>
+              </View>
             </Pressable>
           )
         })}
@@ -1035,6 +1107,21 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
           />
           <RowDivider colors={colors} />
 
+          {/* Hasta (hora de fin) — solo si hay hora de inicio */}
+          {timeEnabled && (
+            <>
+              <OptionRow
+                label="Hasta"
+                value={tempEndTime}
+                onPress={() => setShowNativeEndTime(true)}
+                onClear={tempEndTime ? () => setTempEndTime(undefined) : undefined}
+                icon={Clock}
+                colors={colors}
+              />
+              <RowDivider colors={colors} />
+            </>
+          )}
+
           {/* Repetir → abre panel completo */}
           <OptionRow
             label="Repetir"
@@ -1092,7 +1179,7 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
               ))}
 
               {/* Selector de tipo */}
-              <View style={styles.reminderTypeRow}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.reminderTypeRow}>
                 <Text style={styles.reminderTypeLabel}>Tipo:</Text>
                 <Pressable
                   style={[styles.reminderTypeBtn, selectedAlarmType === 'notification' && styles.reminderTypeBtnActive]}
@@ -1112,7 +1199,16 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
                     Alarma
                   </Text>
                 </Pressable>
-              </View>
+                <Pressable
+                  style={[styles.reminderTypeBtn, selectedPersistent && styles.reminderTypeBtnActive]}
+                  onPress={() => setSelectedPersistent((v) => !v)}
+                >
+                  <Pin size={12} color={selectedPersistent ? colors.primary : colors.textMuted} />
+                  <Text style={[styles.reminderTypeBtnText, selectedPersistent && { color: colors.primary, fontWeight: '600' }]}>
+                    Persistente
+                  </Text>
+                </Pressable>
+              </ScrollView>
 
               {/* Presets */}
               {REMINDER_PRESETS.map((preset) => {
@@ -1141,7 +1237,11 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <Navigation size={13} color={colors.primary} />
                     <Text style={[styles.expandedItemText, { color: colors.primary }]}>
-                      {travelTimeLoading ? 'Calculando...' : 'Recordarme cuándo salir'}
+                      {travelTimeLoading
+                        ? 'Calculando...'
+                        : travelConfig
+                          ? 'Recalcular salida (tráfico actual)'
+                          : 'Recordarme cuándo salir'}
                     </Text>
                   </View>
                   {travelTimeResult && (
@@ -1190,6 +1290,16 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
                 </View>
               )}
             </View>
+          )}
+
+          {accessToken && (
+            <>
+              <RowDivider colors={colors} />
+              <View style={styles.syncRow}>
+                <Text style={styles.syncRowLabel}>Sincronizar con Google Calendar</Text>
+                <Switch value={syncToGoogleCalendar} onValueChange={setSyncToGoogleCalendar} />
+              </View>
+            </>
           )}
 
           <View style={{ height: 8 }} />
@@ -1458,6 +1568,19 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
         onChange={handleNativeTimeChange}
       />
     )}
+    {open && showNativeEndTime && (
+      <DateTimePicker
+        value={tempEndTime ? parse(tempEndTime, 'HH:mm', new Date()) : new Date()}
+        mode="time"
+        is24Hour
+        display={Platform.OS === 'ios' ? 'spinner' : 'clock'}
+        onChange={(event, date) => {
+          if (Platform.OS !== 'ios') setShowNativeEndTime(false)
+          if (event.type === 'dismissed' || !date) return
+          setTempEndTime(format(date, 'HH:mm'))
+        }}
+      />
+    )}
     {open && showRepeatTimePicker && (
       <DateTimePicker
         value={tempRepeatTime ? parse(tempRepeatTime, 'HH:mm', new Date()) : new Date()}
@@ -1492,10 +1615,12 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
 const createStyles = (colors: ThemeTokens) =>
   StyleSheet.create({
     sheetAnchor: {
-      position: 'absolute',
-      bottom: 0,
-      left: 0,
-      right: 0,
+      // flex + justifyContent instead of position:'absolute' — the sheet's height is
+      // content-driven (ScrollView with no explicit height), and Android's layout engine
+      // sometimes fails to measure that correctly on first mount inside an absolutely
+      // positioned parent, clipping content until a later re-render forces a re-layout.
+      flex: 1,
+      justifyContent: 'flex-end',
     },
     sheet: {
       backgroundColor: colors.surface,
@@ -1678,6 +1803,13 @@ const createStyles = (colors: ThemeTokens) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
+    calDayMarker: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
     calDayText: {
       fontSize: 14,
       color: colors.text,
@@ -1690,6 +1822,19 @@ const createStyles = (colors: ThemeTokens) =>
       height: 1,
       backgroundColor: colors.border,
       marginVertical: 4,
+    },
+    syncRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: 14,
+      paddingHorizontal: 4,
+    },
+    syncRowLabel: {
+      fontSize: 15,
+      color: colors.text,
+      flex: 1,
+      marginRight: 12,
     },
     expandedList: {
       backgroundColor: colors.surfaceSecondary,

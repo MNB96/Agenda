@@ -8,6 +8,7 @@ import { useSettings } from '../settings/useSettings'
 import { isGoogleCalendarAuthError } from '../../providers/calendar/errors'
 import { cancelItemNotifications, notifyCalendarDeleteFailed, scheduleItemNotifications } from '../../services/notifications/itemNotifications'
 import { enqueueDelete } from '../../services/calendar/calendarDeleteQueue'
+import { buildNextOccurrence } from '../../services/items/recurrence'
 
 const ITEMS_KEY = ['items']
 
@@ -26,7 +27,7 @@ export const useItems = () => {
       let item = createItem(payload)
 
       try {
-        if ((item.startDate || item.startTime) && accessToken) {
+        if ((item.startDate || item.startTime) && accessToken && item.syncToGoogleCalendar !== false) {
           const dateTimes = resolveEventDateTimes(item)
           const calendarId = settings?.selectedGoogleCalendarIds[0] ?? 'primary'
           if (dateTimes) {
@@ -75,7 +76,7 @@ export const useItems = () => {
 
       if (accessToken) {
         const currentLink = current.googleCalendarLink
-        const shouldSync = Boolean(next.startDate || next.startTime)
+        const shouldSync = Boolean(next.startDate || next.startTime) && next.syncToGoogleCalendar !== false
 
         if (shouldSync && dateTimes) {
           try {
@@ -201,7 +202,16 @@ export const useItems = () => {
         const notificationIds = await scheduleItemNotifications(next)
         next = updateItem(next, { notificationIds })
       }
-      return itemRepository.save(next)
+      const saved = await itemRepository.save(next)
+
+      if (completing) {
+        const nextOccurrence = buildNextOccurrence(item)
+        if (nextOccurrence) {
+          await createMutation.mutateAsync(nextOccurrence)
+        }
+      }
+
+      return saved
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ITEMS_KEY }),
   })

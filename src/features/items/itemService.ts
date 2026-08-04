@@ -31,6 +31,7 @@ export const createItem = (input: NewItemInput): Item => {
     status: 'active',
     important: input.important,
     repeatRule: input.repeatRule,
+    repeatConfig: input.repeatConfig,
     parentId: input.parentId,
     categoryId: input.categoryId,
     location: input.location,
@@ -44,8 +45,7 @@ export const createItem = (input: NewItemInput): Item => {
     travelConfig: input.travelConfig,
     goalConfig: input.goalConfig,
     academicConfig: input.academicConfig,
-    syncToGoogleCalendar: input.syncToGoogleCalendar ?? false,
-    notificationId: undefined,
+    syncToGoogleCalendar: input.syncToGoogleCalendar ?? true,
     createdAt: nowIso,
     updatedAt: nowIso,
   }
