@@ -131,13 +131,57 @@ const formatReminderBody = (reminder: ReminderConfig): string => {
   return `En ${h}h ${m}min`
 }
 
+// Toda tarea con fecha límite recibe, sin necesidad de configurar nada, un aviso el día
+// anterior y otro el mismo día — con texto claro ("Vence hoy/mañana") y color/prioridad
+// de urgencia, ya que Android no permite un ícono distinto por notificación individual.
+const scheduleDeadlineNotifications = async (item: Item): Promise<string[]> => {
+  if (!item.deadline) return []
+
+  const deadlineAt = new Date(`${item.deadline}T09:00:00`)
+  const dayBeforeAt = new Date(deadlineAt.getTime() - 24 * 60 * 60 * 1000)
+
+  const results = await Promise.all(
+    [
+      { date: dayBeforeAt, body: '⚠️ Vence mañana' },
+      { date: deadlineAt, body: '⚠️ Vence hoy' },
+    ]
+      .filter(({ date }) => date > new Date())
+      .map(async ({ date, body }): Promise<string | null> => {
+        try {
+          return await Notifications.scheduleNotificationAsync({
+            content: {
+              title: item.title,
+              body,
+              data: { itemId: item.id },
+              sound: true,
+              color: '#FF3B30',
+              priority: Notifications.AndroidNotificationPriority.HIGH,
+            },
+            trigger: {
+              type: Notifications.SchedulableTriggerInputTypes.DATE,
+              date,
+              ...(Platform.OS === 'android' ? { channelId: 'recordatorios' } : {}),
+            },
+          })
+        } catch {
+          return null
+        }
+      }),
+  )
+
+  return results.filter((id): id is string => id !== null)
+}
+
 export const scheduleItemNotifications = async (item: Item): Promise<string[]> => {
+  const deadlineIds = await scheduleDeadlineNotifications(item)
   const reminders = item.reminderConfig
 
   if (!reminders?.length) {
-    // Sin recordatorios configurados: notificar a la hora del ítem
+    // Sin recordatorios configurados: notificar a la hora del ítem. Si es una tarea de
+    // solo fecha límite (sin fecha/hora agendada), ya quedó cubierta arriba.
+    if (!item.startDate) return deadlineIds
     const base = resolveBaseDate(item)
-    if (!base || base <= new Date()) return []
+    if (!base || base <= new Date()) return deadlineIds
     try {
       const id = await Notifications.scheduleNotificationAsync({
         content: {
@@ -152,9 +196,9 @@ export const scheduleItemNotifications = async (item: Item): Promise<string[]> =
           ...(Platform.OS === 'android' ? { channelId: 'recordatorios' } : {}),
         },
       })
-      return [id]
+      return [...deadlineIds, id]
     } catch {
-      return []
+      return deadlineIds
     }
   }
 
@@ -187,7 +231,7 @@ export const scheduleItemNotifications = async (item: Item): Promise<string[]> =
     }),
   )
 
-  return results.filter((id): id is string => id !== null)
+  return [...deadlineIds, ...results.filter((id): id is string => id !== null)]
 }
 
 export const cancelItemNotifications = async (

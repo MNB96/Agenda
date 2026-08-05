@@ -27,15 +27,22 @@ export const ItemCard = ({ item, overdueLabel, overdueDeadlineLabel, subtaskTota
   const hasNotificationReminder = reminders.some((r) => r.alarmType !== 'alarm')
   const repeats = Boolean(item.repeatRule) && item.repeatRule !== 'none'
 
-  const rawDate = item.startDate ?? item.deadline
+  // La fecha ya la muestra el encabezado de sección (agrupa por día exacto), así que acá
+  // abajo del título va la hora y, si tiene una fecha límite propia, esa también —
+  // repetir la fecha del encabezado sería redundante, pero la fecha límite es otro dato.
   const dateLabel =
     item.type === 'date_window' && (item.dateWindow?.startDate || item.dateWindow?.endDate)
       ? [item.dateWindow.startDate, item.dateWindow.endDate]
           .filter((d): d is string => Boolean(d))
           .map((d) => format(parseISO(d), 'd MMM', { locale: es }))
           .join(' - ')
-      : rawDate && !overdueDeadlineLabel && !overdueLabel
-        ? `${format(parseISO(rawDate), "d 'de' MMM", { locale: es })}${item.startTime ? ` · ${item.startTime}` : ''}`
+      : !overdueDeadlineLabel && !overdueLabel
+        ? [
+            item.startTime,
+            item.deadline ? `Fecha límite: ${format(parseISO(item.deadline), 'd MMM', { locale: es })}` : undefined,
+          ]
+            .filter((part): part is string => Boolean(part))
+            .join(' - ') || undefined
         : undefined
 
   return (

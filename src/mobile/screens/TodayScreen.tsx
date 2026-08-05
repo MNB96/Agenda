@@ -19,7 +19,7 @@ const sectionLabel: Record<TodaySectionKey, string> = {
   overdue: 'Vencidas',
   next: 'Proximo',
   important: 'Importante',
-  later: 'Mas adelante',
+  later: 'Sin fecha',
   completed: 'Completadas',
 }
 
@@ -95,6 +95,7 @@ interface GoogleEntry {
   secondary?: string
   color: string
   dateKey: string
+  timestamp: number
 }
 
 type TodayEntry = LocalEntry | GoogleEntry
@@ -127,8 +128,8 @@ const mapGoogleEventToEntry = (event: CalendarEvent, colors: ThemeTokens): Googl
           ? 'Manana'
           : `Manana · ${format(start, 'HH:mm')}`
         : event.allDay
-          ? format(start, 'EEE d MMM', { locale: es })
-          : `${format(start, 'EEE d MMM', { locale: es })} · ${format(start, 'HH:mm')}`
+          ? format(start, 'd MMM', { locale: es })
+          : `${format(start, 'd MMM', { locale: es })} · ${format(start, 'HH:mm')}`
 
   return {
     kind: 'google',
@@ -139,6 +140,7 @@ const mapGoogleEventToEntry = (event: CalendarEvent, colors: ThemeTokens): Googl
     secondary: event.location,
     color: section === 'important' ? colors.accent : section === 'later' ? colors.cream : colors.primary,
     dateKey: format(start, 'yyyy-MM-dd'),
+    timestamp: start.getTime(),
   }
 }
 
@@ -182,7 +184,14 @@ export const TodayScreen = ({ onOpenItemEditor }: TodayScreenProps) => {
     })
   }, [activeCategory, items, search])
 
-  const scored = scoreItemsForToday(filteredItems)
+  // Las tareas sin ninguna fecha van directo a su propia sección "Sin fecha" al final,
+  // en vez de mezclarse con las de "Más adelante" que sí tienen una fecha real.
+  const hasAnyDate = (item: (typeof filteredItems)[number]) =>
+    Boolean(item.startDate || item.deadline || item.dateWindow?.startDate || item.dateWindow?.endDate)
+  const datedItems = useMemo(() => filteredItems.filter(hasAnyDate), [filteredItems])
+  const noDateItems = useMemo(() => filteredItems.filter((i) => !hasAnyDate(i)), [filteredItems])
+
+  const scored = scoreItemsForToday(datedItems)
 
   const subtaskMap = useMemo(() => {
     const map = new Map<string, { total: number; done: number }>()
@@ -228,6 +237,19 @@ export const TodayScreen = ({ onOpenItemEditor }: TodayScreenProps) => {
 
     const itemById = new Map(filteredItems.map(i => [i.id, i]))
 
+    // Dentro de un mismo día, las tareas se ordenan por horario (sin hora = primero),
+    // en vez de quedar en el orden en que se agregaron/editaron.
+    const getEntryTimestamp = (entry: TodayEntry): number => {
+      if (entry.kind === 'local') {
+        const it = itemById.get(entry.itemId)
+        const dateStr = it?.startDate ?? it?.deadline
+        if (!dateStr) return Number.MAX_SAFE_INTEGER
+        return new Date(`${dateStr}T${it?.startTime ?? '00:00'}:00`).getTime()
+      }
+      return entry.timestamp
+    }
+    const byTimestamp = (a: TodayEntry, b: TodayEntry) => getEntryTimestamp(a) - getEntryTimestamp(b)
+
     const splitByDate = (bucket: ActiveSectionKey): [TodaySectionKey, TodayEntry[]][] => {
       const byDate = new Map<string, TodayEntry[]>()
       map[bucket].forEach(entry => {
@@ -243,14 +265,23 @@ export const TodayScreen = ({ onOpenItemEditor }: TodayScreenProps) => {
       })
       return Array.from(byDate.entries())
         .sort(([a], [b]) => a.localeCompare(b))
-        .map(([, entries]) => [bucket, entries])
+        .map(([, entries]) => [bucket, [...entries].sort(byTimestamp)])
     }
 
     const result: [TodaySectionKey, TodayEntry[]][] = []
-    if (map.overdue.length > 0) result.push(['overdue', map.overdue])
+    if (map.overdue.length > 0) result.push(['overdue', [...map.overdue].sort(byTimestamp)])
     result.push(...splitByDate('next'))
     result.push(...splitByDate('important'))
     result.push(...splitByDate('later'))
+
+    if (noDateItems.length > 0) {
+      const noDateEntries: LocalEntry[] = noDateItems.map((item) => ({
+        kind: 'local',
+        section: 'later',
+        itemId: item.id,
+      }))
+      result.push(['later', noDateEntries])
+    }
 
     if (completedItems.length > 0) {
       const completedEntries: LocalEntry[] = completedItems.map((item) => ({
@@ -263,7 +294,7 @@ export const TodayScreen = ({ onOpenItemEditor }: TodayScreenProps) => {
     }
 
     return result
-  }, [colors, completedItems, filteredItems, googleEvents.data, scored, search])
+  }, [colors, completedItems, filteredItems, googleEvents.data, scored, noDateItems, search])
 
   return (
     <View style={styles.container}>

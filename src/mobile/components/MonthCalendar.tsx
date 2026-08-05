@@ -13,7 +13,9 @@ const buildCalendarCells = (month: Date): (Date | null)[] => {
   const days = eachDayOfInterval({ start: first, end: last })
   const offset = (getDay(first) + 6) % 7 // Monday = 0
   const cells: (Date | null)[] = [...Array(offset).fill(null), ...days]
-  while (cells.length % 7 !== 0) cells.push(null)
+  // Siempre 6 filas (42 celdas), no solo un múltiplo de 7 — si no, el calendario cambia
+  // de alto según el mes tenga 5 o 6 semanas visibles, y el panel "salta" al navegar.
+  while (cells.length < 42) cells.push(null)
   return cells
 }
 

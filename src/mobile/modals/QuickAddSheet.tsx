@@ -117,7 +117,9 @@ const buildCalendarCells = (month: Date): (Date | null)[] => {
   const days = eachDayOfInterval({ start: first, end: last })
   const offset = (getDay(first) + 6) % 7 // Monday = 0
   const cells: (Date | null)[] = [...Array(offset).fill(null), ...days]
-  while (cells.length % 7 !== 0) cells.push(null)
+  // Siempre 6 filas (42 celdas), no solo un múltiplo de 7 — si no, el calendario cambia
+  // de alto según el mes tenga 5 o 6 semanas visibles, y el panel "salta" al navegar.
+  while (cells.length < 42) cells.push(null)
   return cells
 }
 
@@ -1372,7 +1374,10 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
 
   const renderRepeatPanel = () => (
     <View
-      style={[styles.sheet, styles.datePanelSheet, { paddingBottom: Math.max(insets.bottom + 8, 16) }]}
+      style={[
+        styles.sheet,
+        { flex: 1, borderRadius: 0, borderWidth: 0, paddingTop: insets.top, paddingBottom: Math.max(insets.bottom + 8, 16) },
+      ]}
       onStartShouldSetResponder={() => true}
     >
       {/* Header */}
@@ -1549,13 +1554,23 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
         <View style={styles.sheetAnchor} pointerEvents="box-none">
           {panel === 'main' && renderMainPanel()}
           {panel === 'date' && renderDatePanel()}
-          {panel === 'repeat' && renderRepeatPanel()}
           {panel === 'details' && renderDetailsPanel()}
         </View>
 
         {/* Deadline picker — centered dialog over everything */}
         {panel === 'date' && deadlinePickerOpen && renderDeadlinePicker()}
       </KeyboardAvoidingView>
+    </Modal>
+
+    {/* Repeat panel — full screen, same as the edit flow */}
+    <Modal
+      visible={panel === 'repeat'}
+      animationType="slide"
+      transparent={false}
+      statusBarTranslucent
+      onRequestClose={() => setPanel('date')}
+    >
+      {renderRepeatPanel()}
     </Modal>
 
     {/* Pickers outside Modal to avoid Android nested dialog issue */}
