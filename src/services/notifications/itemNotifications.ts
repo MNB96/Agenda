@@ -132,18 +132,21 @@ const formatReminderBody = (reminder: ReminderConfig): string => {
 }
 
 // Toda tarea con fecha límite recibe, sin necesidad de configurar nada, un aviso el día
-// anterior y otro el mismo día — con texto claro ("Vence hoy/mañana") y color/prioridad
-// de urgencia, ya que Android no permite un ícono distinto por notificación individual.
+// anterior, otro el mismo día, y uno más (una sola vez) al día siguiente si sigue sin
+// completarse — con texto claro y color/prioridad de urgencia, ya que Android no permite
+// un ícono distinto por notificación individual.
 const scheduleDeadlineNotifications = async (item: Item): Promise<string[]> => {
   if (!item.deadline) return []
 
   const deadlineAt = new Date(`${item.deadline}T09:00:00`)
   const dayBeforeAt = new Date(deadlineAt.getTime() - 24 * 60 * 60 * 1000)
+  const overdueAt = new Date(deadlineAt.getTime() + 24 * 60 * 60 * 1000)
 
   const results = await Promise.all(
     [
       { date: dayBeforeAt, body: '⚠️ Vence mañana' },
       { date: deadlineAt, body: '⚠️ Vence hoy' },
+      { date: overdueAt, body: '🔴 Vencida' },
     ]
       .filter(({ date }) => date > new Date())
       .map(async ({ date, body }): Promise<string | null> => {

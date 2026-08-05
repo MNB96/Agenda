@@ -1,7 +1,7 @@
 ﻿import { useMemo, useState } from 'react'
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import Swipeable from 'react-native-gesture-handler/Swipeable'
-import { differenceInCalendarDays, differenceInHours, format, isToday, parseISO, startOfDay } from 'date-fns'
+import { addDays, differenceInCalendarDays, differenceInHours, format, isToday, parseISO, startOfDay } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { CalendarDays } from 'lucide-react-native'
 import { ItemCard } from '../components/ItemCard'
@@ -10,6 +10,8 @@ import { useSettings } from '../../features/settings/useSettings'
 import { scoreItemsForToday, type TodayBucket } from '../../services/items/relevance'
 import { useGoogleEvents } from '../../features/calendar/useGoogleCalendar'
 import type { CalendarEvent } from '../../domain/calendar/types'
+import { useHolidays } from '../../features/holidays/useHolidays'
+import type { Holiday } from '../../domain/holidays/types'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
 
@@ -98,7 +100,28 @@ interface GoogleEntry {
   timestamp: number
 }
 
-type TodayEntry = LocalEntry | GoogleEntry
+interface HolidayEntry {
+  kind: 'holiday'
+  section: ActiveSectionKey
+  id: string
+  title: string
+  subtitle: string
+  typeLabel: string
+  color: string
+  dateKey: string
+  timestamp: number
+}
+
+// "inamovible" es el feriado real; "trasladable" es un feriado que se movió a un lunes
+// para hacer fin de semana largo; "puente" es un día no laborable extra, no un feriado en
+// sí — se distinguen con una etiqueta y un color de intensidad decreciente.
+const HOLIDAY_TYPE_LABEL: Record<string, string> = {
+  inamovible: 'Feriado',
+  trasladable: 'Feriado trasladable',
+  puente: 'Día puente',
+}
+
+type TodayEntry = LocalEntry | GoogleEntry | HolidayEntry
 
 type ActiveSectionKey = 'overdue' | 'next' | 'important' | 'later'
 
@@ -144,6 +167,36 @@ const mapGoogleEventToEntry = (event: CalendarEvent, colors: ThemeTokens): Googl
   }
 }
 
+const mapHolidayToEntry = (holiday: Holiday, colors: ThemeTokens): HolidayEntry | null => {
+  const start = parseISO(holiday.fecha)
+  const dayDiff = differenceInCalendarDays(startOfDay(start), startOfDay(new Date()))
+
+  if (dayDiff < 0) {
+    return null
+  }
+
+  const section: ActiveSectionKey = dayDiff <= 2 ? 'next' : dayDiff <= 7 ? 'important' : 'later'
+  const when = dayDiff === 0 ? 'Hoy' : dayDiff === 1 ? 'Manana' : format(start, 'd MMM', { locale: es })
+  const color =
+    holiday.tipo === 'inamovible'
+      ? colors.accentStrong
+      : holiday.tipo === 'trasladable'
+        ? colors.accent
+        : colors.textSecondary
+
+  return {
+    kind: 'holiday',
+    section,
+    id: `holiday-${holiday.fecha}`,
+    title: `🇦🇷 ${holiday.nombre}`,
+    subtitle: when,
+    typeLabel: HOLIDAY_TYPE_LABEL[holiday.tipo] ?? holiday.tipo,
+    color,
+    dateKey: format(start, 'yyyy-MM-dd'),
+    timestamp: start.getTime(),
+  }
+}
+
 interface TodayScreenProps {
   onOpenItemEditor: (itemId: string) => void
 }
@@ -152,6 +205,11 @@ export const TodayScreen = ({ onOpenItemEditor }: TodayScreenProps) => {
   const { items, toggleCompleted } = useItems()
   const { data: settings } = useSettings()
   const googleEvents = useGoogleEvents(new Date())
+  const holidayYears = useMemo(() => {
+    const now = new Date()
+    return [now.getFullYear(), addDays(now, 35).getFullYear()]
+  }, [])
+  const holidays = useHolidays(holidayYears)
   const { colors, isDark } = useAppTheme()
   const styles = useMemo(() => createStyles(colors), [colors])
 
@@ -244,6 +302,15 @@ export const TodayScreen = ({ onOpenItemEditor }: TodayScreenProps) => {
         map[entry.section].push(entry)
       })
 
+    ;(holidays.data ?? [])
+      .map((holiday) => mapHolidayToEntry(holiday, colors))
+      .filter((entry): entry is HolidayEntry => Boolean(entry))
+      .forEach((entry) => {
+        const query = search.trim().toLowerCase()
+        if (query && !entry.title.toLowerCase().includes(query)) return
+        map[entry.section].push(entry)
+      })
+
     const itemById = new Map(filteredItems.map(i => [i.id, i]))
 
     // Dentro de un mismo día, las tareas se ordenan por horario (sin hora = primero),
@@ -303,7 +370,7 @@ export const TodayScreen = ({ onOpenItemEditor }: TodayScreenProps) => {
     }
 
     return result
-  }, [colors, completedItems, filteredItems, googleEvents.data, items, scored, noDateItems, search])
+  }, [colors, completedItems, filteredItems, googleEvents.data, holidays.data, items, scored, noDateItems, search])
 
   return (
     <View style={styles.container}>
@@ -409,6 +476,8 @@ export const TodayScreen = ({ onOpenItemEditor }: TodayScreenProps) => {
             }
             const firstGoogle = entries.find((e): e is GoogleEntry => e.kind === 'google')
             if (firstGoogle) return firstGoogle.subtitle
+            const firstHoliday = entries.find((e): e is HolidayEntry => e.kind === 'holiday')
+            if (firstHoliday) return firstHoliday.subtitle
             return sectionLabel[bucket]
           })()
           return (
@@ -463,6 +532,19 @@ export const TodayScreen = ({ onOpenItemEditor }: TodayScreenProps) => {
                   >
                     {card}
                   </Swipeable>
+                )
+              }
+
+              if (entry.kind === 'holiday') {
+                return (
+                  <View key={entry.id} style={styles.googleInlineRow}>
+                    <View style={[styles.googleDot, { backgroundColor: entry.color }]} />
+                    <View style={styles.googleInlineContent}>
+                      <Text style={styles.googleCardTitle}>{entry.title}</Text>
+                      <Text style={styles.googleCardMeta}>{entry.subtitle}</Text>
+                      <Text style={[styles.holidayTypeLabel, { color: entry.color }]}>{entry.typeLabel}</Text>
+                    </View>
+                  </View>
                 )
               }
 
@@ -562,6 +644,7 @@ const createStyles = (colors: ThemeTokens) =>
     },
     googleCardTitle: { fontSize: 17, fontWeight: '500', color: colors.text },
     googleCardMeta: { fontSize: 14, color: colors.textSecondary, marginTop: 3 },
+    holidayTypeLabel: { fontSize: 12, fontWeight: '700', marginTop: 3, textTransform: 'uppercase', letterSpacing: 0.4 },
     emptyState: {
       flex: 1,
       alignItems: 'center',

@@ -221,18 +221,34 @@ export const useItems = () => {
         const notificationIds = await scheduleItemNotifications(next)
         next = updateItem(next, { notificationIds })
       }
-      const saved = await itemRepository.save(next)
 
+      let regenerated = false
       if (completing) {
         const nextOccurrence = buildNextOccurrence(item)
         if (nextOccurrence) {
           await createMutation.mutateAsync(nextOccurrence)
+          regenerated = true
         }
       }
 
-      return saved
+      // Tarea repetitiva que ya generó la próxima instancia y está sincronizada con Google
+      // Calendar: no hace falta guardarla localmente como completada — Calendar ya tiene el
+      // registro histórico, así que se borra directo en vez de esperar el archivado de 60 días.
+      if (regenerated && next.googleCalendarLink) {
+        const usages = await settingsRepository.listLicenseUsages()
+        await Promise.all(
+          usages.filter((u) => u.itemId === item.id).map((u) => settingsRepository.deleteLicenseUsage(u.id)),
+        )
+        await itemRepository.remove(item.id)
+        return next
+      }
+
+      return itemRepository.save(next)
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ITEMS_KEY }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ITEMS_KEY })
+      queryClient.invalidateQueries({ queryKey: LICENSES_KEY })
+    },
   })
 
   const sortedItems = useMemo(

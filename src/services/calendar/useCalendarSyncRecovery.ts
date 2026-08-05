@@ -23,7 +23,17 @@ export const useCalendarSyncRecovery = (
     isProcessing.current = true
     try {
       const items = await itemRepository.list()
-      const pending = items.filter((i) => i.calendarSyncPending && (i.startDate || i.startTime))
+      // No basta con mirar calendarSyncPending: tareas creadas antes de que existiera esa
+      // marca (o cuando algo falló en silencio) quedaron huérfanas para siempre, sin la
+      // marca puesta y sin link. Cualquier tarea con fecha que quiera sincronizar y todavía
+      // no tenga el link de Google es candidata — tenga o no la marca — además de las que
+      // sí tienen link pero están marcadas pendientes (reintento de una actualización fallida).
+      const pending = items.filter(
+        (i) =>
+          (i.startDate || i.startTime) &&
+          i.syncToGoogleCalendar !== false &&
+          (i.calendarSyncPending || !i.googleCalendarLink),
+      )
       if (pending.length === 0) return
 
       const calendarId = settingsRef.current?.selectedGoogleCalendarIds[0] ?? 'primary'

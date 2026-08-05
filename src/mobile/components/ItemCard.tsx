@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native'
 import { differenceInCalendarDays, format, parseISO, startOfDay } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { AlarmClock, Bell, CalendarCheck, Repeat } from 'lucide-react-native'
+import { AlarmClock, Bell, CalendarCheck, Repeat, Star } from 'lucide-react-native'
 import type { Item } from '../../domain/items/types'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
@@ -36,17 +36,15 @@ export const ItemCard = ({ item, overdueLabel, overdueDeadlineLabel, subtaskTota
           .filter((d): d is string => Boolean(d))
           .map((d) => format(parseISO(d), 'd MMM', { locale: es }))
           .join(' - ')
-      : !overdueDeadlineLabel && !overdueLabel
-        ? [
-            item.startTime,
-            item.deadline ? `Fecha límite: ${format(parseISO(item.deadline), 'd MMM', { locale: es })}` : undefined,
-          ]
-            .filter((part): part is string => Boolean(part))
-            .join(' - ') || undefined
-        : undefined
+      : [
+          item.startTime,
+          item.deadline ? `Fecha límite: ${format(parseISO(item.deadline), 'd MMM', { locale: es })}` : undefined,
+        ]
+          .filter((part): part is string => Boolean(part))
+          .join(' - ') || undefined
 
   return (
-    <Pressable style={styles.card} onPress={() => onOpen?.(item)}>
+    <Pressable style={[styles.card, item.important && styles.cardImportant]} onPress={() => onOpen?.(item)}>
       <View style={styles.row}>
         <Pressable
           disabled={!onToggle || item.type === 'event' || item.type === 'important_date' || item.type === 'date_window'}
@@ -96,8 +94,9 @@ export const ItemCard = ({ item, overdueLabel, overdueDeadlineLabel, subtaskTota
           ) : null}
         </View>
 
-        {(repeats || hasAlarmReminder || hasNotificationReminder || item.googleCalendarLink) && (
+        {(item.important || repeats || hasAlarmReminder || hasNotificationReminder || item.googleCalendarLink) && (
           <View style={styles.indicatorStack}>
+            {item.important && <Star size={16} color="#F38630" fill="#F38630" />}
             {item.googleCalendarLink && <CalendarCheck size={16} color="#4285F4" />}
             {repeats && <Repeat size={16} color={colors.textMuted} />}
             {hasAlarmReminder ? (
@@ -145,6 +144,12 @@ const createStyles = (colors: ThemeTokens) =>
       marginBottom: 0,
       borderBottomWidth: 1,
       borderColor: colors.border,
+      borderLeftWidth: 3,
+      borderLeftColor: 'transparent',
+    },
+    cardImportant: {
+      borderLeftColor: '#F38630',
+      backgroundColor: '#F38630' + '0D',
     },
     row: {
       flexDirection: 'row',
