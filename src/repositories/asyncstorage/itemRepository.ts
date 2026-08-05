@@ -37,6 +37,14 @@ export class AsyncStorageItemRepository implements ItemRepository {
     await AsyncStorage.setItem(ITEMS_KEY, JSON.stringify(next))
   }
 
+  async removeMany(ids: string[]): Promise<void> {
+    if (ids.length === 0) return
+    const idSet = new Set(ids)
+    const items = await this.list()
+    const next = items.filter((item) => !idSet.has(item.id))
+    await AsyncStorage.setItem(ITEMS_KEY, JSON.stringify(next))
+  }
+
   async search(query: string): Promise<Item[]> {
     const normalized = query.trim().toLowerCase()
     if (!normalized) {

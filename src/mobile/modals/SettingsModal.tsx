@@ -77,7 +77,30 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
       return
     }
     try {
+      GoogleSignin.configure({ scopes: ['https://www.googleapis.com/auth/calendar'] })
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true })
+
+      // "Reconectar" casi siempre es refrescar una sesión que Play Services ya conoce —
+      // probar en silencio primero evita abrir el selector de cuenta, que es lo que hace
+      // que el modal de Ajustes se cierre solo en algunos dispositivos al cambiar de
+      // Activity y volver.
+      if (GoogleSignin.hasPreviousSignIn()) {
+        try {
+          const silent = await GoogleSignin.signInSilently()
+          if (silent.type === 'success') {
+            const tokens = await GoogleSignin.getTokens()
+            setSession({
+              accessToken: tokens.accessToken,
+              expiresIn: 3600,
+              connectedEmail: silent.data.user.email,
+            })
+            return
+          }
+        } catch {
+          // Sigue al flujo interactivo.
+        }
+      }
+
       const result = await GoogleSignin.signIn()
       if (result.type !== 'success') return
       const tokens = await GoogleSignin.getTokens()
@@ -86,8 +109,8 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
         expiresIn: 3600,
         connectedEmail: result.data.user.email,
       })
-    } catch {
-      // El usuario cancelo el flujo o Play Services no esta disponible.
+    } catch (error) {
+      console.error('[GoogleSignin] connect failed', error)
     }
   }
 

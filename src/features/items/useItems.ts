@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { calendarRepository, itemRepository } from '../../app/container'
+import { calendarRepository, itemRepository, settingsRepository } from '../../app/container'
 import type { Item } from '../../domain/items/types'
 import { createItem, resolveEventDateTimes, updateItem } from './itemService'
 import { useGoogleAuthStore } from '../../state/googleAuthStore'
@@ -11,6 +11,7 @@ import { enqueueDelete } from '../../services/calendar/calendarDeleteQueue'
 import { buildNextOccurrence } from '../../services/items/recurrence'
 
 const ITEMS_KEY = ['items']
+const LICENSES_KEY = ['licenses']
 
 export const useItems = () => {
   const queryClient = useQueryClient()
@@ -191,9 +192,19 @@ export const useItems = () => {
           }
         }
       }
+      // Sin esto, el registro de "día de estudio" asociado a esta tarea quedaba huérfano
+      // para siempre — nunca se limpiaba, y no hay pantalla para editarlo/borrarlo a mano.
+      const usages = await settingsRepository.listLicenseUsages()
+      await Promise.all(
+        usages.filter((u) => u.itemId === item.id).map((u) => settingsRepository.deleteLicenseUsage(u.id)),
+      )
+
       return itemRepository.remove(item.id)
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ITEMS_KEY }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ITEMS_KEY })
+      queryClient.invalidateQueries({ queryKey: LICENSES_KEY })
+    },
   })
 
   const completeMutation = useMutation({
