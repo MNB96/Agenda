@@ -223,7 +223,16 @@ export const TodayScreen = ({ onOpenItemEditor }: TodayScreenProps) => {
       map[section].push({ kind: 'local', section, itemId: entry.item.id })
     })
 
+    // Los eventos que la app misma subió a Google Calendar vuelven a aparecer al
+    // traerlos de vuelta — hay que excluirlos para no duplicar la tarjeta local.
+    const linkedEventKeys = new Set(
+      items
+        .filter((i) => i.googleCalendarLink)
+        .map((i) => `${i.googleCalendarLink!.calendarId}:${i.googleCalendarLink!.eventId}`),
+    )
+
     ;(googleEvents.data ?? [])
+      .filter((event) => !linkedEventKeys.has(`${event.calendarId}:${event.id}`))
       .map((event) => mapGoogleEventToEntry(event, colors))
       .filter((entry): entry is GoogleEntry => Boolean(entry))
       .forEach((entry) => {
@@ -294,7 +303,7 @@ export const TodayScreen = ({ onOpenItemEditor }: TodayScreenProps) => {
     }
 
     return result
-  }, [colors, completedItems, filteredItems, googleEvents.data, scored, noDateItems, search])
+  }, [colors, completedItems, filteredItems, googleEvents.data, items, scored, noDateItems, search])
 
   return (
     <View style={styles.container}>

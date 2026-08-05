@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native'
 import { differenceInCalendarDays, format, parseISO, startOfDay } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { AlarmClock, Bell, Repeat } from 'lucide-react-native'
+import { AlarmClock, Bell, CalendarCheck, Repeat } from 'lucide-react-native'
 import type { Item } from '../../domain/items/types'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
@@ -96,8 +96,9 @@ export const ItemCard = ({ item, overdueLabel, overdueDeadlineLabel, subtaskTota
           ) : null}
         </View>
 
-        {(repeats || hasAlarmReminder || hasNotificationReminder) && (
+        {(repeats || hasAlarmReminder || hasNotificationReminder || item.googleCalendarLink) && (
           <View style={styles.indicatorStack}>
+            {item.googleCalendarLink && <CalendarCheck size={16} color="#4285F4" />}
             {repeats && <Repeat size={16} color={colors.textMuted} />}
             {hasAlarmReminder ? (
               <AlarmClock size={17} color={colors.accent} />

@@ -26,8 +26,13 @@ export const useItems = () => {
     mutationFn: async (payload: Parameters<typeof createItem>[0]) => {
       let item = createItem(payload)
 
-      try {
-        if ((item.startDate || item.startTime) && accessToken && item.syncToGoogleCalendar !== false) {
+      const wantsCalendarSync = Boolean(item.startDate || item.startTime) && item.syncToGoogleCalendar !== false
+      if (wantsCalendarSync && !accessToken) {
+        // No hay sesión de Google ahora mismo — se marca pendiente para que
+        // useCalendarSyncRecovery la suba apenas se reconecte, en vez de perderse.
+        item = updateItem(item, { calendarSyncPending: true })
+      } else if (wantsCalendarSync && accessToken) {
+        try {
           const dateTimes = resolveEventDateTimes(item)
           const calendarId = settings?.selectedGoogleCalendarIds[0] ?? 'primary'
           if (dateTimes) {
@@ -48,12 +53,12 @@ export const useItems = () => {
               },
             })
           }
-        }
-      } catch (error) {
-        if (isGoogleCalendarAuthError(error)) {
-          markUnauthorized()
-        } else {
-          item = updateItem(item, { calendarSyncPending: true })
+        } catch (error) {
+          if (isGoogleCalendarAuthError(error)) {
+            markUnauthorized()
+          } else {
+            item = updateItem(item, { calendarSyncPending: true })
+          }
         }
       }
 
@@ -73,11 +78,14 @@ export const useItems = () => {
 
       let next = updateItem(current, input.patch)
       const dateTimes = resolveEventDateTimes(next)
+      const currentLink = current.googleCalendarLink
+      const shouldSync = Boolean(next.startDate || next.startTime) && next.syncToGoogleCalendar !== false
 
-      if (accessToken) {
-        const currentLink = current.googleCalendarLink
-        const shouldSync = Boolean(next.startDate || next.startTime) && next.syncToGoogleCalendar !== false
-
+      if (shouldSync && !accessToken) {
+        // No hay sesión de Google ahora mismo — se marca pendiente para que
+        // useCalendarSyncRecovery la suba apenas se reconecte, en vez de perderse.
+        next = updateItem(next, { calendarSyncPending: true })
+      } else if (accessToken) {
         if (shouldSync && dateTimes) {
           try {
             if (currentLink) {
