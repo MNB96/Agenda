@@ -3,10 +3,9 @@ import { AppState } from 'react-native'
 import { calendarRepository, itemRepository } from '../../app/container'
 import { isGoogleCalendarAuthError } from '../../infrastructure/calendar/errors'
 import { resolveEventDateTimes } from '../../domain/items/services/eventDateTimes'
-import { updateItem } from '../../domain/items/factories/itemFactory'
 import { useSettings } from '../settings/useSettings'
 import { useItems } from '../items/useItems'
-import type { Item } from '../../domain/items/types'
+import { Item } from '../../domain/items/types'
 
 export const useCalendarSyncRecovery = (
   accessToken: string | null,
@@ -61,7 +60,7 @@ export const useCalendarSyncRecovery = (
                 allDay: dateTimes.allDay,
               },
             )
-            updated = updateItem(item, {
+            updated = Item.update(item, {
               calendarSyncPending: undefined,
               calendarLink: {
                 ...item.calendarLink,
@@ -77,7 +76,7 @@ export const useCalendarSyncRecovery = (
               endDateTime: dateTimes.end,
               allDay: dateTimes.allDay,
             })
-            updated = updateItem(item, {
+            updated = Item.update(item, {
               calendarSyncPending: undefined,
               calendarLink: {
                 calendarId,

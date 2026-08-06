@@ -37,6 +37,8 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
   // custom-scheme browser redirect for Android OAuth clients created after mid-2022, which is
   // what kept causing redirect_uri_mismatch / "Custom URI scheme is not enabled" errors.
   const canUseGoogleAuth = isWeb ? Boolean(webClientId) : true
+  const isConnected = Boolean(accessToken) && !authIssue
+  const hasSessionToDisconnect = Boolean(accessToken || connectedEmail || authIssue)
 
   const [request, response, promptAsync] = Google.useAuthRequest({
     responseType: 'token',
@@ -172,16 +174,23 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
                 </Text>
               ) : null}
               <View style={styles.actionsRow}>
-                <Pressable
-                  disabled={isWeb && (!request || !canUseGoogleAuth)}
-                  onPress={() => void handleConnect()}
-                  style={[styles.primaryButton, isWeb && (!request || !canUseGoogleAuth) && styles.disabled]}
-                >
-                  <Text style={styles.primaryButtonText}>{accessToken ? 'Reconectar' : 'Conectar'}</Text>
-                </Pressable>
-                <Pressable onPress={handleDisconnect} style={styles.secondaryButton}>
-                  <Text style={styles.secondaryButtonText}>Desconectar</Text>
-                </Pressable>
+                {/* Conectado y sano: no hay nada que "conectar" de nuevo, solo desconectar.
+                    authIssue (no accessToken) es la señal real de que hace falta reconectar —
+                    accessToken solo no lo distingue de "recién arrancó, nunca se conectó". */}
+                {!isConnected && (
+                  <Pressable
+                    disabled={isWeb && (!request || !canUseGoogleAuth)}
+                    onPress={() => void handleConnect()}
+                    style={[styles.primaryButton, isWeb && (!request || !canUseGoogleAuth) && styles.disabled]}
+                  >
+                    <Text style={styles.primaryButtonText}>{authIssue ? 'Reconectar' : 'Conectar'}</Text>
+                  </Pressable>
+                )}
+                {hasSessionToDisconnect && (
+                  <Pressable onPress={handleDisconnect} style={isConnected ? styles.dangerButton : styles.secondaryButton}>
+                    <Text style={isConnected ? styles.dangerButtonText : styles.secondaryButtonText}>Desconectar</Text>
+                  </Pressable>
+                )}
               </View>
               {(calendarsQuery.data ?? []).map((calendar) => (
                 <Pressable
@@ -232,7 +241,7 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
                 <TextInput
                   value={String(settings.availableExamLeaveDaysPerYear)}
                   onChangeText={(value) =>
-                    void saveSettings({ ...settings, availableExamLeaveDaysPerYear: Number(value) || 0 })
+                    void saveSettings({ ...settings, availableExamLeaveDaysPerYear: Math.max(0, Number(value) || 0) })
                   }
                   keyboardType="numeric"
                   style={[styles.input, { width: 60 }]}

@@ -5,31 +5,31 @@ import { addMonths, format, parse } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { Check, ChevronDown, ChevronLeft } from 'lucide-react-native'
 import type { EdgeInsets } from 'react-native-safe-area-context'
-import type { RepeatConfig, RepeatRule } from '../../domain/items/types'
+import type { RepeatConfigInput, RepeatRule } from '../../domain/items/types'
 import type { ThemeTokens } from '../theme/tokens'
 
 const WEEKDAY_SHORT = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
 
-export const UNIT_OPTIONS: { label: string; value: RepeatConfig['unit'] }[] = [
+export const UNIT_OPTIONS: { label: string; value: RepeatConfigInput['unit'] }[] = [
   { label: 'día', value: 'day' },
   { label: 'semana', value: 'week' },
   { label: 'mes', value: 'month' },
   { label: 'año', value: 'year' },
 ]
 
-const UNIT_TO_RULE: Record<RepeatConfig['unit'], RepeatRule> = {
+const UNIT_TO_RULE: Record<RepeatConfigInput['unit'], RepeatRule> = {
   day: 'daily', week: 'weekly', month: 'monthly', year: 'yearly',
 }
-export const RULE_TO_UNIT: Partial<Record<RepeatRule, RepeatConfig['unit']>> = {
+export const RULE_TO_UNIT: Partial<Record<RepeatRule, RepeatConfigInput['unit']>> = {
   daily: 'day', weekly: 'week', monthly: 'month', yearly: 'year',
 }
 
 interface RepeatDraft {
-  unit: RepeatConfig['unit']
+  unit: RepeatConfigInput['unit']
   interval: number
   daysOfWeek: number[]
   time?: string
-  end: RepeatConfig['end']
+  end: RepeatConfigInput['end']
   endDate?: string
   occurrences: number
   showUnitPicker: boolean
@@ -37,7 +37,7 @@ interface RepeatDraft {
   showEndDatePicker: boolean
 }
 
-const buildInitialDraft = (rule: RepeatRule, config?: RepeatConfig): RepeatDraft => ({
+const buildInitialDraft = (rule: RepeatRule, config?: RepeatConfigInput): RepeatDraft => ({
   unit: RULE_TO_UNIT[rule] ?? 'week',
   interval: config?.interval ?? 1,
   daysOfWeek: config?.daysOfWeek ?? [],
@@ -51,7 +51,7 @@ const buildInitialDraft = (rule: RepeatRule, config?: RepeatConfig): RepeatDraft
 })
 
 type RepeatDraftAction =
-  | { type: 'reset'; rule: RepeatRule; config?: RepeatConfig }
+  | { type: 'reset'; rule: RepeatRule; config?: RepeatConfigInput }
   | { type: 'patch'; patch: Partial<RepeatDraft> }
   | { type: 'toggleDay'; idx: number }
 
@@ -74,11 +74,11 @@ const repeatDraftReducer = (state: RepeatDraft, action: RepeatDraftAction): Repe
 interface RepeatPanelProps {
   visible: boolean
   rule: RepeatRule
-  config?: RepeatConfig
+  config?: RepeatConfigInput
   /** yyyy-MM-dd. Shown read-only in "Comienza" — falls back to today when not set yet. */
   startDate?: string
   onClose: () => void
-  onDone: (rule: RepeatRule, config: RepeatConfig) => void
+  onDone: (rule: RepeatRule, config: RepeatConfigInput) => void
   colors: ThemeTokens
   insets: Pick<EdgeInsets, 'top' | 'bottom'>
 }
@@ -96,7 +96,7 @@ export const RepeatPanel = ({ visible, rule, config, startDate, onClose, onDone,
 
   const handleDone = () => {
     const nextRule = UNIT_TO_RULE[draft.unit]
-    const nextConfig: RepeatConfig = {
+    const nextConfig: RepeatConfigInput = {
       unit: draft.unit,
       interval: draft.interval,
       daysOfWeek: draft.unit === 'week' ? draft.daysOfWeek : undefined,

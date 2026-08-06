@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { settingsRepository } from '../../app/container'
-import type { LicenseUsage, Settings } from '../../domain/settings/types'
+import { validateSettings, createLicenseUsage, type LicenseUsage, type Settings } from '../../domain/settings/types'
 
 const SETTINGS_KEY = ['settings']
 const LICENSES_KEY = ['licenses']
@@ -14,7 +14,10 @@ export const useSettings = () => {
   })
 
   const saveMutation = useMutation({
-    mutationFn: (next: Settings) => settingsRepository.save(next),
+    mutationFn: (next: Settings) => {
+      validateSettings(next)
+      return settingsRepository.save(next)
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: SETTINGS_KEY }),
   })
 
@@ -34,7 +37,7 @@ export const useLicenseUsages = () => {
   })
 
   const saveMutation = useMutation({
-    mutationFn: (usage: LicenseUsage) => settingsRepository.saveLicenseUsage(usage),
+    mutationFn: (usage: LicenseUsage) => settingsRepository.saveLicenseUsage(createLicenseUsage(usage)),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: LICENSES_KEY }),
   })
 

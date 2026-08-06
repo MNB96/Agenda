@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  Alert,
   BackHandler,
   Keyboard,
   KeyboardAvoidingView,
@@ -32,7 +33,7 @@ import { es } from 'date-fns/locale'
 import { MonthCalendar } from '../components/MonthCalendar'
 import { RepeatPanel, UNIT_OPTIONS, RULE_TO_UNIT } from '../components/RepeatPanel'
 import { ReminderPanel } from '../components/ReminderPanel'
-import { parseQuickInput } from '../../domain/items/factories/quickInputParser'
+import { parseQuickInput } from '../../domain/items/services/quickInputParser'
 import { detectCategoryFromText } from '../../domain/items/services/categoryDetector'
 import { isExamTask } from '../../domain/items/services/examDetector'
 import { useItems } from '../../application/items/useItems'
@@ -40,7 +41,7 @@ import { useLocationAutocomplete } from '../../application/items/useLocationAuto
 import { useSettings, useLicenseUsages } from '../../application/settings/useSettings'
 import { useGoogleAuthStore } from '../../state/googleAuthStore'
 import { computeNextDate } from '../../domain/items/services/recurrence'
-import type { ReminderConfig, RepeatConfig, RepeatRule, TravelConfig } from '../../domain/items/types'
+import type { ReminderConfigInput, RepeatConfigInput, RepeatRule, TravelConfigInput } from '../../domain/items/types'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
 import { createId } from '../../utils/id'
@@ -205,8 +206,8 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
   const [deadline, setDeadline] = useState<string | undefined>()
   const [syncToCalendar, setSyncToCalendar] = useState(true)
   const [repeatRule, setRepeatRule] = useState<RepeatRule>('none')
-  const [repeatConfig, setRepeatConfig] = useState<RepeatConfig | undefined>()
-  const [reminders, setReminders] = useState<ReminderConfig[]>([])
+  const [repeatConfig, setRepeatConfig] = useState<RepeatConfigInput | undefined>()
+  const [reminders, setReminders] = useState<ReminderConfigInput[]>([])
   const [description, setDescription] = useState('')
 
   const [showDescInput, setShowDescInput] = useState(false)
@@ -236,12 +237,12 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
   const [showNativeEndTime, setShowNativeEndTime] = useState(false)
   const [tempDeadline, setTempDeadline] = useState<string | undefined>()
   const [tempRepeat, setTempRepeat] = useState<RepeatRule>('none')
-  const [tempReminders, setTempReminders] = useState<ReminderConfig[]>([])
+  const [tempReminders, setTempReminders] = useState<ReminderConfigInput[]>([])
   const [selectedAlarmType, setSelectedAlarmType] = useState<'notification' | 'alarm'>('notification')
   const [selectedPersistent, setSelectedPersistent] = useState(false)
   const [travelTimeLoading, setTravelTimeLoading] = useState(false)
   const [travelTimeResult, setTravelTimeResult] = useState<string | null>(null)
-  const [travelConfig, setTravelConfig] = useState<TravelConfig | undefined>()
+  const [travelConfig, setTravelConfig] = useState<TravelConfigInput | undefined>()
   // Bumped whenever the date panel should jump its visible month back to tempDate/tempDeadline
   // (opening the sheet, opening the deadline picker, auto-filling a date from a repeat rule) —
   // forces MonthCalendar to remount and re-read its initial month from selectedDate.
@@ -254,7 +255,7 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
 
   // Draft repeat config while the RepeatPanel is open — assembled fully by the panel
   // itself, promoted to repeatRule/repeatConfig only when the outer date panel commits.
-  const [tempRepeatConfig, setTempRepeatConfig] = useState<RepeatConfig | undefined>()
+  const [tempRepeatConfig, setTempRepeatConfig] = useState<RepeatConfigInput | undefined>()
 
   // ── NL parsing ──
   const parsed = useMemo(() => {
@@ -280,36 +281,43 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
   const showNlCategory = Boolean(suggestedCategoryId) && !categoryId && !nlCategoryDismissed
 
   // ── Load / reset on open ──
-  useEffect(() => {
-    if (!open) return
-    setPanel('main')
-    setExpandReminder(false)
+  // Adjusted during render instead of in an effect (React's own recommended pattern for
+  // "reset state when a prop changes"): comparing against the previous render's `open` and
+  // calling setState conditionally here runs synchronously in the same render that flips
+  // `open` to true, so the sheet never paints stale data before resetting on a tick-later
+  // effect would. It also sidesteps the animation risk a key-based remount would carry here —
+  // nothing unmounts, the Modal keeps controlling its own slide animation via `visible={open}`
+  // exactly as before, only the state values themselves get cleared.
+  const [wasOpen, setWasOpen] = useState(open)
+  if (open !== wasOpen) {
+    setWasOpen(open)
+    if (open) {
+      setPanel('main')
+      setExpandReminder(false)
 
-    setText('')
-    setImportant(false)
-    setScheduledDate(undefined)
-    setScheduledTime(undefined)
-    setEndTime(undefined)
-    setDeadline(undefined)
-    setSyncToCalendar(true)
-    setRepeatRule('none')
-    setRepeatConfig(undefined)
-    setReminders([])
-    setTravelConfig(undefined)
-    setDescription('')
-    setShowDescInput(false)
-    setCategoryId(undefined)
-    setNlDateDismissed(false)
-    setNlTimeDismissed(false)
-    setNlCategoryDismissed(false)
-    setStudyTimeBefore(undefined)
-    setLocation(undefined)
-    resetLocationAutocomplete('')
-    setShowLocationInput(false)
-    // Deliberately keyed on [open] only: this blanks the draft each time the sheet opens, but
-    // must NOT re-fire while the sheet stays open — that would wipe out text the user is
-    // actively typing.
-  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+      setText('')
+      setImportant(false)
+      setScheduledDate(undefined)
+      setScheduledTime(undefined)
+      setEndTime(undefined)
+      setDeadline(undefined)
+      setSyncToCalendar(true)
+      setRepeatRule('none')
+      setRepeatConfig(undefined)
+      setReminders([])
+      setTravelConfig(undefined)
+      setDescription('')
+      setShowDescInput(false)
+      setCategoryId(undefined)
+      setNlDateDismissed(false)
+      setNlTimeDismissed(false)
+      setNlCategoryDismissed(false)
+      setStudyTimeBefore(undefined)
+      setLocation(undefined)
+      resetLocationAutocomplete('')
+      setShowLocationInput(false)
+    }
+  }
 
   // ── Android back handler ──
   useEffect(() => {
@@ -346,7 +354,7 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
     setPanel('repeat')
   }, [])
 
-  const handleRepeatDone = useCallback((rule: RepeatRule, config: RepeatConfig) => {
+  const handleRepeatDone = useCallback((rule: RepeatRule, config: RepeatConfigInput) => {
     setTempRepeat(rule)
     setTempRepeatConfig(config)
     // Si todavía no eligieron un día en el calendario, la fecha se infiere de la
@@ -411,11 +419,17 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
       academicConfig: studyTimeBefore ? { studyTimeBefore } : undefined,
     }
 
-    const created = await createItem({
-      ...payload,
-      dateWindow: parsed?.inferred.dateWindow,
-      goalConfig: parsed?.inferred.goalConfig,
-    })
+    let created
+    try {
+      created = await createItem({
+        ...payload,
+        dateWindow: parsed?.inferred.dateWindow,
+        goalConfig: parsed?.inferred.goalConfig,
+      })
+    } catch (error) {
+      Alert.alert('No se pudo guardar', error instanceof Error ? error.message : 'Revisá los datos ingresados.')
+      return
+    }
     if (studyTimeBefore && created) {
       const days = studyTimeBefore === 'half' ? 0.5 : 1
       await saveUsage({

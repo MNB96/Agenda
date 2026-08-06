@@ -1,7 +1,7 @@
 import { useReducer } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { AlarmClock, Bell, Check, ChevronDown, Navigation, Pin, X } from 'lucide-react-native'
-import type { ReminderConfig } from '../../domain/items/types'
+import type { ReminderConfigInput } from '../../domain/items/types'
 import type { ThemeTokens } from '../theme/tokens'
 import { createId } from '../../utils/id'
 
@@ -13,7 +13,7 @@ const REMINDER_PRESETS: { label: string; minutesBefore: number }[] = [
   { label: '1 día antes', minutesBefore: 1440 },
 ]
 
-const formatReminderLabel = (reminder: ReminderConfig): string => {
+const formatReminderLabel = (reminder: ReminderConfigInput): string => {
   const mins = reminder.minutesBefore
   if (mins === undefined) return 'Recordatorio'
   if (reminder.mode === 'departure') {
@@ -54,8 +54,8 @@ const customDraftReducer = (state: CustomDraft, action: CustomDraftAction): Cust
 }
 
 interface ReminderPanelProps {
-  reminders: ReminderConfig[]
-  onChangeReminders: (next: ReminderConfig[]) => void
+  reminders: ReminderConfigInput[]
+  onChangeReminders: (next: ReminderConfigInput[]) => void
   alarmType: 'notification' | 'alarm'
   onChangeAlarmType: (type: 'notification' | 'alarm') => void
   persistent: boolean

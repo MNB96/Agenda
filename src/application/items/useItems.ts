@@ -1,8 +1,7 @@
 import { useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { itemRepository, settingsRepository } from '../../app/container'
-import type { Item } from '../../domain/items/types'
-import { createItem, updateItem } from '../../domain/items/factories/itemFactory'
+import { Item, type ItemPatch } from '../../domain/items/types'
 import { useGoogleAuthStore } from '../../state/googleAuthStore'
 import { useSettings } from '../settings/useSettings'
 import { cancelItemNotifications, scheduleItemNotifications } from '../../infrastructure/notifications/itemNotifications'
@@ -55,8 +54,9 @@ const deleteLicenseUsagesForItems = async (itemIds: string[]) => {
 // never deletable) instead of actually gone. Shared by every single-item removal path.
 const removeItemAndSubtasks = async (item: Item): Promise<void> => {
   const subtasks = await itemRepository.getByParentIds([item.id])
+  const allIds = Item.idsToRemoveWith([item], subtasks)
   await Promise.all(subtasks.map((subtask) => cancelItemNotifications(subtask)))
-  await deleteLicenseUsagesForItems([item.id, ...subtasks.map((subtask) => subtask.id)])
+  await deleteLicenseUsagesForItems(allIds)
   if (subtasks.length > 0) await itemRepository.removeMany(subtasks.map((subtask) => subtask.id))
   await itemRepository.remove(item.id)
 }
@@ -91,12 +91,12 @@ export const useItems = () => {
   })
 
   const createMutation = useMutation({
-    mutationFn: async (payload: Parameters<typeof createItem>[0]) => {
-      let item = createItem(payload)
+    mutationFn: async (payload: Parameters<typeof Item.create>[0]) => {
+      let item = Item.create(payload)
       item = await syncItemToCalendar(item, calendarSyncContext())
 
       const notificationIds = await scheduleItemNotifications(item)
-      item = updateItem(item, { notificationIds })
+      item = Item.update(item, { notificationIds })
       return itemRepository.save(item)
     },
     onSuccess: () => {
@@ -106,18 +106,18 @@ export const useItems = () => {
   })
 
   const updateMutation = useMutation({
-    mutationFn: async (input: { id: string; patch: Partial<Item> }) => {
+    mutationFn: async (input: { id: string; patch: ItemPatch }) => {
       const current = await itemRepository.getById(input.id)
       if (!current) {
         throw new Error('No se encontro el item para actualizar.')
       }
 
-      let next = updateItem(current, input.patch)
+      let next = Item.update(current, input.patch)
       next = await syncItemToCalendar(next, calendarSyncContext())
 
       await cancelItemNotifications(current)
       const notificationIds = await scheduleItemNotifications(next)
-      next = updateItem(next, { notificationIds })
+      next = Item.update(next, { notificationIds })
       return itemRepository.save(next)
     },
     onSuccess: (savedItem) => {
@@ -147,16 +147,22 @@ export const useItems = () => {
   const completeMutation = useMutation({
     mutationFn: async (item: Item) => {
       const completing = item.status !== 'completed'
-      let next = updateItem(item, {
+      if (completing) {
+        const subtasks = await itemRepository.getByParentIds([item.id])
+        if (!Item.canComplete(item, subtasks)) {
+          throw new Error('Completá todas las subtareas primero.')
+        }
+      }
+      let next = Item.update(item, {
         status: completing ? 'completed' : 'active',
         completedAt: completing ? new Date().toISOString() : undefined,
       })
       if (completing) {
         await cancelItemNotifications(item)
-        next = updateItem(next, { notificationIds: [] })
+        next = Item.update(next, { notificationIds: [] })
       } else {
         const notificationIds = await scheduleItemNotifications(next)
-        next = updateItem(next, { notificationIds })
+        next = Item.update(next, { notificationIds })
       }
 
       let regenerated = false
@@ -190,9 +196,8 @@ export const useItems = () => {
   // limpieza de licencias y subtareas que el borrado manual en vez de reimplementarla aparte.
   const archiveCompletedMutation = useMutation({
     mutationFn: async (items: Item[]) => {
-      const parentIds = items.map((item) => item.id)
-      const subtasks = await itemRepository.getByParentIds(parentIds)
-      const allIds = [...parentIds, ...subtasks.map((subtask) => subtask.id)]
+      const subtasks = await itemRepository.getByParentIds(items.map((item) => item.id))
+      const allIds = Item.idsToRemoveWith(items, subtasks)
 
       await Promise.all(subtasks.map((subtask) => cancelItemNotifications(subtask)))
       await deleteLicenseUsagesForItems(allIds)

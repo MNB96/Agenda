@@ -3,7 +3,7 @@ import { Linking, Pressable, StyleSheet, Text, View } from 'react-native'
 import { differenceInCalendarDays, format, parseISO, startOfDay } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { AlarmClock, Bell, CalendarCheck, Repeat, Star } from 'lucide-react-native'
-import type { Item } from '../../domain/items/types'
+import { ITEM_TYPE, type Item } from '../../domain/items/types'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
 
@@ -31,7 +31,7 @@ export const ItemCard = ({ item, overdueLabel, overdueDeadlineLabel, subtaskTota
   // abajo del título va la hora y, si tiene una fecha límite propia, esa también —
   // repetir la fecha del encabezado sería redundante, pero la fecha límite es otro dato.
   const dateLabel =
-    item.type === 'date_window' && (item.dateWindow?.startDate || item.dateWindow?.endDate)
+    item.type === ITEM_TYPE.DATE_WINDOW && (item.dateWindow?.startDate || item.dateWindow?.endDate)
       ? [item.dateWindow.startDate, item.dateWindow.endDate]
           .filter((dateStr): dateStr is string => Boolean(dateStr))
           .map((dateStr) => format(parseISO(dateStr), 'd MMM', { locale: es }))
@@ -47,7 +47,7 @@ export const ItemCard = ({ item, overdueLabel, overdueDeadlineLabel, subtaskTota
     <Pressable style={[styles.card, item.important && styles.cardImportant]} onPress={() => onOpen?.(item)}>
       <View style={styles.row}>
         <Pressable
-          disabled={!onToggle || item.type === 'event' || item.type === 'important_date' || item.type === 'date_window'}
+          disabled={!onToggle || item.type === ITEM_TYPE.EVENT || item.type === ITEM_TYPE.DATE_WINDOW}
           onPress={() => void onToggle?.(item)}
           style={[
             styles.checkbox,
@@ -87,7 +87,7 @@ export const ItemCard = ({ item, overdueLabel, overdueDeadlineLabel, subtaskTota
               <Text style={styles.locationMeta} numberOfLines={1}>📍 {item.location}</Text>
             </Pressable>
           ) : null}
-          {item.goalConfig ? (
+          {item.type === ITEM_TYPE.GOAL ? (
             <Text style={styles.meta}>
               {`${item.goalConfig.currentValue}/${item.goalConfig.targetValue}`}
             </Text>
@@ -124,10 +124,10 @@ const resolveIndicatorColor = (item: Item, colors: ThemeTokens): string => {
       return colors.warning
     }
   }
-  if (item.type === 'goal') {
+  if (item.type === ITEM_TYPE.GOAL) {
     return colors.cream
   }
-  if (item.type === 'important_date' || item.type === 'date_window') {
+  if (item.type === ITEM_TYPE.DATE_WINDOW) {
     return colors.accent
   }
   return colors.primary

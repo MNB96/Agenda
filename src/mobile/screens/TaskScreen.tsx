@@ -1,10 +1,11 @@
 import { useMemo } from 'react'
-import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { ActivityIndicator, Alert, FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import Swipeable from 'react-native-gesture-handler/Swipeable'
 import { differenceInCalendarDays, differenceInHours, format, isToday, startOfDay } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { CalendarDays } from 'lucide-react-native'
 import { ItemCard } from '../components/ItemCard'
+import { LoadingSpinner } from '../components/LoadingSpinner'
 import { useItems } from '../../application/items/useItems'
 import { useSettings } from '../../application/settings/useSettings'
 import {
@@ -102,6 +103,7 @@ export const TaskScreen = ({ onOpenItemEditor }: TaskScreenProps) => {
     hasMoreCompleted,
     isLoadingMoreCompleted,
     loadMoreCompleted,
+    isInitialLoading,
   } = useTaskEntries()
 
   return (
@@ -177,6 +179,11 @@ export const TaskScreen = ({ onOpenItemEditor }: TaskScreenProps) => {
       </ScrollView>
       </View>
 
+      {isInitialLoading ? (
+        <View style={styles.loadingState}>
+          <LoadingSpinner size={120} />
+        </View>
+      ) : (
       <FlatList
         data={sections}
         keyExtractor={([bucket], index) => `section-${bucket}-${index}`}
@@ -242,7 +249,11 @@ export const TaskScreen = ({ onOpenItemEditor }: TaskScreenProps) => {
                     subtaskTotal={subtaskInfo?.total}
                     subtaskDone={subtaskInfo?.done}
                     onToggle={async (item) => {
-                      await toggleCompleted(item)
+                      try {
+                        await toggleCompleted(item)
+                      } catch (error) {
+                        Alert.alert('No se pudo completar', error instanceof Error ? error.message : 'Intentá de nuevo.')
+                      }
                     }}
                     onOpen={() => onOpenItemEditor(localItem.id)}
                   />
@@ -259,7 +270,14 @@ export const TaskScreen = ({ onOpenItemEditor }: TaskScreenProps) => {
                       </View>
                     )}
                     onSwipeableOpen={(dir) => {
-                      if (dir === 'right') void toggleCompleted(localItem)
+                      if (dir !== 'right') return
+                      void (async () => {
+                        try {
+                          await toggleCompleted(localItem)
+                        } catch (error) {
+                          Alert.alert('No se pudo completar', error instanceof Error ? error.message : 'Intentá de nuevo.')
+                        }
+                      })()
                     }}
                   >
                     {card}
@@ -308,6 +326,7 @@ export const TaskScreen = ({ onOpenItemEditor }: TaskScreenProps) => {
           )
         }}
       />
+      )}
     </View>
   )
 }
@@ -396,6 +415,11 @@ const createStyles = (colors: ThemeTokens) =>
       justifyContent: 'center',
       paddingTop: 72,
       paddingHorizontal: 28,
+    },
+    loadingState: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     emptyIconWrap: {
       width: 38,

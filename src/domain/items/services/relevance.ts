@@ -1,5 +1,5 @@
 import { differenceInCalendarDays, parseISO, startOfDay } from 'date-fns'
-import type { Item } from '../types'
+import { ITEM_TYPE, type Item } from '../types'
 
 export type TodayBucket =
   | 'overdue'
@@ -16,7 +16,7 @@ interface ScoredItem {
 }
 
 const itemDate = (item: Item): Date | undefined => {
-  if (item.type === 'date_window') {
+  if (item.type === ITEM_TYPE.DATE_WINDOW) {
     // The closing date is what drives urgency — a window that already opened shouldn't
     // read as overdue just because its start date is in the past.
     const raw = item.dateWindow?.endDate ?? item.dateWindow?.startDate
@@ -38,7 +38,7 @@ export const scoreItemsForToday = (items: Item[]): ScoredItem[] => {
       let bucket: TodayBucket = 'later'
       let score = 10
 
-      if (item.type === 'goal' && (!date || days > 30)) {
+      if (item.type === ITEM_TYPE.GOAL && (!date || days > 30)) {
         bucket = 'long_term_goal'
         score = 90
       } else if (days < 0 || (item.deadline && days < 0)) {
@@ -50,7 +50,7 @@ export const scoreItemsForToday = (items: Item[]): ScoredItem[] => {
       } else if (days === 0) {
         bucket = 'now'
         score = 20
-      } else if (item.type === 'important_date' || item.type === 'date_window') {
+      } else if (item.type === ITEM_TYPE.DATE_WINDOW) {
         bucket = 'important'
         score = 25 + Math.min(days, 30)
       } else if (days <= 3) {

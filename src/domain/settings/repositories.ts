@@ -1,4 +1,5 @@
-import type { LicenseUsage, Settings } from './types'
+import type { LicenseUsage } from './LicenseUsage'
+import type { Settings } from './types'
 
 export interface SettingsRepository {
   get(): Promise<Settings>

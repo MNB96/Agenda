@@ -1,12 +1,8 @@
 import type { ItemCategory, TransportMode } from '../items/types'
 
-export interface LicenseUsage {
-  id: string
-  date: string
-  itemId?: string
-  days: number
-  note?: string
-}
+export type { LicenseUsage, LicenseUsageInput } from './LicenseUsage'
+export { createLicenseUsage } from './LicenseUsage'
+export { updateSettings, validateSettings } from './Settings'
 
 export interface Settings {
   id: 'main'
@@ -14,9 +10,7 @@ export interface Settings {
   visibleCategoryIds: string[]
   showCompletedItems: boolean
   defaultTransport: TransportMode
-  defaultTravelExtraMinutes: number
   remindersEnabled: boolean
-  defaultReminderMinutes: number
   availableExamLeaveDaysPerYear: number
   categories: ItemCategory[]
   selectedCalendarIds: string[]
@@ -38,9 +32,7 @@ export const DEFAULT_SETTINGS: Settings = {
   visibleCategoryIds: [],
   showCompletedItems: false,
   defaultTransport: 'transit',
-  defaultTravelExtraMinutes: 10,
   remindersEnabled: true,
-  defaultReminderMinutes: 60,
   availableExamLeaveDaysPerYear: 10,
   categories: DEFAULT_CATEGORIES,
   selectedCalendarIds: [],

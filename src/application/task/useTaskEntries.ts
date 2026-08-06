@@ -7,7 +7,7 @@ import { useGoogleEvents } from '../calendar/useGoogleCalendar'
 import type { CalendarEvent } from '../../domain/calendar/types'
 import { useHolidays } from '../holidays/useHolidays'
 import type { Holiday } from '../../domain/holidays/types'
-import type { Item } from '../../domain/items/types'
+import { ITEM_TYPE, type Item } from '../../domain/items/types'
 import { useAppTheme } from '../../mobile/theme/useAppTheme'
 import type { ThemeTokens } from '../../mobile/theme/tokens'
 
@@ -59,7 +59,7 @@ const HOLIDAY_TYPE_LABEL: Record<string, string> = {
 // Las tareas sin ninguna fecha van directo a su propia sección "Sin fecha" al final,
 // en vez de mezclarse con las de "Más adelante" que sí tienen una fecha real.
 const hasAnyDate = (item: Item): boolean =>
-  Boolean(item.startDate || item.deadline || item.dateWindow?.startDate || item.dateWindow?.endDate)
+  Boolean(item.startDate || item.deadline || (item.type === ITEM_TYPE.DATE_WINDOW && (item.dateWindow.startDate || item.dateWindow.endDate)))
 
 const mapLocalBucketToSection = (bucket: TodayBucket): ActiveSectionKey => {
   if (bucket === 'overdue') return 'overdue'
@@ -104,7 +104,7 @@ const mapGoogleEventToEntry = (event: CalendarEvent, colors: ThemeTokens): Googl
 }
 
 const mapHolidayToEntry = (holiday: Holiday, colors: ThemeTokens): HolidayEntry | null => {
-  const start = parseISO(holiday.fecha)
+  const start = parseISO(holiday.date)
   const dayDiff = differenceInCalendarDays(startOfDay(start), startOfDay(new Date()))
 
   if (dayDiff < 0) {
@@ -114,19 +114,19 @@ const mapHolidayToEntry = (holiday: Holiday, colors: ThemeTokens): HolidayEntry 
   const section: ActiveSectionKey = dayDiff <= 2 ? 'next' : dayDiff <= 7 ? 'important' : 'later'
   const when = dayDiff === 0 ? 'Hoy' : dayDiff === 1 ? 'Manana' : format(start, 'd MMM', { locale: es })
   const color =
-    holiday.tipo === 'inamovible'
+    holiday.type === 'inamovible'
       ? colors.accentStrong
-      : holiday.tipo === 'trasladable'
+      : holiday.type === 'trasladable'
         ? colors.accent
         : colors.textSecondary
 
   return {
     kind: 'holiday',
     section,
-    id: `holiday-${holiday.fecha}`,
-    title: `🇦🇷 ${holiday.nombre}`,
+    id: `holiday-${holiday.date}`,
+    title: `🇦🇷 ${holiday.name}`,
     subtitle: when,
-    typeLabel: HOLIDAY_TYPE_LABEL[holiday.tipo] ?? holiday.tipo,
+    typeLabel: HOLIDAY_TYPE_LABEL[holiday.type] ?? holiday.type,
     color,
     dateKey: format(start, 'yyyy-MM-dd'),
     timestamp: start.getTime(),
@@ -144,13 +144,18 @@ interface UseTaskEntriesResult {
   hasMoreCompleted: boolean
   isLoadingMoreCompleted: boolean
   loadMoreCompleted: () => void
+  /** True while items, Google Calendar events, or holidays are still loading for the first
+   * time — lets the screen show one spinner instead of painting sections as each source
+   * resolves at its own pace (items are local/fast, holidays are cached, Google events are a
+   * network call — without this they used to pop in one at a time). */
+  isInitialLoading: boolean
 }
 
 // Pulls together local items, Google Calendar events and public holidays into the sectioned,
 // sorted list the Task screen renders — pure data transformation, no JSX, so it's testable
 // without mounting the screen.
 export const useTaskEntries = (): UseTaskEntriesResult => {
-  const { items, dataUpdatedAt, loadMoreCompleted: fetchMoreCompleted } = useItems()
+  const { items, isLoading: itemsLoading, dataUpdatedAt, loadMoreCompleted: fetchMoreCompleted } = useItems()
   const googleEvents = useGoogleEvents(new Date())
   const holidayYears = useMemo(() => {
     const now = new Date()
@@ -346,5 +351,6 @@ export const useTaskEntries = (): UseTaskEntriesResult => {
     hasMoreCompleted: hasMoreCompleted && completedItems.length > 0 && completedItems.length % COMPLETED_PAGE_SIZE === 0,
     isLoadingMoreCompleted,
     loadMoreCompleted,
+    isInitialLoading: itemsLoading || googleEvents.isLoading || holidays.isLoading,
   }
 }

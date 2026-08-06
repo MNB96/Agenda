@@ -1,9 +1,8 @@
 import { calendarRepository } from '../../app/container'
 import { isGoogleCalendarAuthError } from '../../infrastructure/calendar/errors'
 import { resolveEventDateTimes } from '../../domain/items/services/eventDateTimes'
-import { updateItem } from '../../domain/items/factories/itemFactory'
 import { enqueueDelete } from './calendarDeleteQueue'
-import type { CalendarLink, Item } from '../../domain/items/types'
+import { Item, type CalendarLink } from '../../domain/items/types'
 
 interface SyncContext {
   accessToken: string | null | undefined
@@ -34,7 +33,7 @@ export const syncItemToCalendar = async (item: Item, ctx: SyncContext): Promise<
   const currentLink = item.calendarLink
 
   if (!ctx.accessToken) {
-    return wantsSync ? updateItem(item, { calendarSyncPending: true }) : item
+    return wantsSync ? Item.update(item, { calendarSyncPending: true }) : item
   }
 
   if (wantsSync) {
@@ -44,13 +43,13 @@ export const syncItemToCalendar = async (item: Item, ctx: SyncContext): Promise<
     try {
       if (currentLink) {
         await calendarRepository.updateEvent(ctx.accessToken, currentLink.calendarId, currentLink.eventId, eventPayloadFor(item, dateTimes))
-        return updateItem(item, {
+        return Item.update(item, {
           calendarSyncPending: undefined,
           calendarLink: { ...currentLink, lastSyncedAt: new Date().toISOString() },
         })
       }
       const created = await calendarRepository.createEvent(ctx.accessToken, ctx.calendarId, eventPayloadFor(item, dateTimes))
-      return updateItem(item, {
+      return Item.update(item, {
         calendarSyncPending: undefined,
         calendarLink: { calendarId: ctx.calendarId, eventId: created.eventId, origin: 'app', lastSyncedAt: new Date().toISOString() },
       })
@@ -59,7 +58,7 @@ export const syncItemToCalendar = async (item: Item, ctx: SyncContext): Promise<
         ctx.markUnauthorized()
         return item
       }
-      return updateItem(item, { calendarSyncPending: true })
+      return Item.update(item, { calendarSyncPending: true })
     }
   }
 
@@ -73,7 +72,7 @@ export const syncItemToCalendar = async (item: Item, ctx: SyncContext): Promise<
         await enqueueDelete(currentLink.calendarId, currentLink.eventId, item.title)
       }
     }
-    return updateItem(item, { calendarLink: undefined })
+    return Item.update(item, { calendarLink: undefined })
   }
 
   return item

@@ -1,5 +1,7 @@
+export type HolidayType = 'inamovible' | 'trasladable' | 'puente'
+
 export interface Holiday {
-  fecha: string
-  tipo: string
-  nombre: string
+  date: string
+  type: HolidayType
+  name: string
 }

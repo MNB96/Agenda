@@ -1,69 +1,20 @@
+import type { ItemProps, ItemType } from './Item'
+import { RepeatConfig, type RepeatConfigInput } from './valueObjects/RepeatConfig'
+import { ReminderConfig, type ReminderConfigInput } from './valueObjects/ReminderConfig'
+import { DateWindow, type DateWindowInput } from './valueObjects/DateWindow'
+import { GoalConfig, type GoalConfigInput } from './valueObjects/GoalConfig'
+import { AcademicConfig, type AcademicConfigInput } from './valueObjects/AcademicConfig'
+import { TravelConfig, type TravelConfigInput, type TransportMode } from './valueObjects/TravelConfig'
+import { CalendarLink, type CalendarLinkInput } from './valueObjects/CalendarLink'
+
+export type { RepeatConfigInput, ReminderConfigInput, DateWindowInput, GoalConfigInput, AcademicConfigInput, TravelConfigInput, CalendarLinkInput, TransportMode }
+export { RepeatConfig, ReminderConfig, DateWindow, GoalConfig, AcademicConfig, TravelConfig, CalendarLink }
+export { Item, ITEM_TYPE } from './Item'
+export type { ItemType, ItemProps, ScheduledItemType } from './Item'
+
 export type RepeatRule = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'
 
-export interface RepeatConfig {
-  unit: 'day' | 'week' | 'month' | 'year'
-  interval: number
-  daysOfWeek?: number[]
-  time?: string
-  end: 'never' | 'on_date' | 'after_occurrences'
-  endDate?: string
-  occurrences?: number
-  /** How many instances of this series have been completed so far (including this one). */
-  occurrencesDone?: number
-}
-
-export type ItemType =
-  | 'task'
-  | 'event'
-  | 'deadline'
-  | 'reminder'
-  | 'goal'
-  | 'important_date'
-  | 'date_window'
-
 export type ItemStatus = 'active' | 'completed' | 'archived'
-
-export type TransportMode = 'driving' | 'walking' | 'transit' | 'cycling'
-
-export interface ReminderConfig {
-  id: string
-  mode: 'absolute' | 'relative' | 'departure'
-  minutesBefore?: number
-  dateTime?: string
-  persistent?: boolean
-  alarmType?: 'notification' | 'alarm'
-}
-
-export interface TravelConfig {
-  transport: TransportMode
-  extraMinutes: number
-  departureReminderEnabled: boolean
-}
-
-export interface GoalConfig {
-  targetValue: number
-  currentValue: number
-  unit?: string
-  isBinary?: boolean
-}
-
-export interface AcademicConfig {
-  studyTimeBefore?: 'half' | 'full'
-  grade?: number
-}
-
-export interface DateWindow {
-  startDate?: string
-  endDate?: string
-}
-
-export interface CalendarLink {
-  calendarId: string
-  eventId: string
-  lastSyncedAt: string
-  /** 'app' if this app created the calendar event; 'external' if it was pre-existing and only linked. */
-  origin: 'app' | 'external'
-}
 
 export interface ItemCategory {
   id: string
@@ -72,44 +23,15 @@ export interface ItemCategory {
   icon: string
 }
 
-export interface Item {
-  id: string
-  title: string
-  description?: string
-  type: ItemType
-  status: ItemStatus
-  important?: boolean
-  repeatRule?: RepeatRule
-  repeatConfig?: RepeatConfig
-  parentId?: string
-  categoryId?: string
-  location?: string
-  startDate?: string
-  startTime?: string
-  endDate?: string
-  endTime?: string
-  deadline?: string
-  dateWindow?: DateWindow
-  reminderConfig?: ReminderConfig[]
-  travelConfig?: TravelConfig
-  goalConfig?: GoalConfig
-  academicConfig?: AcademicConfig
-  syncToCalendar?: boolean
-  calendarLink?: CalendarLink
-  calendarSyncPending?: boolean
-  notificationIds?: string[]
-  createdAt: string
-  updatedAt: string
-  completedAt?: string
-}
-
+// Raw shape for creating an item: anything that becomes a value object is still the plain,
+// not-yet-validated *Input shape here — Item.create is what turns it into the real thing.
 export interface NewItemInput {
   title: string
   description?: string
   type?: ItemType
   important?: boolean
   repeatRule?: RepeatRule
-  repeatConfig?: RepeatConfig
+  repeatConfig?: RepeatConfigInput
   parentId?: string
   categoryId?: string
   location?: string
@@ -118,10 +40,28 @@ export interface NewItemInput {
   endDate?: string
   endTime?: string
   deadline?: string
-  dateWindow?: DateWindow
-  reminderConfig?: ReminderConfig[]
-  travelConfig?: TravelConfig
-  goalConfig?: GoalConfig
-  academicConfig?: AcademicConfig
+  dateWindow?: DateWindowInput
+  reminderConfig?: ReminderConfigInput[]
+  travelConfig?: TravelConfigInput
+  goalConfig?: GoalConfigInput
+  academicConfig?: AcademicConfigInput
   syncToCalendar?: boolean
+}
+
+// Same idea for Item.update: everything except the value-object fields passes through as-is;
+// those fields take raw input (or a carried-over instance — an instance already satisfies its
+// own Input shape structurally) and get re-validated into real instances by Item.update.
+// Derived from ItemProps (the flat prop bag), not Item itself — Item is a union now, and
+// `keyof` on a union only sees fields common to every variant, which would silently drop
+// goalConfig/dateWindow from this derivation instead of erroring.
+export type ItemPatch = Partial<
+  Omit<ItemProps, 'repeatConfig' | 'reminderConfig' | 'dateWindow' | 'goalConfig' | 'academicConfig' | 'travelConfig' | 'calendarLink'>
+> & {
+  repeatConfig?: RepeatConfigInput
+  reminderConfig?: ReminderConfigInput[]
+  dateWindow?: DateWindowInput
+  goalConfig?: GoalConfigInput
+  academicConfig?: AcademicConfigInput
+  travelConfig?: TravelConfigInput
+  calendarLink?: CalendarLinkInput
 }

@@ -1,7 +1,7 @@
 import type { ItemRepository } from '../../../domain/items/repositories'
 import type { Item } from '../../../domain/items/types'
 import { getDb } from './db'
-import { ITEM_COLUMNS, ITEM_PLACEHOLDERS, toItemRowParams } from './itemRow'
+import { hydrateItem, ITEM_COLUMNS, ITEM_PLACEHOLDERS, toItemRowParams } from './itemRow'
 
 interface ItemRow {
   data: string
@@ -11,13 +11,13 @@ export class SQLiteItemRepository implements ItemRepository {
   async list(): Promise<Item[]> {
     const db = await getDb()
     const rows = await db.getAllAsync<ItemRow>('SELECT data FROM items')
-    return rows.map((row) => JSON.parse(row.data) as Item)
+    return rows.map((row) => hydrateItem(JSON.parse(row.data)))
   }
 
   async listActive(): Promise<Item[]> {
     const db = await getDb()
     const rows = await db.getAllAsync<ItemRow>("SELECT data FROM items WHERE status != 'completed'")
-    return rows.map((row) => JSON.parse(row.data) as Item)
+    return rows.map((row) => hydrateItem(JSON.parse(row.data)))
   }
 
   async listCompleted(limit: number, offset: number): Promise<Item[]> {
@@ -26,7 +26,7 @@ export class SQLiteItemRepository implements ItemRepository {
       "SELECT data FROM items WHERE status = 'completed' ORDER BY completedAt DESC LIMIT ? OFFSET ?",
       [limit, offset],
     )
-    return rows.map((row) => JSON.parse(row.data) as Item)
+    return rows.map((row) => hydrateItem(JSON.parse(row.data)))
   }
 
   async listCompletedByCategory(categoryId: string, limit: number): Promise<Item[]> {
@@ -35,7 +35,7 @@ export class SQLiteItemRepository implements ItemRepository {
       "SELECT data FROM items WHERE status = 'completed' AND categoryId = ? ORDER BY completedAt DESC LIMIT ?",
       [categoryId, limit],
     )
-    return rows.map((row) => JSON.parse(row.data) as Item)
+    return rows.map((row) => hydrateItem(JSON.parse(row.data)))
   }
 
   async listArchiveEligible(completedBefore: string): Promise<Item[]> {
@@ -46,13 +46,13 @@ export class SQLiteItemRepository implements ItemRepository {
          AND googleCalendarEventId IS NOT NULL`,
       [completedBefore],
     )
-    return rows.map((row) => JSON.parse(row.data) as Item)
+    return rows.map((row) => hydrateItem(JSON.parse(row.data)))
   }
 
   async getById(id: string): Promise<Item | undefined> {
     const db = await getDb()
     const row = await db.getFirstAsync<ItemRow>('SELECT data FROM items WHERE id = ?', [id])
-    return row ? (JSON.parse(row.data) as Item) : undefined
+    return row ? hydrateItem(JSON.parse(row.data)) : undefined
   }
 
   async getByParentIds(parentIds: string[]): Promise<Item[]> {
@@ -63,7 +63,7 @@ export class SQLiteItemRepository implements ItemRepository {
       `SELECT data FROM items WHERE parentId IN (${placeholders})`,
       parentIds,
     )
-    return rows.map((row) => JSON.parse(row.data) as Item)
+    return rows.map((row) => hydrateItem(JSON.parse(row.data)))
   }
 
   async save(item: Item): Promise<Item> {

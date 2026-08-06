@@ -1,7 +1,7 @@
 import { addDays, addMonths, addWeeks, addYears, format, getDay, isAfter, parseISO, subDays } from 'date-fns'
-import type { Item, NewItemInput, RepeatConfig } from '../types'
+import { ITEM_TYPE, type Item, type NewItemInput, type RepeatConfigInput } from '../types'
 
-export const computeNextDate = (base: Date, config: RepeatConfig): Date => {
+export const computeNextDate = (base: Date, config: RepeatConfigInput): Date => {
   if (config.unit === 'day') return addDays(base, config.interval)
   if (config.unit === 'month') return addMonths(base, config.interval)
   if (config.unit === 'year') return addYears(base, config.interval)
@@ -56,7 +56,7 @@ export const buildNextOccurrence = (item: Item): NewItemInput | null => {
     deadline: item.startDate ? item.deadline : nextDateStr,
     reminderConfig: item.reminderConfig?.filter((reminder) => reminder.mode !== 'absolute'),
     travelConfig: item.travelConfig,
-    goalConfig: item.goalConfig,
+    goalConfig: item.type === ITEM_TYPE.GOAL ? item.goalConfig : undefined,
     academicConfig: item.academicConfig,
     syncToCalendar: item.syncToCalendar,
   }

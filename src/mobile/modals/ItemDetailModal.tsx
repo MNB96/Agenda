@@ -46,7 +46,7 @@ import { useGoogleAuthStore } from '../../state/googleAuthStore'
 import { computeNextDate } from '../../domain/items/services/recurrence'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
-import type { Item, ReminderConfig, RepeatConfig, RepeatRule } from '../../domain/items/types'
+import { Item, ITEM_TYPE, type ReminderConfigInput, type RepeatConfigInput, type RepeatRule, type TravelConfigInput } from '../../domain/items/types'
 import { createId } from '../../utils/id'
 import { fetchTravelTime, getCurrentLocation } from '../../infrastructure/maps/travelTime'
 import { detectCategoryFromText } from '../../domain/items/services/categoryDetector'
@@ -101,10 +101,10 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
   const [deadline, setDeadline] = useState(item.deadline)
   const [syncToCalendar, setSyncToCalendar] = useState(item.syncToCalendar ?? true)
   const [repeatRule, setRepeatRule] = useState<RepeatRule>(item.repeatRule ?? 'none')
-  const [repeatConfig, setRepeatConfig] = useState<RepeatConfig | undefined>(item.repeatConfig)
+  const [repeatConfig, setRepeatConfig] = useState<RepeatConfigInput | undefined>(item.repeatConfig)
   const [showRepeatPanel, setShowRepeatPanel] = useState(false)
 
-  const [goalCurrentText, setGoalCurrentText] = useState(item.goalConfig ? String(item.goalConfig.currentValue) : '')
+  const [goalCurrentText, setGoalCurrentText] = useState(item.type === ITEM_TYPE.GOAL ? String(item.goalConfig.currentValue) : '')
 
   const [categoryId, setCategoryId] = useState(item.categoryId)
   const [location, setLocation] = useState(item.location)
@@ -117,13 +117,13 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
   const [newSubtaskText, setNewSubtaskText] = useState('')
   const subtaskInputRef = useRef<TextInput>(null)
 
-  const [reminders, setReminders] = useState<ReminderConfig[]>(item.reminderConfig ?? [])
+  const [reminders, setReminders] = useState<ReminderConfigInput[]>(item.reminderConfig ?? [])
   const [expandReminders, setExpandReminders] = useState(false)
   const [selectedAlarmType, setSelectedAlarmType] = useState<'notification' | 'alarm'>('notification')
   const [selectedPersistent, setSelectedPersistent] = useState(false)
   const [travelTimeLoading, setTravelTimeLoading] = useState(false)
   const [travelTimeResult, setTravelTimeResult] = useState<string | null>(null)
-  const [travelConfig, setTravelConfig] = useState(item.travelConfig)
+  const [travelConfig, setTravelConfig] = useState<TravelConfigInput | undefined>(item.travelConfig)
   const [categorySuggestionDismissed, setCategorySuggestionDismissed] = useState(false)
   const [studyTimeBefore, setStudyTimeBefore] = useState(item.academicConfig?.studyTimeBefore)
   const [gradeText, setGradeText] = useState(item.academicConfig?.grade !== undefined ? String(item.academicConfig.grade) : '')
@@ -134,38 +134,43 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
 
   const handleClose = useCallback(async () => {
     if (title.trim()) {
-      await updateItem({
-        id: item.id,
-        patch: {
-          title: title.trim(),
-          description: description.trim() || undefined,
-          important,
-          startDate: scheduledDate,
-          startTime: scheduledTime,
-          endDate: scheduledTime && endTime ? scheduledDate : undefined,
-          endTime: scheduledTime ? endTime : undefined,
-          deadline,
-          syncToCalendar,
-          repeatRule: repeatRule !== 'none' ? repeatRule : undefined,
-          repeatConfig: repeatRule !== 'none' ? repeatConfig : undefined,
-          categoryId,
-          location: location || undefined,
-          reminderConfig: reminders.length > 0 ? reminders : undefined,
-          goalConfig: item.goalConfig
-            ? { ...item.goalConfig, currentValue: parseFloat(goalCurrentText) || 0 }
-            : undefined,
-          travelConfig,
-          academicConfig: (() => {
-            const ac = { ...(item.academicConfig ?? {}) }
-            if (studyTimeBefore !== undefined) ac.studyTimeBefore = studyTimeBefore
-            else delete ac.studyTimeBefore
-            const grade = gradeText.trim() ? parseInt(gradeText.trim(), 10) : undefined
-            if (grade !== undefined && !isNaN(grade)) ac.grade = grade
-            else delete ac.grade
-            return Object.keys(ac).length > 0 ? ac : undefined
-          })(),
-        },
-      })
+      try {
+        await updateItem({
+          id: item.id,
+          patch: {
+            title: title.trim(),
+            description: description.trim() || undefined,
+            important,
+            startDate: scheduledDate,
+            startTime: scheduledTime,
+            endDate: scheduledTime && endTime ? scheduledDate : undefined,
+            endTime: scheduledTime ? endTime : undefined,
+            deadline,
+            syncToCalendar,
+            repeatRule: repeatRule !== 'none' ? repeatRule : undefined,
+            repeatConfig: repeatRule !== 'none' ? repeatConfig : undefined,
+            categoryId,
+            location: location || undefined,
+            reminderConfig: reminders.length > 0 ? reminders : undefined,
+            goalConfig: item.type === ITEM_TYPE.GOAL
+              ? { ...item.goalConfig, currentValue: parseFloat(goalCurrentText) || 0 }
+              : undefined,
+            travelConfig,
+            academicConfig: (() => {
+              const ac = { ...(item.academicConfig ?? {}) }
+              if (studyTimeBefore !== undefined) ac.studyTimeBefore = studyTimeBefore
+              else delete ac.studyTimeBefore
+              const grade = gradeText.trim() ? parseInt(gradeText.trim(), 10) : undefined
+              if (grade !== undefined && !isNaN(grade)) ac.grade = grade
+              else delete ac.grade
+              return Object.keys(ac).length > 0 ? ac : undefined
+            })(),
+          },
+        })
+      } catch (error) {
+        Alert.alert('No se pudo guardar', error instanceof Error ? error.message : 'Revisá los datos ingresados.')
+        return
+      }
 
       // Sync license usage
       const existingUsage = (licenseUsages ?? []).find(usage => usage.itemId === item.id)
@@ -213,7 +218,7 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
     const text = newSubtaskText.trim()
     if (!text) return
     setNewSubtaskText('')
-    await createItem({ title: text, parentId: item.id, type: 'task' })
+    await createItem({ title: text, parentId: item.id, type: ITEM_TYPE.TASK })
     setTimeout(() => subtaskInputRef.current?.focus(), 100)
   }
 
@@ -221,7 +226,7 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
     setShowRepeatPanel(true)
   }
 
-  const handleRepeatDone = (rule: RepeatRule, config: RepeatConfig) => {
+  const handleRepeatDone = (rule: RepeatRule, config: RepeatConfigInput) => {
     setRepeatRule(rule)
     setRepeatConfig(config)
     // Si la tarea todavía no tiene fecha, se infiere de la repetición misma.
@@ -278,8 +283,7 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
     : undefined
 
   const isCompleted = item.status === 'completed'
-  const allSubtasksDone = subtasks.length === 0 || subtasks.every(s => s.status === 'completed')
-  const canComplete = allSubtasksDone
+  const canComplete = Item.canComplete(item, subtasks)
   const dateLabel = scheduledDate ? fmtDate(scheduledDate) : undefined
   const deadlineLabel = deadline ? fmtDate(deadline) : undefined
 
@@ -349,7 +353,7 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
             </View>
 
             {/* Goal progress row */}
-            {item.goalConfig && (
+            {item.type === ITEM_TYPE.GOAL && (
               <View style={styles.detailRow}>
                 <Target size={20} color={colors.primary} style={styles.rowIcon} />
                 <TextInput
