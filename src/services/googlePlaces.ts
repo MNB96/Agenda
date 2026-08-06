@@ -12,8 +12,8 @@ function ensureKey(): string {
 }
 
 export async function searchPlaceSuggestions(query: string): Promise<PlaceSuggestion[]> {
-  const q = query.trim()
-  if (q.length < 2) return []
+  const trimmedQuery = query.trim()
+  if (trimmedQuery.length < 2) return []
   const key = ensureKey()
 
   const response = await fetch(AUTOCOMPLETE_ENDPOINT, {
@@ -24,7 +24,7 @@ export async function searchPlaceSuggestions(query: string): Promise<PlaceSugges
       'X-Goog-FieldMask': 'suggestions.placePrediction.placeId,suggestions.placePrediction.text',
     },
     body: JSON.stringify({
-      input: q,
+      input: trimmedQuery,
       languageCode: 'es',
       regionCode: 'ar',
     }),

@@ -23,14 +23,6 @@ export interface Settings {
   locationPermissionRequested: boolean
 }
 
-export interface SettingsRepository {
-  get(): Promise<Settings>
-  save(next: Settings): Promise<Settings>
-  listLicenseUsages(): Promise<LicenseUsage[]>
-  saveLicenseUsage(usage: LicenseUsage): Promise<LicenseUsage>
-  deleteLicenseUsage(id: string): Promise<void>
-}
-
 export const DEFAULT_CATEGORIES: ItemCategory[] = [
   { id: 'facultad', name: 'Facultad', color: '#A7DBD8', icon: 'GraduationCap' },
   { id: 'trabajo', name: 'Trabajo', color: '#E0E4CC', icon: 'Briefcase' },

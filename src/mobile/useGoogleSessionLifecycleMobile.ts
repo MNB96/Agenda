@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { Platform } from 'react-native'
 import { GoogleSignin } from '@react-native-google-signin/google-signin'
-import { useGoogleAuthStore } from '../state/googleAuthStore'
+import { useGoogleAuthStore, GOOGLE_TOKEN_TTL_SECONDS } from '../state/googleAuthStore'
 
 const CHECK_INTERVAL_MS = 30 * 1000
 // Refresh a bit before the token actually expires, so an active session never gets
@@ -37,7 +37,7 @@ export const useGoogleSessionLifecycleMobile = () => {
         if (cancelled) return
         setSession({
           accessToken: tokens.accessToken,
-          expiresIn: 3600,
+          expiresIn: GOOGLE_TOKEN_TTL_SECONDS,
           connectedEmail: result.data.user.email,
         })
       } catch {

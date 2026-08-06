@@ -4,6 +4,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 
 type GoogleAuthIssue = 'expired' | 'unauthorized'
 
+// The native Google Sign-In SDK's getTokens() doesn't return an expiry, and the web
+// OAuth response doesn't always include one either — both paths fall back to Google's
+// standard access-token lifetime.
+export const GOOGLE_TOKEN_TTL_SECONDS = 3600
+
 interface GoogleAuthState {
   accessToken?: string
   expiresAt?: number

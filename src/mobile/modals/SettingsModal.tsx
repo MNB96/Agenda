@@ -4,9 +4,9 @@ import { GoogleSignin } from '@react-native-google-signin/google-signin'
 import { useEffect, useMemo } from 'react'
 import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native'
 import { useGoogleCalendars } from '../../features/calendar/useGoogleCalendar'
-import { useLicenseUsages, useSettings } from '../../features/settings/useSettings'
+import { useSettings } from '../../features/settings/useSettings'
 import { useItems } from '../../features/items/useItems'
-import { useGoogleAuthStore } from '../../state/googleAuthStore'
+import { useGoogleAuthStore, GOOGLE_TOKEN_TTL_SECONDS } from '../../state/googleAuthStore'
 import { openNotificationSoundSettings, openExactAlarmSettings } from '../../services/notifications/itemNotifications'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
@@ -21,7 +21,6 @@ interface SettingsModalProps {
 export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
   const { data: settings, saveSettings } = useSettings()
   const { items, removeItem } = useItems()
-  const { data: usages } = useLicenseUsages()
   const { accessToken, connectedEmail, authIssue, setSession, clearSession } = useGoogleAuthStore()
   const calendarsQuery = useGoogleCalendars()
   const { colors } = useAppTheme()
@@ -59,7 +58,7 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
 
     setSession({
       accessToken: token,
-      expiresIn: response.authentication?.expiresIn ?? 3600,
+      expiresIn: response.authentication?.expiresIn ?? GOOGLE_TOKEN_TTL_SECONDS,
     })
   }, [isWeb, response, setSession])
 
@@ -91,7 +90,7 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
             const tokens = await GoogleSignin.getTokens()
             setSession({
               accessToken: tokens.accessToken,
-              expiresIn: 3600,
+              expiresIn: GOOGLE_TOKEN_TTL_SECONDS,
               connectedEmail: silent.data.user.email,
             })
             return
@@ -106,11 +105,12 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
       const tokens = await GoogleSignin.getTokens()
       setSession({
         accessToken: tokens.accessToken,
-        expiresIn: 3600,
+        expiresIn: GOOGLE_TOKEN_TTL_SECONDS,
         connectedEmail: result.data.user.email,
       })
     } catch (error) {
       console.error('[GoogleSignin] connect failed', error)
+      Alert.alert('No se pudo conectar', 'No se pudo conectar con Google Calendar. Probá de nuevo en unos segundos.')
     }
   }
 
@@ -124,9 +124,6 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
   if (!settings) {
     return null
   }
-
-  const totalUsedDays = (usages ?? []).reduce((acc, usage) => acc + usage.days, 0)
-  const remaining = settings.availableExamLeaveDaysPerYear - totalUsedDays
 
   return (
     <Modal visible={open} animationType="slide" transparent onRequestClose={onClose}>
@@ -247,7 +244,7 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Datos</Text>
               {(() => {
-                const completedCount = items.filter(i => i.status === 'completed').length
+                const completedCount = items.filter(item => item.status === 'completed').length
                 return (
                   <Pressable
                     style={[styles.dangerButton, completedCount === 0 && styles.disabled]}
@@ -262,7 +259,7 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
                             text: 'Borrar',
                             style: 'destructive',
                             onPress: async () => {
-                              const completed = items.filter(i => i.status === 'completed')
+                              const completed = items.filter(item => item.status === 'completed')
                               for (const item of completed) {
                                 await removeItem(item)
                               }

@@ -44,8 +44,8 @@ export const MonthCalendar = ({ selectedDate, onSelectDate, colors, accentColor 
         </Pressable>
       </View>
       <View style={styles.weekdayRow}>
-        {WEEKDAY_LABELS.map((d, i) => (
-          <Text key={i} style={styles.weekdayLabel}>{d}</Text>
+        {WEEKDAY_LABELS.map((label, index) => (
+          <Text key={index} style={styles.weekdayLabel}>{label}</Text>
         ))}
       </View>
       <View style={styles.calGrid}>

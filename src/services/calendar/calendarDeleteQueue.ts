@@ -34,7 +34,7 @@ export async function enqueueDelete(
   itemTitle: string,
 ): Promise<void> {
   const queue = await load()
-  if (queue.some((e) => e.eventId === eventId)) return // ya está en cola
+  if (queue.some((entry) => entry.eventId === eventId)) return // ya está en cola
   queue.push({
     id: `${Date.now()}-${eventId}`,
     calendarId,
@@ -55,7 +55,7 @@ export async function processQueue(
   if (queue.length === 0) return
 
   const now = Date.now()
-  const eligible = queue.filter((e) => new Date(e.nextRetryAt).getTime() <= now)
+  const eligible = queue.filter((entry) => new Date(entry.nextRetryAt).getTime() <= now)
   if (eligible.length === 0) return
 
   const updated = [...queue]

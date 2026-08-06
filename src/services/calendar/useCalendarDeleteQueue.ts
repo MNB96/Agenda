@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { AppState } from 'react-native'
 import { calendarRepository } from '../../app/container'
 import { isGoogleCalendarAuthError } from '../../providers/calendar/errors'
@@ -11,7 +11,7 @@ export const useCalendarDeleteQueue = (
 ) => {
   const isProcessing = useRef(false)
 
-  const run = async (token: string) => {
+  const run = useCallback(async (token: string) => {
     if (isProcessing.current) return
     isProcessing.current = true
     try {
@@ -29,7 +29,7 @@ export const useCalendarDeleteQueue = (
     } finally {
       isProcessing.current = false
     }
-  }
+  }, [markUnauthorized])
 
   useEffect(() => {
     if (accessToken) void run(accessToken)
@@ -38,5 +38,5 @@ export const useCalendarDeleteQueue = (
       if (state === 'active' && accessToken) void run(accessToken)
     })
     return () => sub.remove()
-  }, [accessToken]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [accessToken, run])
 }

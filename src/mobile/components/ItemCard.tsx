@@ -23,8 +23,8 @@ export const ItemCard = ({ item, overdueLabel, overdueDeadlineLabel, subtaskTota
 
   const indicatorColor = resolveIndicatorColor(item, colors)
   const reminders = item.reminderConfig ?? []
-  const hasAlarmReminder = reminders.some((r) => r.alarmType === 'alarm')
-  const hasNotificationReminder = reminders.some((r) => r.alarmType !== 'alarm')
+  const hasAlarmReminder = reminders.some((reminder) => reminder.alarmType === 'alarm')
+  const hasNotificationReminder = reminders.some((reminder) => reminder.alarmType !== 'alarm')
   const repeats = Boolean(item.repeatRule) && item.repeatRule !== 'none'
 
   // La fecha ya la muestra el encabezado de sección (agrupa por día exacto), así que acá
@@ -33,8 +33,8 @@ export const ItemCard = ({ item, overdueLabel, overdueDeadlineLabel, subtaskTota
   const dateLabel =
     item.type === 'date_window' && (item.dateWindow?.startDate || item.dateWindow?.endDate)
       ? [item.dateWindow.startDate, item.dateWindow.endDate]
-          .filter((d): d is string => Boolean(d))
-          .map((d) => format(parseISO(d), 'd MMM', { locale: es }))
+          .filter((dateStr): dateStr is string => Boolean(dateStr))
+          .map((dateStr) => format(parseISO(dateStr), 'd MMM', { locale: es }))
           .join(' - ')
       : [
           item.startTime,

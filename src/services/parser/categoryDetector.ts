@@ -55,9 +55,9 @@ export const detectCategoryFromText = (
   const normalized = text.toLowerCase()
 
   for (const { categoryId, keywords } of CATEGORY_KEYWORDS) {
-    const cat = categories.find((c) => c.id === categoryId)
-    if (!cat) continue
-    if (keywords.some((kw) => normalized.includes(kw))) return categoryId
+    const category = categories.find((candidate) => candidate.id === categoryId)
+    if (!category) continue
+    if (keywords.some((keyword) => normalized.includes(keyword))) return categoryId
   }
 
   // Si el nombre de alguna categoría aparece en el texto, también sugiere

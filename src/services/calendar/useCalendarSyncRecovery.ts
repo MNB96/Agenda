@@ -1,24 +1,25 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { AppState } from 'react-native'
-import { useQueryClient } from '@tanstack/react-query'
 import { calendarRepository, itemRepository } from '../../app/container'
 import { isGoogleCalendarAuthError } from '../../providers/calendar/errors'
 import { resolveEventDateTimes, updateItem } from '../../features/items/itemService'
 import { useSettings } from '../../features/settings/useSettings'
-
-const ITEMS_KEY = ['items']
+import { useItems } from '../../features/items/useItems'
+import type { Item } from '../../domain/items/types'
 
 export const useCalendarSyncRecovery = (
   accessToken: string | null,
   markUnauthorized: () => void,
 ) => {
   const isProcessing = useRef(false)
-  const queryClient = useQueryClient()
+  const { applySyncedItems } = useItems()
   const { data: settings } = useSettings()
   const settingsRef = useRef(settings)
-  settingsRef.current = settings
+  useEffect(() => {
+    settingsRef.current = settings
+  }, [settings])
 
-  const run = async (token: string) => {
+  const run = useCallback(async (token: string) => {
     if (isProcessing.current) return
     isProcessing.current = true
     try {
@@ -37,7 +38,7 @@ export const useCalendarSyncRecovery = (
       if (pending.length === 0) return
 
       const calendarId = settingsRef.current?.selectedGoogleCalendarIds[0] ?? 'primary'
-      let didUpdate = false
+      const syncedItems: Item[] = []
 
       for (const item of pending) {
         const dateTimes = resolveEventDateTimes(item)
@@ -85,8 +86,7 @@ export const useCalendarSyncRecovery = (
               },
             })
           }
-          await itemRepository.save(updated)
-          didUpdate = true
+          syncedItems.push(updated)
         } catch (error) {
           if (isGoogleCalendarAuthError(error)) {
             markUnauthorized()
@@ -97,13 +97,13 @@ export const useCalendarSyncRecovery = (
         await new Promise<void>((r) => setTimeout(r, 400))
       }
 
-      if (didUpdate) {
-        await queryClient.invalidateQueries({ queryKey: ITEMS_KEY })
+      if (syncedItems.length > 0) {
+        await applySyncedItems(syncedItems)
       }
     } finally {
       isProcessing.current = false
     }
-  }
+  }, [markUnauthorized, applySyncedItems])
 
   useEffect(() => {
     if (accessToken) void run(accessToken)
@@ -112,5 +112,5 @@ export const useCalendarSyncRecovery = (
       if (state === 'active' && accessToken) void run(accessToken)
     })
     return () => sub.remove()
-  }, [accessToken]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [accessToken, run])
 }

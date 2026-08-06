@@ -1,10 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import {
-  DEFAULT_SETTINGS,
-  type LicenseUsage,
-  type Settings,
-  type SettingsRepository,
-} from '../../domain/settings/types'
+import { DEFAULT_SETTINGS, type LicenseUsage, type Settings } from '../../domain/settings/types'
+import type { SettingsRepository } from '../../domain/settings/repositories'
 
 const SETTINGS_KEY = '@agenda/settings'
 const LICENSES_KEY = '@agenda/licenses'

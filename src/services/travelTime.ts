@@ -36,7 +36,7 @@ export const fetchTravelTime = async (
     })
 
     if (!response.ok) return null
-    const data = (await response.json()) as { routes?: Array<{ duration?: string }> }
+    const data = (await response.json()) as { routes?: { duration?: string }[] }
     const durationStr = data.routes?.[0]?.duration
     if (!durationStr) return null
 

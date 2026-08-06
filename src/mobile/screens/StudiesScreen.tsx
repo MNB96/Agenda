@@ -10,7 +10,7 @@ import type { ThemeTokens } from '../theme/tokens'
 import { isExamTask } from '../../services/parser/examDetector'
 import type { Item } from '../../domain/items/types'
 
-interface AgendaScreenProps {
+interface StudiesScreenProps {
   onOpenItemEditor: (itemId: string) => void
 }
 
@@ -26,7 +26,7 @@ const urgencyColor = (days: number, colors: ThemeTokens): string => {
 
 const studyLabel = (v: 'half' | 'full') => (v === 'half' ? '½ día' : '1 día')
 
-export const AgendaScreen = ({ onOpenItemEditor }: AgendaScreenProps) => {
+export const StudiesScreen = ({ onOpenItemEditor }: StudiesScreenProps) => {
   const { items } = useItems()
   const { data: settings } = useSettings()
   const { data: licenseUsages } = useLicenseUsages()
@@ -38,10 +38,10 @@ export const AgendaScreen = ({ onOpenItemEditor }: AgendaScreenProps) => {
   const licenseStats = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10)
     const usages = licenseUsages ?? []
-    const past = usages.filter(u => u.date < today).sort((a, b) => b.date.localeCompare(a.date))
-    const planned = usages.filter(u => u.date >= today).sort((a, b) => a.date.localeCompare(b.date))
-    const usedDays = past.reduce((acc, u) => acc + u.days, 0)
-    const plannedDays = planned.reduce((acc, u) => acc + u.days, 0)
+    const past = usages.filter(usage => usage.date < today).sort((usageA, usageB) => usageB.date.localeCompare(usageA.date))
+    const planned = usages.filter(usage => usage.date >= today).sort((usageA, usageB) => usageA.date.localeCompare(usageB.date))
+    const usedDays = past.reduce((total, usage) => total + usage.days, 0)
+    const plannedDays = planned.reduce((total, usage) => total + usage.days, 0)
     const remaining = availableDays - usedDays - plannedDays
     return { past, planned, usedDays, plannedDays, remaining }
   }, [licenseUsages, availableDays])
@@ -49,27 +49,27 @@ export const AgendaScreen = ({ onOpenItemEditor }: AgendaScreenProps) => {
   const { semesterSummary, upcomingExams, otherFacultad, completedExams } = useMemo(() => {
     const now = new Date()
     const today = now.toISOString().slice(0, 10)
-    const m = now.getMonth() + 1
-    const y = now.getFullYear()
+    const month = now.getMonth() + 1
+    const year = now.getFullYear()
 
     let label: string, start: string, end: string
-    if (m >= 3 && m <= 7) {
-      label = `1er cuatrimestre ${y}`; start = `${y}-03-01`; end = `${y}-07-31`
-    } else if (m >= 8 && m <= 11) {
-      label = `2do cuatrimestre ${y}`; start = `${y}-08-01`; end = `${y}-11-30`
+    if (month >= 3 && month <= 7) {
+      label = `1er cuatrimestre ${year}`; start = `${year}-03-01`; end = `${year}-07-31`
+    } else if (month >= 8 && month <= 11) {
+      label = `2do cuatrimestre ${year}`; start = `${year}-08-01`; end = `${year}-11-30`
     } else {
-      const ny = m === 12 ? y + 1 : y
-      label = `1er cuatrimestre ${ny}`; start = `${ny}-03-01`; end = `${ny}-07-31`
+      const nextYear = month === 12 ? year + 1 : year
+      label = `1er cuatrimestre ${nextYear}`; start = `${nextYear}-03-01`; end = `${nextYear}-07-31`
     }
 
-    const facultadItems = items.filter(i => i.categoryId === 'facultad')
-    const activeExams = facultadItems.filter(i => i.status === 'active' && isExamTask(i.title))
-    const semesterExams = activeExams.filter(i => {
-      const d = i.startDate ?? i.deadline; return d && d >= start && d <= end
+    const facultadItems = items.filter(item => item.categoryId === 'facultad')
+    const activeExams = facultadItems.filter(item => item.status === 'active' && isExamTask(item.title))
+    const semesterExams = activeExams.filter(item => {
+      const date = item.startDate ?? item.deadline; return date && date >= start && date <= end
     })
     const upcoming = semesterExams
-      .filter(i => (i.startDate ?? i.deadline ?? '') >= today)
-      .sort((a, b) => (a.startDate ?? a.deadline ?? '').localeCompare(b.startDate ?? b.deadline ?? ''))
+      .filter(item => (item.startDate ?? item.deadline ?? '') >= today)
+      .sort((examA, examB) => (examA.startDate ?? examA.deadline ?? '').localeCompare(examB.startDate ?? examB.deadline ?? ''))
 
     const next = upcoming[0]
     const nextDays = next
@@ -77,16 +77,16 @@ export const AgendaScreen = ({ onOpenItemEditor }: AgendaScreenProps) => {
       : null
 
     const otherFacultad = facultadItems
-      .filter(i => i.status === 'active' && !isExamTask(i.title))
-      .sort((a, b) => {
-        const da = a.startDate ?? a.deadline ?? 'zzz'
-        const db = b.startDate ?? b.deadline ?? 'zzz'
-        return da.localeCompare(db)
+      .filter(item => item.status === 'active' && !isExamTask(item.title))
+      .sort((itemA, itemB) => {
+        const dateA = itemA.startDate ?? itemA.deadline ?? 'zzz'
+        const dateB = itemB.startDate ?? itemB.deadline ?? 'zzz'
+        return dateA.localeCompare(dateB)
       })
 
     const completedExams = facultadItems
-      .filter(i => i.status === 'completed' && isExamTask(i.title))
-      .sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''))
+      .filter(item => item.status === 'completed' && isExamTask(item.title))
+      .sort((examA, examB) => (examB.completedAt ?? '').localeCompare(examA.completedAt ?? ''))
       .slice(0, 5)
 
     return {
@@ -235,14 +235,14 @@ export const AgendaScreen = ({ onOpenItemEditor }: AgendaScreenProps) => {
             {licenseStats.planned.length > 0 && (
               <View style={styles.licenseListSection}>
                 <Text style={styles.licenseListTitle}>Planificadas</Text>
-                {licenseStats.planned.map((u, i) => (
-                  <View key={u.id} style={[styles.licenseRow, i > 0 && styles.licenseRowBorder]}>
+                {licenseStats.planned.map((usage, index) => (
+                  <View key={usage.id} style={[styles.licenseRow, index > 0 && styles.licenseRowBorder]}>
                     <View style={[styles.licenseDot, { backgroundColor: '#F38630' }]} />
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.licenseNote} numberOfLines={1}>{u.note ?? '—'}</Text>
-                      <Text style={styles.licenseDate}>{fmtDate(u.date)}</Text>
+                      <Text style={styles.licenseNote} numberOfLines={1}>{usage.note ?? '—'}</Text>
+                      <Text style={styles.licenseDate}>{fmtDate(usage.date)}</Text>
                     </View>
-                    <Text style={styles.licenseDays}>{u.days === 0.5 ? '½ día' : `${u.days} día${u.days !== 1 ? 's' : ''}`}</Text>
+                    <Text style={styles.licenseDays}>{usage.days === 0.5 ? '½ día' : `${usage.days} día${usage.days !== 1 ? 's' : ''}`}</Text>
                   </View>
                 ))}
               </View>
@@ -252,14 +252,14 @@ export const AgendaScreen = ({ onOpenItemEditor }: AgendaScreenProps) => {
             {licenseStats.past.length > 0 && (
               <View style={styles.licenseListSection}>
                 <Text style={styles.licenseListTitle}>Usadas</Text>
-                {licenseStats.past.map((u, i) => (
-                  <View key={u.id} style={[styles.licenseRow, i > 0 && styles.licenseRowBorder]}>
+                {licenseStats.past.map((usage, index) => (
+                  <View key={usage.id} style={[styles.licenseRow, index > 0 && styles.licenseRowBorder]}>
                     <View style={[styles.licenseDot, { backgroundColor: colors.danger }]} />
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.licenseNote, { color: colors.textMuted }]} numberOfLines={1}>{u.note ?? '—'}</Text>
-                      <Text style={styles.licenseDate}>{fmtDate(u.date)}</Text>
+                      <Text style={[styles.licenseNote, { color: colors.textMuted }]} numberOfLines={1}>{usage.note ?? '—'}</Text>
+                      <Text style={styles.licenseDate}>{fmtDate(usage.date)}</Text>
                     </View>
-                    <Text style={[styles.licenseDays, { color: colors.textMuted }]}>{u.days === 0.5 ? '½ día' : `${u.days} día${u.days !== 1 ? 's' : ''}`}</Text>
+                    <Text style={[styles.licenseDays, { color: colors.textMuted }]}>{usage.days === 0.5 ? '½ día' : `${usage.days} día${usage.days !== 1 ? 's' : ''}`}</Text>
                   </View>
                 ))}
               </View>
@@ -268,7 +268,7 @@ export const AgendaScreen = ({ onOpenItemEditor }: AgendaScreenProps) => {
             {licenseStats.past.length === 0 && licenseStats.planned.length === 0 && (
               <View style={styles.licenseEmpty}>
                 <Text style={styles.summaryEmpty}>Ninguna licencia registrada aún.</Text>
-                <Text style={[styles.summaryEmpty, { marginTop: 2 }]}>Seteá el "Día de estudio" en un examen para planificar.</Text>
+                <Text style={[styles.summaryEmpty, { marginTop: 2 }]}>Seteá el &quot;Día de estudio&quot; en un examen para planificar.</Text>
               </View>
             )}
 

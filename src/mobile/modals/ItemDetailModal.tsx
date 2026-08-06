@@ -17,31 +17,28 @@ import {
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
-  AlarmClock,
   AlignLeft,
   Bell,
-  Check,
-  ChevronDown,
   ChevronLeft,
   CircleCheck,
   Clock,
   CornerDownRight,
   MapPin,
   MoreVertical,
-  Navigation,
-  Pin,
   Repeat,
   Star,
   Target,
   Tag,
   X,
 } from 'lucide-react-native'
-import { searchPlaceSuggestions, type PlaceSuggestion } from '../../services/googlePlaces'
 import { MonthCalendar } from '../components/MonthCalendar'
+import { RepeatPanel, UNIT_OPTIONS, RULE_TO_UNIT } from '../components/RepeatPanel'
+import { ReminderPanel } from '../components/ReminderPanel'
 import DateTimePicker from '@react-native-community/datetimepicker'
-import { addMonths, format, isToday, parse } from 'date-fns'
+import { format, isToday, parse } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { useItems } from '../../features/items/useItems'
+import { useLocationAutocomplete } from '../../features/items/useLocationAutocomplete'
 import { useSettings, useLicenseUsages } from '../../features/settings/useSettings'
 import { useGoogleAuthStore } from '../../state/googleAuthStore'
 import { computeNextDate } from '../../services/items/recurrence'
@@ -60,55 +57,9 @@ interface ItemDetailModalProps {
 }
 
 const fmtDate = (dateStr: string): string => {
-  const d = new Date(dateStr + 'T00:00:00')
-  if (isToday(d)) return 'HOY'
-  return format(d, "EEE d 'de' MMM", { locale: es })
-}
-
-type RepeatUnit = 'day' | 'week' | 'month' | 'year'
-type RepeatEnd = 'never' | 'on_date' | 'after_occurrences'
-
-const WEEKDAY_SHORT = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
-
-const UNIT_OPTIONS: { label: string; value: RepeatUnit }[] = [
-  { label: 'día', value: 'day' },
-  { label: 'semana', value: 'week' },
-  { label: 'mes', value: 'month' },
-  { label: 'año', value: 'year' },
-]
-
-const UNIT_TO_RULE: Record<RepeatUnit, RepeatRule> = {
-  day: 'daily', week: 'weekly', month: 'monthly', year: 'yearly',
-}
-const RULE_TO_UNIT: Partial<Record<RepeatRule, RepeatUnit>> = {
-  daily: 'day', weekly: 'week', monthly: 'month', yearly: 'year',
-}
-
-const REMINDER_PRESETS_DETAIL = [
-  { label: 'A la hora', minutesBefore: 0 },
-  { label: '10 min antes', minutesBefore: 10 },
-  { label: '30 min antes', minutesBefore: 30 },
-  { label: '1 hora antes', minutesBefore: 60 },
-  { label: '1 día antes', minutesBefore: 1440 },
-]
-
-const formatReminderLabelDetail = (r: ReminderConfig): string => {
-  const mins = r.minutesBefore
-  if (mins === undefined) return 'Recordatorio'
-  if (r.mode === 'departure') {
-    if (mins < 60) return `Salir ${mins} min antes`
-    const h = Math.floor(mins / 60)
-    const m = mins % 60
-    return m > 0 ? `Salir ${h}h ${m}min antes` : `Salir ${h}h antes`
-  }
-  if (mins === 0) return 'A la hora'
-  if (mins < 60) return `${mins} min antes`
-  if (mins < 1440) {
-    const h = mins / 60
-    return Number.isInteger(h) ? (h === 1 ? '1 hora antes' : `${h} horas antes`) : `${mins} min antes`
-  }
-  const d = mins / 1440
-  return Number.isInteger(d) ? (d === 1 ? '1 día antes' : `${d} días antes`) : `${Math.floor(mins / 60)}h antes`
+  const date = new Date(dateStr + 'T00:00:00')
+  if (isToday(date)) return 'HOY'
+  return format(date, "EEE d 'de' MMM", { locale: es })
 }
 
 export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps) => {
@@ -121,8 +72,8 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
   const insets = useSafeAreaInsets()
 
 
-  const item = useMemo(() => items.find(i => i.id === itemId), [items, itemId])
-  const subtasks = useMemo(() => items.filter(i => i.parentId === itemId), [items, itemId])
+  const item = useMemo(() => items.find(candidate => candidate.id === itemId), [items, itemId])
+  const subtasks = useMemo(() => items.filter(candidate => candidate.parentId === itemId), [items, itemId])
 
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -136,23 +87,18 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
   const [repeatRule, setRepeatRule] = useState<RepeatRule>('none')
   const [repeatConfig, setRepeatConfig] = useState<RepeatConfig | undefined>()
   const [showRepeatPanel, setShowRepeatPanel] = useState(false)
-  const [tempRepeatUnit, setTempRepeatUnit] = useState<RepeatUnit>('week')
-  const [tempRepeatInterval, setTempRepeatInterval] = useState(1)
-  const [tempRepeatDays, setTempRepeatDays] = useState<number[]>([])
-  const [tempRepeatTime, setTempRepeatTime] = useState<string | undefined>()
-  const [showRepeatUnitPicker, setShowRepeatUnitPicker] = useState(false)
-  const [showRepeatTimePicker, setShowRepeatTimePicker] = useState(false)
-  const [tempRepeatEnd, setTempRepeatEnd] = useState<RepeatEnd>('never')
-  const [tempRepeatEndDate, setTempRepeatEndDate] = useState<string | undefined>()
-  const [showRepeatEndDatePicker, setShowRepeatEndDatePicker] = useState(false)
-  const [tempRepeatOccurrences, setTempRepeatOccurrences] = useState(13)
 
   const [goalCurrentText, setGoalCurrentText] = useState('')
 
   const [categoryId, setCategoryId] = useState<string | undefined>()
   const [location, setLocation] = useState<string | undefined>()
-  const [locationQuery, setLocationQuery] = useState('')
-  const [locationSuggestions, setLocationSuggestions] = useState<PlaceSuggestion[]>([])
+  const {
+    locationQuery,
+    setLocationQuery,
+    suggestions: locationSuggestions,
+    clearSuggestions: clearLocationSuggestions,
+    reset: resetLocationAutocomplete,
+  } = useLocationAutocomplete(location)
   const [newSubtaskText, setNewSubtaskText] = useState('')
   const subtaskInputRef = useRef<TextInput>(null)
 
@@ -160,9 +106,6 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
   const [expandReminders, setExpandReminders] = useState(false)
   const [selectedAlarmType, setSelectedAlarmType] = useState<'notification' | 'alarm'>('notification')
   const [selectedPersistent, setSelectedPersistent] = useState(false)
-  const [customMinutesText, setCustomMinutesText] = useState('')
-  const [customUnit, setCustomUnit] = useState<'min' | 'h' | 'días'>('min')
-  const [showCustomInput, setShowCustomInput] = useState(false)
   const [travelTimeLoading, setTravelTimeLoading] = useState(false)
   const [travelTimeResult, setTravelTimeResult] = useState<string | null>(null)
   const [travelConfig, setTravelConfig] = useState<TravelConfig | undefined>()
@@ -189,37 +132,22 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
     setRepeatConfig(item.repeatConfig)
     setCategoryId(item.categoryId)
     setLocation(item.location)
-    setLocationQuery(item.location ?? '')
-    setLocationSuggestions([])
+    resetLocationAutocomplete(item.location ?? '')
     setReminders(item.reminderConfig ?? [])
     setExpandReminders(false)
     setExpandDate(false)
     setShowRepeatPanel(false)
-    setShowCustomInput(false)
-    setCustomMinutesText('')
     setTravelTimeResult(null)
     setTravelConfig(item.travelConfig)
     setCategorySuggestionDismissed(false)
     setStudyTimeBefore(item?.academicConfig?.studyTimeBefore)
     setGradeText(item?.academicConfig?.grade !== undefined ? String(item.academicConfig.grade) : '')
+    // Deliberately keyed on [open, item?.id], not the full `item` object: this pre-fills the
+    // draft when the modal opens (or switches to a different item), but must NOT re-fire on
+    // every background refetch of the same item — that would silently overwrite whatever the
+    // user is mid-editing with server data. If item.id is unchanged, `item` fields read above
+    // are still the latest render's values, not stale.
   }, [open, item?.id]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    const q = locationQuery.trim()
-    if (!q || q === location) {
-      setLocationSuggestions([])
-      return
-    }
-    const timer = setTimeout(async () => {
-      try {
-        const results = await searchPlaceSuggestions(q)
-        setLocationSuggestions(results.slice(0, 4))
-      } catch {
-        setLocationSuggestions([])
-      }
-    }, 350)
-    return () => clearTimeout(timer)
-  }, [locationQuery, location])
 
   const handleClose = useCallback(async () => {
     if (!item) { onClose(); return }
@@ -258,7 +186,7 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
       })
 
       // Sync license usage
-      const existingUsage = (licenseUsages ?? []).find(u => u.itemId === item.id)
+      const existingUsage = (licenseUsages ?? []).find(usage => usage.itemId === item.id)
       const days = studyTimeBefore === 'half' ? 0.5 : studyTimeBefore === 'full' ? 1 : undefined
       if (days !== undefined) {
         await saveUsage({
@@ -311,35 +239,18 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
   }
 
   const openRepeatPanel = () => {
-    setTempRepeatUnit(RULE_TO_UNIT[repeatRule] ?? 'week')
-    setTempRepeatInterval(repeatConfig?.interval ?? 1)
-    setTempRepeatDays(repeatConfig?.daysOfWeek ?? [])
-    setTempRepeatTime(repeatConfig?.time)
-    setTempRepeatEnd(repeatConfig?.end ?? 'never')
-    setTempRepeatEndDate(repeatConfig?.endDate)
-    setTempRepeatOccurrences(repeatConfig?.occurrences ?? 13)
-    setShowRepeatUnitPicker(false)
     setShowRepeatPanel(true)
   }
 
-  const commitRepeat = () => {
-    const rule = UNIT_TO_RULE[tempRepeatUnit]
+  const handleRepeatDone = (rule: RepeatRule, config: RepeatConfig) => {
     setRepeatRule(rule)
-    setRepeatConfig({
-      unit: tempRepeatUnit,
-      interval: tempRepeatInterval,
-      daysOfWeek: tempRepeatUnit === 'week' ? tempRepeatDays : undefined,
-      time: tempRepeatTime,
-      end: tempRepeatEnd,
-      endDate: tempRepeatEnd === 'on_date' ? tempRepeatEndDate : undefined,
-      occurrences: tempRepeatEnd === 'after_occurrences' ? tempRepeatOccurrences : undefined,
-    })
+    setRepeatConfig(config)
     // Si la tarea todavía no tiene fecha, se infiere de la repetición misma.
     if (!scheduledDate) {
       const nextDate = computeNextDate(new Date(), {
-        unit: tempRepeatUnit,
-        interval: tempRepeatInterval,
-        daysOfWeek: tempRepeatUnit === 'week' ? tempRepeatDays : undefined,
+        unit: config.unit,
+        interval: config.interval,
+        daysOfWeek: config.unit === 'week' ? config.daysOfWeek : undefined,
         end: 'never',
       })
       setScheduledDate(format(nextDate, 'yyyy-MM-dd'))
@@ -347,13 +258,9 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
     setShowRepeatPanel(false)
   }
 
-  const toggleRepeatDay = (idx: number) => {
-    setTempRepeatDays((prev) => (prev.includes(idx) ? prev.filter((d) => d !== idx) : [...prev, idx]))
-  }
-
   const repeatLabel = useMemo(() => {
     if (repeatRule === 'none') return undefined
-    const unit = UNIT_OPTIONS.find((o) => o.value === (RULE_TO_UNIT[repeatRule] ?? 'week'))?.label ?? 'semana'
+    const unit = UNIT_OPTIONS.find((option) => option.value === (RULE_TO_UNIT[repeatRule] ?? 'week'))?.label ?? 'semana'
     const interval = repeatConfig?.interval ?? 1
     return interval > 1 ? `Cada ${interval} ${unit}s` : `Cada ${unit}`
   }, [repeatRule, repeatConfig])
@@ -372,7 +279,7 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
       // en vez de dejarlo congelado con la estimación de cuando se creó la tarea.
       const totalMins = result.minutes + 5
       setReminders((prev) => [
-        ...prev.filter((r) => r.mode !== 'departure'),
+        ...prev.filter((reminder) => reminder.mode !== 'departure'),
         { id: createId(), mode: 'departure', minutesBefore: totalMins, alarmType: selectedAlarmType, persistent: selectedPersistent },
       ])
       setTravelConfig({ transport: 'driving', extraMinutes: 5, departureReminderEnabled: true })
@@ -388,7 +295,7 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
 
   const showCategorySuggestion = Boolean(suggestedCategoryId)
   const suggestedCategory = suggestedCategoryId
-    ? (settings?.categories ?? []).find(c => c.id === suggestedCategoryId)
+    ? (settings?.categories ?? []).find(category => category.id === suggestedCategoryId)
     : undefined
 
   if (!open) return null
@@ -560,9 +467,9 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
                     value={gradeText}
                     onChangeText={(text) => {
                       const digits = text.replace(/[^0-9]/g, '')
-                      const n = parseInt(digits, 10)
+                      const parsedGrade = parseInt(digits, 10)
                       if (digits === '') { setGradeText(''); return }
-                      setGradeText(String(Math.min(10, Math.max(1, n))))
+                      setGradeText(String(Math.min(10, Math.max(1, parsedGrade))))
                     }}
                     keyboardType="numeric"
                     style={styles.gradeInput}
@@ -572,8 +479,8 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
                     selectionColor={colors.primary}
                   />
                   {gradeText.trim() !== '' && (() => {
-                    const g = parseInt(gradeText, 10)
-                    const passed = !isNaN(g) && g >= 4
+                    const parsedGrade = parseInt(gradeText, 10)
+                    const passed = !isNaN(parsedGrade) && parsedGrade >= 4
                     return (
                       <View style={[styles.gradeResultBadge, {
                         backgroundColor: (passed ? colors.success : colors.danger) + '22',
@@ -612,11 +519,11 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
                   placeholderTextColor={colors.textMuted}
                   returnKeyType="done"
                   selectionColor={colors.primary}
-                  onSubmitEditing={() => setLocationSuggestions([])}
+                  onSubmitEditing={() => clearLocationSuggestions()}
                 />
                 {locationQuery ? (
                   <Pressable
-                    onPress={() => { setLocationQuery(''); setLocation(undefined); setLocationSuggestions([]) }}
+                    onPress={() => { setLocationQuery(''); setLocation(undefined); clearLocationSuggestions() }}
                     hitSlop={8}
                   >
                     <X size={16} color={colors.textMuted} />
@@ -625,19 +532,19 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
               </View>
               {locationSuggestions.length > 0 && (
                 <View style={styles.suggestionsContainer}>
-                  {locationSuggestions.map((s) => (
+                  {locationSuggestions.map((suggestion) => (
                     <Pressable
-                      key={s.placeId}
+                      key={suggestion.placeId}
                       style={({ pressed }) => [styles.suggestionItem, pressed && { opacity: 0.7 }]}
                       onPress={() => {
-                        setLocation(s.description)
-                        setLocationQuery(s.description)
-                        setLocationSuggestions([])
+                        setLocation(suggestion.description)
+                        setLocationQuery(suggestion.description)
+                        clearLocationSuggestions()
                         Keyboard.dismiss()
                       }}
                     >
                       <MapPin size={13} color={colors.textMuted} style={{ marginTop: 1 }} />
-                      <Text style={styles.suggestionText} numberOfLines={2}>{s.description}</Text>
+                      <Text style={styles.suggestionText} numberOfLines={2}>{suggestion.description}</Text>
                     </Pressable>
                   ))}
                 </View>
@@ -752,159 +659,22 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
             </Pressable>
 
             {expandReminders && (
-              <View style={styles.remindersPanel}>
-                {/* Added reminders */}
-                {reminders.map((r) => (
-                  <View key={r.id} style={styles.reminderAddedRow}>
-                    <Text style={styles.reminderAddedText}>{formatReminderLabelDetail(r)}</Text>
-                    <View style={[styles.reminderTypePill, r.alarmType === 'alarm' && styles.reminderTypePillAlarm]}>
-                      {r.alarmType === 'alarm'
-                        ? <AlarmClock size={11} color={colors.accent} />
-                        : <Bell size={11} color={colors.primary} />}
-                      <Text style={[styles.reminderTypePillText, r.alarmType === 'alarm' && { color: colors.accent }]}>
-                        {r.alarmType === 'alarm' ? 'Alarma' : 'Notif.'}
-                      </Text>
-                    </View>
-                    <Pressable onPress={() => setReminders(reminders.filter((x) => x.id !== r.id))} hitSlop={8}>
-                      <X size={14} color={colors.textMuted} />
-                    </Pressable>
-                  </View>
-                ))}
-
-                {/* Type selector */}
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.reminderTypeRow}>
-                  <Text style={styles.reminderTypeLabel}>Tipo:</Text>
-                  <Pressable
-                    style={[styles.reminderTypeBtn, selectedAlarmType === 'notification' && styles.reminderTypeBtnActive]}
-                    onPress={() => setSelectedAlarmType('notification')}
-                  >
-                    <Bell size={12} color={selectedAlarmType === 'notification' ? colors.primary : colors.textMuted} />
-                    <Text style={[styles.reminderTypeBtnText, selectedAlarmType === 'notification' && { color: colors.primary, fontWeight: '600' }]}>
-                      Notificación
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.reminderTypeBtn, selectedAlarmType === 'alarm' && styles.reminderTypeBtnAlarmActive]}
-                    onPress={() => setSelectedAlarmType('alarm')}
-                  >
-                    <AlarmClock size={12} color={selectedAlarmType === 'alarm' ? colors.accent : colors.textMuted} />
-                    <Text style={[styles.reminderTypeBtnText, selectedAlarmType === 'alarm' && { color: colors.accent, fontWeight: '600' }]}>
-                      Alarma
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.reminderTypeBtn, selectedPersistent && styles.reminderTypeBtnActive]}
-                    onPress={() => setSelectedPersistent((v) => !v)}
-                  >
-                    <Pin size={12} color={selectedPersistent ? colors.primary : colors.textMuted} />
-                    <Text style={[styles.reminderTypeBtnText, selectedPersistent && { color: colors.primary, fontWeight: '600' }]}>
-                      Persistente
-                    </Text>
-                  </Pressable>
-                </ScrollView>
-
-                {/* Presets */}
-                {REMINDER_PRESETS_DETAIL.map((preset) => {
-                  const active = reminders.some((r) => r.minutesBefore === preset.minutesBefore)
-                  return (
-                    <Pressable
-                      key={preset.minutesBefore}
-                      style={styles.reminderPresetRow}
-                      onPress={() => {
-                        if (active) {
-                          setReminders(reminders.filter((r) => r.minutesBefore !== preset.minutesBefore))
-                        } else {
-                          setReminders([...reminders, { id: createId(), mode: 'relative', minutesBefore: preset.minutesBefore, alarmType: selectedAlarmType, persistent: selectedPersistent }])
-                        }
-                      }}
-                    >
-                      <Text style={[styles.reminderPresetText, active && { color: colors.primary, fontWeight: '600' }]}>
-                        {preset.label}
-                      </Text>
-                      {active && <Check size={16} color={colors.primary} />}
-                    </Pressable>
-                  )
-                })}
-
-                {/* Travel time — solo si la tarea tiene dirección */}
-                {location && (scheduledDate || deadline) && (
-                  <Pressable
-                    style={styles.reminderPresetRow}
-                    onPress={() => void handleCalculateTravelTime()}
-                    disabled={travelTimeLoading}
-                  >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-                      <Navigation size={14} color={colors.primary} />
-                      <Text style={[styles.reminderPresetText, { color: colors.primary }]}>
-                        {travelTimeLoading
-                          ? 'Calculando...'
-                          : travelConfig
-                            ? 'Recalcular salida (tráfico actual)'
-                            : 'Recordarme cuándo salir'}
-                      </Text>
-                    </View>
-                    {travelTimeResult && (
-                      <Text style={{ fontSize: 12, color: colors.textMuted }}>{travelTimeResult}</Text>
-                    )}
-                  </Pressable>
-                )}
-
-                {/* Custom */}
-                <Pressable style={styles.reminderPresetRow} onPress={() => setShowCustomInput((v) => !v)}>
-                  <Text style={styles.reminderPresetText}>Personalizado...</Text>
-                </Pressable>
-                {showCustomInput && (
-                  <View style={styles.customReminderRow}>
-                    <TextInput
-                      style={styles.customReminderInput}
-                      value={customMinutesText}
-                      onChangeText={setCustomMinutesText}
-                      keyboardType="numeric"
-                      placeholder="0"
-                      placeholderTextColor={colors.textMuted}
-                      returnKeyType="done"
-                      onSubmitEditing={() => {
-                        const val = parseInt(customMinutesText, 10)
-                        if (isNaN(val) || val < 0) return
-                        const mins = customUnit === 'h' ? val * 60 : customUnit === 'días' ? val * 1440 : val
-                        if (!reminders.some((r) => r.minutesBefore === mins)) {
-                          setReminders([...reminders, { id: createId(), mode: 'relative', minutesBefore: mins, alarmType: selectedAlarmType, persistent: selectedPersistent }])
-                        }
-                        setCustomMinutesText('')
-                        setShowCustomInput(false)
-                      }}
-                      selectionColor={colors.primary}
-                    />
-                    <View style={styles.customUnitRow}>
-                      {(['min', 'h', 'días'] as const).map((u) => (
-                        <Pressable
-                          key={u}
-                          style={[styles.customUnitBtn, customUnit === u && styles.customUnitBtnActive]}
-                          onPress={() => setCustomUnit(u)}
-                        >
-                          <Text style={[styles.customUnitText, customUnit === u && { color: colors.primary, fontWeight: '600' }]}>{u}</Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                    <Text style={styles.customReminderBeforeLabel}>antes</Text>
-                    <Pressable
-                      style={styles.customReminderAdd}
-                      onPress={() => {
-                        const val = parseInt(customMinutesText, 10)
-                        if (isNaN(val) || val < 0) return
-                        const mins = customUnit === 'h' ? val * 60 : customUnit === 'días' ? val * 1440 : val
-                        if (!reminders.some((r) => r.minutesBefore === mins)) {
-                          setReminders([...reminders, { id: createId(), mode: 'relative', minutesBefore: mins, alarmType: selectedAlarmType, persistent: selectedPersistent }])
-                        }
-                        setCustomMinutesText('')
-                        setShowCustomInput(false)
-                      }}
-                    >
-                      <Text style={styles.customReminderAddText}>+</Text>
-                    </Pressable>
-                  </View>
-                )}
-              </View>
+              <ReminderPanel
+                reminders={reminders}
+                onChangeReminders={setReminders}
+                alarmType={selectedAlarmType}
+                onChangeAlarmType={setSelectedAlarmType}
+                persistent={selectedPersistent}
+                onChangePersistent={setSelectedPersistent}
+                showTravelButton={Boolean(location && (scheduledDate || deadline))}
+                travelTimeLoading={travelTimeLoading}
+                hasTravelConfig={Boolean(travelConfig)}
+                travelTimeResult={travelTimeResult}
+                onCalculateTravelTime={() => void handleCalculateTravelTime()}
+                colors={colors}
+                indent
+                rowDividers
+              />
             )}
 
             <View style={styles.rowDivider} />
@@ -967,181 +737,17 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* Repeat panel — same interface as the "add task" flow */}
-      <Modal
+      {/* Repeat panel — same component as the "add task" flow */}
+      <RepeatPanel
         visible={showRepeatPanel}
-        animationType="slide"
-        transparent={false}
-        statusBarTranslucent
-        onRequestClose={() => setShowRepeatPanel(false)}
-      >
-        <View style={[styles.container, { paddingTop: insets.top }]}>
-          <View style={styles.repeatHeader}>
-            <Pressable onPress={() => setShowRepeatPanel(false)} hitSlop={12}>
-              <ChevronLeft size={24} color={colors.text} />
-            </Pressable>
-            <Text style={styles.repeatTitle}>Se repite.</Text>
-            <Pressable onPress={commitRepeat} hitSlop={12} style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
-              <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 15 }}>Listo</Text>
-            </Pressable>
-          </View>
-
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-            {/* Todos los [N] [unidad] */}
-            <Text style={styles.repeatSectionLabel}>Todos los</Text>
-            <View style={styles.repeatIntervalRow}>
-              <TextInput
-                value={String(tempRepeatInterval)}
-                onChangeText={(v) => { const n = parseInt(v, 10); if (!isNaN(n) && n > 0) setTempRepeatInterval(n) }}
-                keyboardType="number-pad"
-                style={styles.repeatIntervalInput}
-                maxLength={3}
-                selectTextOnFocus
-                selectionColor={colors.primary}
-              />
-              <Pressable style={styles.repeatUnitBtn} onPress={() => setShowRepeatUnitPicker((v) => !v)}>
-                <Text style={styles.repeatUnitText}>
-                  {UNIT_OPTIONS.find((o) => o.value === tempRepeatUnit)?.label ?? 'semana'}
-                </Text>
-                <ChevronDown size={16} color={colors.textSecondary} />
-              </Pressable>
-            </View>
-
-            {showRepeatUnitPicker && (
-              <View style={[styles.remindersPanel, { marginBottom: 12 }]}>
-                {UNIT_OPTIONS.map((opt) => (
-                  <Pressable
-                    key={opt.value}
-                    style={styles.reminderPresetRow}
-                    onPress={() => { setTempRepeatUnit(opt.value); setShowRepeatUnitPicker(false) }}
-                  >
-                    <Text style={[styles.reminderPresetText, tempRepeatUnit === opt.value && { color: colors.primary, fontWeight: '600' }]}>
-                      {opt.label}
-                    </Text>
-                    {tempRepeatUnit === opt.value && <Check size={16} color={colors.primary} />}
-                  </Pressable>
-                ))}
-              </View>
-            )}
-
-            {/* Días de la semana (solo weekly) */}
-            {tempRepeatUnit === 'week' && (
-              <View style={styles.weekdayCircleRow}>
-                {WEEKDAY_SHORT.map((label, idx) => {
-                  const active = tempRepeatDays.includes(idx)
-                  return (
-                    <Pressable
-                      key={idx}
-                      style={[styles.weekdayCircle, active && { backgroundColor: colors.primary, borderColor: colors.primary }]}
-                      onPress={() => toggleRepeatDay(idx)}
-                    >
-                      <Text style={[styles.weekdayCircleText, active && { color: colors.onPrimary }]}>{label}</Text>
-                    </Pressable>
-                  )
-                })}
-              </View>
-            )}
-
-            {/* Establecer hora */}
-            <Pressable style={styles.repeatFieldBox} onPress={() => setShowRepeatTimePicker(true)}>
-              <Text style={{ fontSize: 15, color: tempRepeatTime ? colors.text : colors.textMuted }}>
-                {tempRepeatTime ?? 'Establecer hora'}
-              </Text>
-            </Pressable>
-
-            <View style={styles.rowDivider} />
-
-            {/* Comienza */}
-            <Text style={[styles.repeatSectionLabel, { marginTop: 14 }]}>Comienza</Text>
-            <View style={styles.repeatFieldBox}>
-              <Text style={{ fontSize: 15, color: colors.text }}>
-                {scheduledDate
-                  ? format(new Date(scheduledDate + 'T00:00:00'), "d 'de' MMMM", { locale: es })
-                  : format(new Date(), "d 'de' MMMM", { locale: es })}
-              </Text>
-            </View>
-
-            <View style={styles.rowDivider} />
-
-            {/* Finaliza */}
-            <Text style={[styles.repeatSectionLabel, { marginTop: 14 }]}>Finaliza</Text>
-
-            <Pressable style={styles.repeatRadioRow} onPress={() => setTempRepeatEnd('never')}>
-              <View style={[styles.radioOuter, tempRepeatEnd === 'never' && { borderColor: colors.primary }]}>
-                {tempRepeatEnd === 'never' && <View style={[styles.radioInner, { backgroundColor: colors.primary }]} />}
-              </View>
-              <Text style={styles.repeatRadioLabel}>Nunca</Text>
-            </Pressable>
-
-            <View style={styles.repeatRadioRow}>
-              <Pressable onPress={() => setTempRepeatEnd('on_date')} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
-                <View style={[styles.radioOuter, tempRepeatEnd === 'on_date' && { borderColor: colors.primary }]}>
-                  {tempRepeatEnd === 'on_date' && <View style={[styles.radioInner, { backgroundColor: colors.primary }]} />}
-                </View>
-                <Text style={styles.repeatRadioLabel}>El</Text>
-              </Pressable>
-              <Pressable
-                style={styles.repeatEndField}
-                onPress={() => { setTempRepeatEnd('on_date'); setShowRepeatEndDatePicker(true) }}
-              >
-                <Text style={{ fontSize: 15, color: colors.text }}>
-                  {tempRepeatEndDate
-                    ? format(new Date(tempRepeatEndDate + 'T00:00:00'), "d 'de' MMMM", { locale: es })
-                    : format(addMonths(new Date(), 3), "d 'de' MMMM", { locale: es })}
-                </Text>
-              </Pressable>
-            </View>
-
-            <View style={[styles.repeatRadioRow, { alignItems: 'center' }]}>
-              <Pressable onPress={() => setTempRepeatEnd('after_occurrences')} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <View style={[styles.radioOuter, tempRepeatEnd === 'after_occurrences' && { borderColor: colors.primary }]}>
-                  {tempRepeatEnd === 'after_occurrences' && <View style={[styles.radioInner, { backgroundColor: colors.primary }]} />}
-                </View>
-                <Text style={styles.repeatRadioLabel}>Después de</Text>
-              </Pressable>
-              <TextInput
-                value={String(tempRepeatOccurrences)}
-                onChangeText={(v) => { const n = parseInt(v, 10); if (!isNaN(n) && n > 0) setTempRepeatOccurrences(n) }}
-                keyboardType="number-pad"
-                style={[styles.repeatIntervalInput, { marginHorizontal: 8 }]}
-                maxLength={3}
-                selectTextOnFocus
-                selectionColor={colors.primary}
-                onFocus={() => setTempRepeatEnd('after_occurrences')}
-              />
-              <Text style={styles.repeatRadioLabel}>repeticiones</Text>
-            </View>
-
-            <View style={{ height: 16 }} />
-          </ScrollView>
-        </View>
-      </Modal>
-
-      {open && showRepeatTimePicker && (
-        <DateTimePicker
-          value={tempRepeatTime ? parse(tempRepeatTime, 'HH:mm', new Date()) : new Date()}
-          mode="time"
-          is24Hour
-          display={Platform.OS === 'ios' ? 'spinner' : 'clock'}
-          onChange={(event, date) => {
-            if (Platform.OS !== 'ios') setShowRepeatTimePicker(false)
-            if (event.type === 'dismissed' || !date) return
-            setTempRepeatTime(format(date, 'HH:mm'))
-          }}
-        />
-      )}
-      {open && showRepeatEndDatePicker && (
-        <DateTimePicker
-          value={tempRepeatEndDate ? new Date(tempRepeatEndDate + 'T00:00:00') : addMonths(new Date(), 3)}
-          mode="date"
-          display={Platform.OS === 'ios' ? 'spinner' : 'calendar'}
-          onChange={(event, date) => {
-            if (Platform.OS !== 'ios') setShowRepeatEndDatePicker(false)
-            if (event.type === 'dismissed' || !date) return
-            setTempRepeatEndDate(format(date, 'yyyy-MM-dd'))
-          }}
-        />
-      )}
+        rule={repeatRule}
+        config={repeatConfig}
+        startDate={scheduledDate}
+        onClose={() => setShowRepeatPanel(false)}
+        onDone={handleRepeatDone}
+        colors={colors}
+        insets={insets}
+      />
 
       {/* Native pickers outside Modal to avoid Android nested dialog issue */}
       {open && showTimePicker && (
@@ -1426,257 +1032,6 @@ const createStyles = (colors: ThemeTokens) =>
       marginLeft: 36,
       marginBottom: 4,
       overflow: 'hidden',
-    },
-    reminderAddedRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-      borderBottomWidth: 1,
-      borderColor: colors.border,
-    },
-    reminderAddedText: {
-      flex: 1,
-      fontSize: 14,
-      color: colors.text,
-    },
-    reminderTypePill: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
-      paddingHorizontal: 8,
-      paddingVertical: 3,
-      borderRadius: 999,
-      borderWidth: 1,
-      borderColor: colors.primary + '60',
-      backgroundColor: colors.primary + '15',
-    },
-    reminderTypePillAlarm: {
-      borderColor: colors.accent + '60',
-      backgroundColor: colors.accent + '15',
-    },
-    reminderTypePillText: {
-      fontSize: 11,
-      color: colors.primary,
-      fontWeight: '600',
-    },
-    reminderTypeRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-      borderBottomWidth: 1,
-      borderColor: colors.border,
-    },
-    reminderTypeLabel: {
-      fontSize: 13,
-      color: colors.textMuted,
-    },
-    reminderTypeBtn: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
-      paddingHorizontal: 10,
-      paddingVertical: 6,
-      borderRadius: 999,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    reminderTypeBtnActive: {
-      borderColor: colors.primary,
-      backgroundColor: colors.primary + '15',
-    },
-    reminderTypeBtnAlarmActive: {
-      borderColor: colors.accent,
-      backgroundColor: colors.accent + '15',
-    },
-    reminderTypeBtnText: {
-      fontSize: 12,
-      color: colors.textSecondary,
-    },
-    reminderPresetRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingHorizontal: 14,
-      paddingVertical: 12,
-      borderBottomWidth: 1,
-      borderColor: colors.border,
-    },
-    reminderPresetText: {
-      fontSize: 14,
-      color: colors.text,
-    },
-    repeatHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingHorizontal: 8,
-      paddingVertical: 8,
-      marginBottom: 8,
-    },
-    repeatTitle: {
-      fontSize: 16,
-      fontWeight: '700',
-      color: colors.text,
-    },
-    repeatSectionLabel: {
-      fontSize: 12,
-      color: colors.textMuted,
-      fontWeight: '600',
-      textTransform: 'uppercase',
-      letterSpacing: 0.5,
-      marginBottom: 8,
-    },
-    repeatIntervalRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 10,
-      marginBottom: 14,
-    },
-    repeatIntervalInput: {
-      width: 60,
-      height: 44,
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 8,
-      textAlign: 'center',
-      fontSize: 16,
-      color: colors.text,
-      backgroundColor: colors.surfaceSecondary,
-    },
-    repeatUnitBtn: {
-      flex: 1,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      height: 44,
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 8,
-      paddingHorizontal: 14,
-      backgroundColor: colors.surfaceSecondary,
-    },
-    repeatUnitText: {
-      fontSize: 15,
-      color: colors.text,
-    },
-    weekdayCircleRow: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      marginBottom: 14,
-    },
-    weekdayCircle: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    weekdayCircleText: {
-      fontSize: 13,
-      fontWeight: '600',
-      color: colors.text,
-    },
-    repeatFieldBox: {
-      height: 44,
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 8,
-      paddingHorizontal: 14,
-      justifyContent: 'center',
-      marginBottom: 14,
-      backgroundColor: colors.surfaceSecondary,
-    },
-    repeatRadioRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 12,
-      paddingVertical: 8,
-    },
-    radioOuter: {
-      width: 20,
-      height: 20,
-      borderRadius: 10,
-      borderWidth: 2,
-      borderColor: colors.border,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    radioInner: {
-      width: 10,
-      height: 10,
-      borderRadius: 5,
-    },
-    repeatRadioLabel: {
-      fontSize: 15,
-      color: colors.text,
-    },
-    repeatEndField: {
-      flex: 1,
-      height: 36,
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 8,
-      paddingHorizontal: 12,
-      justifyContent: 'center',
-      backgroundColor: colors.surfaceSecondary,
-    },
-    customReminderRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-    },
-    customReminderInput: {
-      borderWidth: 1,
-      borderColor: colors.borderStrong,
-      borderRadius: 8,
-      paddingHorizontal: 10,
-      paddingVertical: 6,
-      fontSize: 15,
-      color: colors.text,
-      width: 72,
-      textAlign: 'center',
-    } as object,
-    customUnitRow: {
-      flexDirection: 'row',
-      gap: 4,
-    },
-    customUnitBtn: {
-      paddingHorizontal: 8,
-      paddingVertical: 5,
-      borderRadius: 6,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    customUnitBtnActive: {
-      borderColor: colors.primary,
-      backgroundColor: colors.primary + '15',
-    },
-    customUnitText: {
-      fontSize: 12,
-      color: colors.textSecondary,
-    },
-    customReminderBeforeLabel: {
-      fontSize: 13,
-      color: colors.textSecondary,
-    },
-    customReminderAdd: {
-      paddingHorizontal: 14,
-      paddingVertical: 7,
-      borderRadius: 8,
-      backgroundColor: colors.primary,
-    },
-    customReminderAddText: {
-      fontSize: 13,
-      color: colors.onPrimary,
-      fontWeight: '600',
     },
     gradeRow: {
       paddingHorizontal: 4,

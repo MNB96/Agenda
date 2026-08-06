@@ -15,43 +15,29 @@ import {
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
-  AlarmClock,
   AlignLeft,
   Bell,
-  Check,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Clock,
   Flag,
   MapPin,
-  Navigation,
-  Pin,
   Repeat,
   Star,
   Tag,
   Trash2,
   X,
 } from 'lucide-react-native'
-import { searchPlaceSuggestions, type PlaceSuggestion } from '../../services/googlePlaces'
 import { fetchTravelTime, getCurrentLocation } from '../../services/travelTime'
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker'
-import {
-  addMonths,
-  eachDayOfInterval,
-  endOfMonth,
-  format,
-  getDay,
-  isToday,
-  parse,
-  startOfMonth,
-  subMonths,
-} from 'date-fns'
+import { format, isToday, parse } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { MonthCalendar } from '../components/MonthCalendar'
+import { RepeatPanel, UNIT_OPTIONS, RULE_TO_UNIT } from '../components/RepeatPanel'
+import { ReminderPanel } from '../components/ReminderPanel'
 import { parseQuickInput } from '../../services/parser/quickInputParser'
 import { detectCategoryFromText } from '../../services/parser/categoryDetector'
 import { isExamTask } from '../../services/parser/examDetector'
 import { useItems } from '../../features/items/useItems'
+import { useLocationAutocomplete } from '../../features/items/useLocationAutocomplete'
 import { useSettings, useLicenseUsages } from '../../features/settings/useSettings'
 import { useGoogleAuthStore } from '../../state/googleAuthStore'
 import { computeNextDate } from '../../services/items/recurrence'
@@ -62,9 +48,7 @@ import { createId } from '../../utils/id'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type Panel = 'main' | 'date' | 'repeat' | 'details'
-type RepeatUnit = 'day' | 'week' | 'month' | 'year'
-type RepeatEnd = 'never' | 'on_date' | 'after_occurrences'
+type Panel = 'main' | 'date' | 'repeat'
 
 interface QuickAddSheetProps {
   open: boolean
@@ -74,53 +58,16 @@ interface QuickAddSheetProps {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const REMINDER_PRESETS: { label: string; minutesBefore: number }[] = [
-  { label: 'A la hora', minutesBefore: 0 },
-  { label: '10 min antes', minutesBefore: 10 },
-  { label: '30 min antes', minutesBefore: 30 },
-  { label: '1 hora antes', minutesBefore: 60 },
-  { label: '1 día antes', minutesBefore: 1440 },
-]
-
-const WEEKDAY_LABELS = ['L', 'M', 'M', 'J', 'V', 'S', 'D']
-const WEEKDAY_SHORT = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
-
-const UNIT_OPTIONS: { label: string; value: RepeatUnit }[] = [
-  { label: 'día', value: 'day' },
-  { label: 'semana', value: 'week' },
-  { label: 'mes', value: 'month' },
-  { label: 'año', value: 'year' },
-]
-
-const UNIT_TO_RULE: Record<RepeatUnit, RepeatRule> = {
-  day: 'daily', week: 'weekly', month: 'monthly', year: 'yearly',
-}
-const RULE_TO_UNIT: Partial<Record<RepeatRule, RepeatUnit>> = {
-  daily: 'day', weekly: 'week', monthly: 'month', yearly: 'year',
-}
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const fmtShort = (dateStr: string) => {
-  const d = new Date(dateStr + 'T00:00:00')
-  return isToday(d) ? 'HOY' : format(d, 'd MMM', { locale: es })
+  const date = new Date(dateStr + 'T00:00:00')
+  return isToday(date) ? 'HOY' : format(date, 'd MMM', { locale: es })
 }
 
 const fmtFull = (dateStr: string) => {
-  const d = new Date(dateStr + 'T00:00:00')
-  return isToday(d) ? 'HOY' : format(d, "EEE d 'de' MMM", { locale: es })
-}
-
-const buildCalendarCells = (month: Date): (Date | null)[] => {
-  const first = startOfMonth(month)
-  const last = endOfMonth(month)
-  const days = eachDayOfInterval({ start: first, end: last })
-  const offset = (getDay(first) + 6) % 7 // Monday = 0
-  const cells: (Date | null)[] = [...Array(offset).fill(null), ...days]
-  // Siempre 6 filas (42 celdas), no solo un múltiplo de 7 — si no, el calendario cambia
-  // de alto según el mes tenga 5 o 6 semanas visibles, y el panel "salta" al navegar.
-  while (cells.length < 42) cells.push(null)
-  return cells
+  const date = new Date(dateStr + 'T00:00:00')
+  return isToday(date) ? 'HOY' : format(date, "EEE d 'de' MMM", { locale: es })
 }
 
 // ─── Small components ─────────────────────────────────────────────────────────
@@ -270,8 +217,13 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
 
   // Location
   const [location, setLocation] = useState<string | undefined>()
-  const [locationQuery, setLocationQuery] = useState('')
-  const [locationSuggestions, setLocationSuggestions] = useState<PlaceSuggestion[]>([])
+  const {
+    locationQuery,
+    setLocationQuery,
+    suggestions: locationSuggestions,
+    clearSuggestions: clearLocationSuggestions,
+    reset: resetLocationAutocomplete,
+  } = useLocationAutocomplete(location)
   const [showLocationInput, setShowLocationInput] = useState(false)
 
   // NL dismissal flags (user tapped × on auto-detected chip)
@@ -290,30 +242,22 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
   const [tempReminders, setTempReminders] = useState<ReminderConfig[]>([])
   const [selectedAlarmType, setSelectedAlarmType] = useState<'notification' | 'alarm'>('notification')
   const [selectedPersistent, setSelectedPersistent] = useState(false)
-  const [customMinutesText, setCustomMinutesText] = useState('')
-  const [customUnit, setCustomUnit] = useState<'min' | 'h' | 'días'>('min')
-  const [showCustomInput, setShowCustomInput] = useState(false)
   const [travelTimeLoading, setTravelTimeLoading] = useState(false)
   const [travelTimeResult, setTravelTimeResult] = useState<string | null>(null)
   const [travelConfig, setTravelConfig] = useState<TravelConfig | undefined>()
-  const [viewMonth, setViewMonth] = useState(new Date())
+  // Bumped whenever the date panel should jump its visible month back to tempDate/tempDeadline
+  // (opening the sheet, opening the deadline picker, auto-filling a date from a repeat rule) —
+  // forces MonthCalendar to remount and re-read its initial month from selectedDate.
+  const [dateCalendarKey, setDateCalendarKey] = useState(0)
+  const [deadlineCalendarKey, setDeadlineCalendarKey] = useState(0)
   const [timeEnabled, setTimeEnabled] = useState(false)
   const [showNativeTime, setShowNativeTime] = useState(false)
   const [deadlinePickerOpen, setDeadlinePickerOpen] = useState(false)
-  const [deadlineViewMonth, setDeadlineViewMonth] = useState(new Date())
   const [expandReminder, setExpandReminder] = useState(false)
 
-  // ── Repeat panel state ──
-  const [tempRepeatInterval, setTempRepeatInterval] = useState(1)
-  const [tempRepeatUnit, setTempRepeatUnit] = useState<RepeatUnit>('week')
-  const [tempRepeatDays, setTempRepeatDays] = useState<number[]>([])
-  const [tempRepeatEnd, setTempRepeatEnd] = useState<RepeatEnd>('never')
-  const [tempRepeatEndDate, setTempRepeatEndDate] = useState<string | undefined>()
-  const [tempRepeatOccurrences, setTempRepeatOccurrences] = useState(13)
-  const [tempRepeatTime, setTempRepeatTime] = useState<string | undefined>()
-  const [showRepeatUnitPicker, setShowRepeatUnitPicker] = useState(false)
-  const [showRepeatTimePicker, setShowRepeatTimePicker] = useState(false)
-  const [showRepeatEndDatePicker, setShowRepeatEndDatePicker] = useState(false)
+  // Draft repeat config while the RepeatPanel is open — assembled fully by the panel
+  // itself, promoted to repeatRule/repeatConfig only when the outer date panel commits.
+  const [tempRepeatConfig, setTempRepeatConfig] = useState<RepeatConfig | undefined>()
 
   // ── NL parsing (create mode only) ──
   const parsed = useMemo(() => {
@@ -340,19 +284,14 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
 
   // Editing item reference
   const editingItem: Item | undefined = useMemo(
-    () => (editingItemId ? items.find((i) => i.id === editingItemId) : undefined),
+    () => (editingItemId ? items.find((item) => item.id === editingItemId) : undefined),
     [editingItemId, items],
   )
-
-  // Calendar grids
-  const calendarCells = useMemo(() => buildCalendarCells(viewMonth), [viewMonth])
-  const deadlineCalendarCells = useMemo(() => buildCalendarCells(deadlineViewMonth), [deadlineViewMonth])
 
   // ── Load / reset on open ──
   useEffect(() => {
     if (!open) return
     setPanel('main')
-    setShowRepeatUnitPicker(false)
     setExpandReminder(false)
 
     if (isEditMode && editingItem) {
@@ -371,7 +310,7 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
       setShowDescInput(Boolean(editingItem.description?.trim()))
       setCategoryId(editingItem.categoryId)
       setLocation(editingItem.location)
-      setLocationQuery(editingItem.location ?? '')
+      resetLocationAutocomplete(editingItem.location ?? '')
       setShowLocationInput(Boolean(editingItem.location))
     } else {
       setText('')
@@ -393,29 +332,14 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
       setNlCategoryDismissed(false)
       setStudyTimeBefore(undefined)
       setLocation(undefined)
-      setLocationQuery('')
-      setLocationSuggestions([])
+      resetLocationAutocomplete('')
       setShowLocationInput(false)
     }
+    // Deliberately keyed on [open] only: this (re)seeds the draft each time the sheet opens
+    // (editingItem/isEditMode are read fresh at that point), but must NOT re-fire while the
+    // sheet stays open just because editingItem's reference changes in the background — that
+    // would wipe out text the user is actively typing.
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Location autocomplete debounce ──
-  useEffect(() => {
-    const q = locationQuery.trim()
-    if (!q || q === location) {
-      setLocationSuggestions([])
-      return
-    }
-    const timer = setTimeout(async () => {
-      try {
-        const results = await searchPlaceSuggestions(q)
-        setLocationSuggestions(results.slice(0, 4))
-      } catch {
-        setLocationSuggestions([])
-      }
-    }, 350)
-    return () => clearTimeout(timer)
-  }, [locationQuery, location])
 
   // ── Android back handler ──
   useEffect(() => {
@@ -438,57 +362,38 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
     setTempTime(effectiveTime)
     setTempDeadline(effectiveDeadline)
     setTempRepeat(repeatRule)
-    setTempRepeatInterval(repeatConfig?.interval ?? 1)
-    setTempRepeatDays(repeatConfig?.daysOfWeek ?? [])
-    setTempRepeatTime(repeatConfig?.time)
-    setTempRepeatEnd(repeatConfig?.end ?? 'never')
-    setTempRepeatEndDate(repeatConfig?.endDate)
-    setTempRepeatOccurrences(repeatConfig?.occurrences ?? 13)
+    setTempRepeatConfig(repeatConfig)
     setTempReminders(reminders)
     setTempEndTime(endTime)
     setTimeEnabled(Boolean(effectiveTime))
-    setShowRepeatUnitPicker(false)
     setExpandReminder(false)
     setDeadlinePickerOpen(false)
-    setViewMonth(effectiveDate ? new Date(effectiveDate + 'T00:00:00') : new Date())
+    setDateCalendarKey((k) => k + 1)
     setPanel('date')
   }, [effectiveDate, effectiveTime, effectiveDeadline, repeatRule, repeatConfig, reminders, endTime])
 
-  const openDetailsPanel = useCallback(() => {
-    Keyboard.dismiss()
-    setPanel('details')
-    setTimeout(() => descRef.current?.focus(), 150)
+  const openRepeatPanel = useCallback(() => {
+    setPanel('repeat')
   }, [])
 
-  const openRepeatPanel = useCallback(() => {
-    setTempRepeatUnit(RULE_TO_UNIT[tempRepeat] ?? 'week')
-    setShowRepeatUnitPicker(false)
-    setPanel('repeat')
-  }, [tempRepeat])
-
-  const commitRepeat = useCallback(() => {
-    setTempRepeat(UNIT_TO_RULE[tempRepeatUnit])
+  const handleRepeatDone = useCallback((rule: RepeatRule, config: RepeatConfig) => {
+    setTempRepeat(rule)
+    setTempRepeatConfig(config)
     // Si todavía no eligieron un día en el calendario, la fecha se infiere de la
     // repetición misma (ej. "todos los días" -> mañana; "cada semana" siendo hoy
     // lunes -> el próximo lunes), en vez de dejar la tarea sin fecha.
     if (!tempDate) {
       const nextDate = computeNextDate(new Date(), {
-        unit: tempRepeatUnit,
-        interval: tempRepeatInterval,
-        daysOfWeek: tempRepeatUnit === 'week' ? tempRepeatDays : undefined,
+        unit: config.unit,
+        interval: config.interval,
+        daysOfWeek: config.unit === 'week' ? config.daysOfWeek : undefined,
         end: 'never',
       })
       setTempDate(format(nextDate, 'yyyy-MM-dd'))
-      setViewMonth(nextDate)
+      setDateCalendarKey((k) => k + 1)
     }
     setPanel('date')
-  }, [tempRepeatUnit, tempDate, tempRepeatInterval, tempRepeatDays])
-
-  const toggleRepeatDay = (idx: number) => {
-    setTempRepeatDays(prev =>
-      prev.includes(idx) ? prev.filter(d => d !== idx) : [...prev, idx],
-    )
-  }
+  }, [tempDate])
 
   const commitDate = useCallback(() => {
     setScheduledDate(tempDate)
@@ -496,19 +401,7 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
     setEndTime(timeEnabled ? tempEndTime : undefined)
     setDeadline(tempDeadline)
     setRepeatRule(tempRepeat)
-    setRepeatConfig(
-      tempRepeat !== 'none'
-        ? {
-            unit: tempRepeatUnit,
-            interval: tempRepeatInterval,
-            daysOfWeek: tempRepeatUnit === 'week' ? tempRepeatDays : undefined,
-            time: tempRepeatTime,
-            end: tempRepeatEnd,
-            endDate: tempRepeatEnd === 'on_date' ? tempRepeatEndDate : undefined,
-            occurrences: tempRepeatEnd === 'after_occurrences' ? tempRepeatOccurrences : undefined,
-          }
-        : undefined,
-    )
+    setRepeatConfig(tempRepeat !== 'none' ? tempRepeatConfig : undefined)
     setReminders(tempReminders)
     if (tempDate) setNlDateDismissed(true)
     if (timeEnabled && tempTime) setNlTimeDismissed(true)
@@ -521,13 +414,7 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
     tempEndTime,
     tempDeadline,
     tempRepeat,
-    tempRepeatUnit,
-    tempRepeatInterval,
-    tempRepeatDays,
-    tempRepeatTime,
-    tempRepeatEnd,
-    tempRepeatEndDate,
-    tempRepeatOccurrences,
+    tempRepeatConfig,
     tempReminders,
   ])
 
@@ -557,7 +444,7 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
     if (isEditMode && editingItem) {
       await updateItem({ id: editingItem.id, patch: payload })
       // Sync license usage for edit mode
-      const existingUsage = (licenseUsages ?? []).find(u => u.itemId === editingItem.id)
+      const existingUsage = (licenseUsages ?? []).find(usage => usage.itemId === editingItem.id)
       const days = studyTimeBefore === 'half' ? 0.5 : studyTimeBefore === 'full' ? 1 : undefined
       if (days !== undefined) {
         await saveUsage({
@@ -596,9 +483,8 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
     onClose()
   }
 
-  const handleDayPress = (day: Date) => {
-    const str = format(day, 'yyyy-MM-dd')
-    setTempDate(str === tempDate ? undefined : str)
+  const handleDayPress = (dayStr: string) => {
+    setTempDate(dayStr === tempDate ? undefined : dayStr)
   }
 
   const handleNativeTimeChange = (event: DateTimePickerEvent, date?: Date) => {
@@ -620,7 +506,7 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
       // Recalcula con el tráfico actual y reemplaza el recordatorio de salida anterior.
       const totalMins = result.minutes + 5
       setTempReminders((prev) => [
-        ...prev.filter((r) => r.mode !== 'departure'),
+        ...prev.filter((reminder) => reminder.mode !== 'departure'),
         { id: createId(), mode: 'departure', minutesBefore: totalMins, alarmType: selectedAlarmType, persistent: selectedPersistent },
       ])
       setTravelConfig({ transport: 'driving', extraMinutes: 5, departureReminderEnabled: true })
@@ -629,44 +515,10 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
     }
   }
 
-  const togglePresetReminder = (minutesBefore: number) => {
-    const exists = tempReminders.some((r) => r.minutesBefore === minutesBefore)
-    if (exists) {
-      setTempReminders(tempReminders.filter((r) => r.minutesBefore !== minutesBefore))
-    } else {
-      setTempReminders([...tempReminders, { id: createId(), mode: 'relative', minutesBefore, alarmType: selectedAlarmType, persistent: selectedPersistent }])
-    }
-  }
-
-  const addCustomReminder = () => {
-    const val = parseInt(customMinutesText, 10)
-    if (isNaN(val) || val < 0) return
-    const mins = customUnit === 'h' ? val * 60 : customUnit === 'días' ? val * 1440 : val
-    const exists = tempReminders.some((r) => r.minutesBefore === mins)
-    if (!exists) {
-      setTempReminders([...tempReminders, { id: createId(), mode: 'relative', minutesBefore: mins, alarmType: selectedAlarmType, persistent: selectedPersistent }])
-    }
-    setCustomMinutesText('')
-    setShowCustomInput(false)
-  }
-
-  const formatReminderLabel = (r: ReminderConfig): string => {
-    const mins = r.minutesBefore
-    if (mins === undefined) return 'Recordatorio'
-    if (mins === 0) return 'A la hora'
-    if (mins < 60) return `${mins} min antes`
-    if (mins < 1440) {
-      const h = mins / 60
-      return Number.isInteger(h) ? (h === 1 ? '1 hora antes' : `${h} horas antes`) : `${mins} min antes`
-    }
-    const d = mins / 1440
-    return Number.isInteger(d) ? (d === 1 ? '1 día antes' : `${d} días antes`) : `${Math.floor(mins / 60)}h antes`
-  }
-
   const handleBackdropPress = () => {
     if (deadlinePickerOpen) { setDeadlinePickerOpen(false); return }
     if (panel === 'repeat') { setPanel('date'); return }
-    if (panel === 'date' || panel === 'details') {
+    if (panel === 'date') {
       setPanel('main')
       setTimeout(() => titleRef.current?.focus(), 150)
       return
@@ -688,9 +540,10 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
 
   const repeatLabel = useMemo(() => {
     if (tempRepeat === 'none') return undefined
-    const unit = UNIT_OPTIONS.find(o => o.value === (RULE_TO_UNIT[tempRepeat] ?? 'week'))?.label ?? 'semana'
-    return tempRepeatInterval > 1 ? `Cada ${tempRepeatInterval} ${unit}s` : `Cada ${unit}`
-  }, [tempRepeat, tempRepeatInterval])
+    const interval = tempRepeatConfig?.interval ?? 1
+    const unit = UNIT_OPTIONS.find(option => option.value === (RULE_TO_UNIT[tempRepeat] ?? 'week'))?.label ?? 'semana'
+    return interval > 1 ? `Cada ${interval} ${unit}s` : `Cada ${unit}`
+  }, [tempRepeat, tempRepeatConfig])
   const reminderCount = tempReminders.length
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -772,14 +625,14 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
                 style={styles.locationInput}
                 returnKeyType="done"
                 selectionColor={colors.primary}
-                onSubmitEditing={() => setLocationSuggestions([])}
+                onSubmitEditing={() => clearLocationSuggestions()}
               />
               {locationQuery ? (
                 <Pressable
                   onPress={() => {
                     setLocationQuery('')
                     setLocation(undefined)
-                    setLocationSuggestions([])
+                    clearLocationSuggestions()
                   }}
                   hitSlop={8}
                 >
@@ -789,19 +642,19 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
             </View>
             {locationSuggestions.length > 0 && (
               <View style={styles.suggestionsContainer}>
-                {locationSuggestions.map((s) => (
+                {locationSuggestions.map((suggestion) => (
                   <Pressable
-                    key={s.placeId}
+                    key={suggestion.placeId}
                     style={({ pressed }) => [styles.suggestionItem, pressed && { opacity: 0.7 }]}
                     onPress={() => {
-                      setLocation(s.description)
-                      setLocationQuery(s.description)
-                      setLocationSuggestions([])
+                      setLocation(suggestion.description)
+                      setLocationQuery(suggestion.description)
+                      clearLocationSuggestions()
                       Keyboard.dismiss()
                     }}
                   >
                     <MapPin size={13} color={colors.textMuted} style={{ marginTop: 1 }} />
-                    <Text style={styles.suggestionText} numberOfLines={2}>{s.description}</Text>
+                    <Text style={styles.suggestionText} numberOfLines={2}>{suggestion.description}</Text>
                   </Pressable>
                 ))}
               </View>
@@ -828,7 +681,7 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
             )}
             {showNlCategory && suggestedCategoryId && (
               <NlChip
-                label={`🏷 ${settings?.categories.find((c) => c.id === suggestedCategoryId)?.name ?? suggestedCategoryId}`}
+                label={`🏷 ${settings?.categories.find((category) => category.id === suggestedCategoryId)?.name ?? suggestedCategoryId}`}
                 onDismiss={() => setNlCategoryDismissed(true)}
                 colors={colors}
               />
@@ -914,7 +767,7 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
                   setShowLocationInput(false)
                   setLocationQuery('')
                   setLocation(undefined)
-                  setLocationSuggestions([])
+                  clearLocationSuggestions()
                   Keyboard.dismiss()
                 } else {
                   setShowLocationInput(true)
@@ -962,50 +815,6 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
       </View>
   )
 
-  const renderCalendarGrid = (
-    cells: (Date | null)[],
-    selected: string | undefined,
-    onSelect: (day: Date) => void,
-    accentColor: string,
-  ) => (
-    <>
-      <View style={styles.weekdayRow}>
-        {WEEKDAY_LABELS.map((d, i) => (
-          <Text key={i} style={styles.weekdayLabel}>{d}</Text>
-        ))}
-      </View>
-      <View style={styles.calGrid}>
-        {cells.map((day, idx) => {
-          if (!day) return <View key={idx} style={styles.calCell} />
-          const dayStr = format(day, 'yyyy-MM-dd')
-          const isSel = dayStr === selected
-          const today = isToday(day)
-          return (
-            <Pressable key={idx} style={styles.calCell} onPress={() => onSelect(day)} hitSlop={2}>
-              <View
-                style={[
-                  styles.calDayMarker,
-                  isSel && { backgroundColor: accentColor },
-                  today && !isSel && { borderWidth: 1, borderColor: accentColor },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.calDayText,
-                    isSel && styles.calDayTextSelected,
-                    today && !isSel && { color: accentColor, fontWeight: '700' },
-                  ]}
-                >
-                  {format(day, 'd')}
-                </Text>
-              </View>
-            </Pressable>
-          )
-        })}
-      </View>
-    </>
-  )
-
   const renderDeadlinePicker = () => (
     <>
       {/* Extra dim overlay behind the card */}
@@ -1024,28 +833,16 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
             </Pressable>
           </View>
 
-          {/* Month nav */}
-          <View style={styles.monthNav}>
-            <Pressable onPress={() => setDeadlineViewMonth((m) => subMonths(m, 1))} hitSlop={12}>
-              <ChevronLeft size={18} color={colors.textSecondary} />
-            </Pressable>
-            <Text style={styles.monthLabel}>
-              {format(deadlineViewMonth, 'MMMM yyyy', { locale: es })}
-            </Text>
-            <Pressable onPress={() => setDeadlineViewMonth((m) => addMonths(m, 1))} hitSlop={12}>
-              <ChevronRight size={18} color={colors.textSecondary} />
-            </Pressable>
-          </View>
-
-          {renderCalendarGrid(
-            deadlineCalendarCells,
-            tempDeadline,
-            (day) => {
-              setTempDeadline(format(day, 'yyyy-MM-dd'))
+          <MonthCalendar
+            key={deadlineCalendarKey}
+            selectedDate={tempDeadline}
+            onSelectDate={(d) => {
+              setTempDeadline(d)
               setDeadlinePickerOpen(false)
-            },
-            colors.accent,
-          )}
+            }}
+            colors={colors}
+            accentColor={colors.accent}
+          />
 
           {/* Quitar fecha */}
           {tempDeadline && (
@@ -1069,25 +866,13 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
         <View style={styles.dragHandle} />
 
         <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          {/* Month navigation */}
-          <View style={styles.monthNav}>
-            <Pressable onPress={() => setViewMonth((m) => subMonths(m, 1))} hitSlop={12}>
-              <ChevronLeft size={20} color={colors.textSecondary} />
-            </Pressable>
-            <Text style={styles.monthLabel}>
-              {format(viewMonth, 'MMMM yyyy', { locale: es })}
-            </Text>
-            <Pressable onPress={() => setViewMonth((m) => addMonths(m, 1))} hitSlop={12}>
-              <ChevronRight size={20} color={colors.textSecondary} />
-            </Pressable>
-          </View>
-
-          {renderCalendarGrid(
-            calendarCells,
-            tempDate,
-            handleDayPress,
-            colors.primary,
-          )}
+          <MonthCalendar
+            key={dateCalendarKey}
+            selectedDate={tempDate}
+            onSelectDate={handleDayPress}
+            colors={colors}
+            accentColor={colors.primary}
+          />
 
           <View style={styles.optionsSeparator} />
 
@@ -1129,7 +914,7 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
             label="Repetir"
             value={repeatLabel}
             onPress={openRepeatPanel}
-            onClear={tempRepeat !== 'none' ? () => setTempRepeat('none') : undefined}
+            onClear={tempRepeat !== 'none' ? () => { setTempRepeat('none'); setTempRepeatConfig(undefined) } : undefined}
             icon={Repeat}
             colors={colors}
           />
@@ -1141,7 +926,7 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
             label="Fecha límite"
             value={tempDeadline ? fmtShort(tempDeadline) : undefined}
             onPress={() => {
-              setDeadlineViewMonth(tempDeadline ? new Date(tempDeadline + 'T00:00:00') : new Date())
+              setDeadlineCalendarKey((k) => k + 1)
               setDeadlinePickerOpen(true)
             }}
             onClear={tempDeadline ? () => setTempDeadline(undefined) : undefined}
@@ -1161,137 +946,20 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
             colors={colors}
           />
           {expandReminder && (
-            <View style={styles.expandedList}>
-              {/* Recordatorios ya agregados */}
-              {tempReminders.map((r) => (
-                <View key={r.id} style={styles.reminderAddedRow}>
-                  <Text style={styles.reminderAddedText}>{formatReminderLabel(r)}</Text>
-                  <View style={[styles.reminderTypePill, r.alarmType === 'alarm' && styles.reminderTypePillAlarm]}>
-                    {r.alarmType === 'alarm'
-                      ? <AlarmClock size={11} color={colors.accent} />
-                      : <Bell size={11} color={colors.primary} />}
-                    <Text style={[styles.reminderTypePillText, r.alarmType === 'alarm' && { color: colors.accent }]}>
-                      {r.alarmType === 'alarm' ? 'Alarma' : 'Notif.'}
-                    </Text>
-                  </View>
-                  <Pressable onPress={() => setTempReminders(tempReminders.filter((x) => x.id !== r.id))} hitSlop={8}>
-                    <X size={14} color={colors.textMuted} />
-                  </Pressable>
-                </View>
-              ))}
-
-              {/* Selector de tipo */}
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.reminderTypeRow}>
-                <Text style={styles.reminderTypeLabel}>Tipo:</Text>
-                <Pressable
-                  style={[styles.reminderTypeBtn, selectedAlarmType === 'notification' && styles.reminderTypeBtnActive]}
-                  onPress={() => setSelectedAlarmType('notification')}
-                >
-                  <Bell size={12} color={selectedAlarmType === 'notification' ? colors.primary : colors.textMuted} />
-                  <Text style={[styles.reminderTypeBtnText, selectedAlarmType === 'notification' && { color: colors.primary, fontWeight: '600' }]}>
-                    Notificación
-                  </Text>
-                </Pressable>
-                <Pressable
-                  style={[styles.reminderTypeBtn, selectedAlarmType === 'alarm' && styles.reminderTypeBtnAlarmActive]}
-                  onPress={() => setSelectedAlarmType('alarm')}
-                >
-                  <AlarmClock size={12} color={selectedAlarmType === 'alarm' ? colors.accent : colors.textMuted} />
-                  <Text style={[styles.reminderTypeBtnText, selectedAlarmType === 'alarm' && { color: colors.accent, fontWeight: '600' }]}>
-                    Alarma
-                  </Text>
-                </Pressable>
-                <Pressable
-                  style={[styles.reminderTypeBtn, selectedPersistent && styles.reminderTypeBtnActive]}
-                  onPress={() => setSelectedPersistent((v) => !v)}
-                >
-                  <Pin size={12} color={selectedPersistent ? colors.primary : colors.textMuted} />
-                  <Text style={[styles.reminderTypeBtnText, selectedPersistent && { color: colors.primary, fontWeight: '600' }]}>
-                    Persistente
-                  </Text>
-                </Pressable>
-              </ScrollView>
-
-              {/* Presets */}
-              {REMINDER_PRESETS.map((preset) => {
-                const active = tempReminders.some((r) => r.minutesBefore === preset.minutesBefore)
-                return (
-                  <Pressable
-                    key={preset.minutesBefore}
-                    style={styles.expandedItem}
-                    onPress={() => togglePresetReminder(preset.minutesBefore)}
-                  >
-                    <Text style={[styles.expandedItemText, active && { color: colors.primary, fontWeight: '600' }]}>
-                      {preset.label}
-                    </Text>
-                    {active && <Check size={16} color={colors.primary} />}
-                  </Pressable>
-                )
-              })}
-
-              {/* Travel time — solo si hay dirección y fecha */}
-              {location && tempDate && (
-                <Pressable
-                  style={styles.expandedItem}
-                  onPress={() => void handleCalculateTravelTime()}
-                  disabled={travelTimeLoading}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Navigation size={13} color={colors.primary} />
-                    <Text style={[styles.expandedItemText, { color: colors.primary }]}>
-                      {travelTimeLoading
-                        ? 'Calculando...'
-                        : travelConfig
-                          ? 'Recalcular salida (tráfico actual)'
-                          : 'Recordarme cuándo salir'}
-                    </Text>
-                  </View>
-                  {travelTimeResult && (
-                    <Text style={{ fontSize: 12, color: colors.textMuted }}>{travelTimeResult}</Text>
-                  )}
-                </Pressable>
-              )}
-
-              {/* Personalizado */}
-              <Pressable style={styles.expandedItem} onPress={() => setShowCustomInput((v) => !v)}>
-                <Text style={styles.expandedItemText}>Personalizado...</Text>
-                <ChevronDown
-                  size={14}
-                  color={colors.textMuted}
-                  style={{ transform: [{ rotate: showCustomInput ? '180deg' : '0deg' }] }}
-                />
-              </Pressable>
-              {showCustomInput && (
-                <View style={styles.customReminderRow}>
-                  <TextInput
-                    style={styles.customReminderInput}
-                    value={customMinutesText}
-                    onChangeText={setCustomMinutesText}
-                    keyboardType="numeric"
-                    placeholder="0"
-                    placeholderTextColor={colors.textMuted}
-                    returnKeyType="done"
-                    onSubmitEditing={addCustomReminder}
-                    selectionColor={colors.primary}
-                  />
-                  <View style={styles.customUnitRow}>
-                    {(['min', 'h', 'días'] as const).map((u) => (
-                      <Pressable
-                        key={u}
-                        style={[styles.customUnitBtn, customUnit === u && styles.customUnitBtnActive]}
-                        onPress={() => setCustomUnit(u)}
-                      >
-                        <Text style={[styles.customUnitText, customUnit === u && { color: colors.primary, fontWeight: '600' }]}>{u}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                  <Text style={styles.customReminderBeforeLabel}>antes</Text>
-                  <Pressable style={styles.customReminderAdd} onPress={addCustomReminder}>
-                    <Text style={styles.customReminderAddText}>+</Text>
-                  </Pressable>
-                </View>
-              )}
-            </View>
+            <ReminderPanel
+              reminders={tempReminders}
+              onChangeReminders={setTempReminders}
+              alarmType={selectedAlarmType}
+              onChangeAlarmType={setSelectedAlarmType}
+              persistent={selectedPersistent}
+              onChangePersistent={setSelectedPersistent}
+              showTravelButton={Boolean(location && tempDate)}
+              travelTimeLoading={travelTimeLoading}
+              hasTravelConfig={Boolean(travelConfig)}
+              travelTimeResult={travelTimeResult}
+              onCalculateTravelTime={() => void handleCalculateTravelTime()}
+              colors={colors}
+            />
           )}
 
           {accessToken && (
@@ -1328,201 +996,6 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
       </View>
   )
 
-  const renderDetailsPanel = () => (
-      <View
-        style={[styles.sheet, { paddingBottom: Math.max(insets.bottom + 8, 16) }]}
-        onStartShouldSetResponder={() => true}
-      >
-        <View style={styles.dragHandle} />
-
-        <TextInput
-          ref={descRef}
-          value={description}
-          onChangeText={setDescription}
-          placeholder="Agrega una nota o descripción"
-          placeholderTextColor={colors.textMuted}
-          style={styles.detailsInput}
-          multiline
-          textAlignVertical="top"
-        />
-
-        <View style={styles.actionBar}>
-          <View />
-          <View style={{ flexDirection: 'row', gap: 16, alignItems: 'center' }}>
-            <Pressable
-              onPress={() => {
-                setPanel('main')
-                setTimeout(() => titleRef.current?.focus(), 150)
-              }}
-              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
-            >
-              <Text style={{ color: colors.textSecondary, fontSize: 15, fontWeight: '500' }}>Cancelar</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => {
-                setPanel('main')
-                setTimeout(() => titleRef.current?.focus(), 150)
-              }}
-              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
-            >
-              <Text style={{ color: colors.primary, fontSize: 15, fontWeight: '700' }}>Listo</Text>
-            </Pressable>
-          </View>
-        </View>
-      </View>
-  )
-
-  const renderRepeatPanel = () => (
-    <View
-      style={[
-        styles.sheet,
-        { flex: 1, borderRadius: 0, borderWidth: 0, paddingTop: insets.top, paddingBottom: Math.max(insets.bottom + 8, 16) },
-      ]}
-      onStartShouldSetResponder={() => true}
-    >
-      {/* Header */}
-      <View style={styles.repeatHeader}>
-        <Pressable onPress={() => setPanel('date')} hitSlop={12}>
-          <ChevronLeft size={24} color={colors.text} />
-        </Pressable>
-        <Text style={styles.repeatTitle}>Se repite.</Text>
-        <Pressable onPress={commitRepeat} hitSlop={12} style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
-          <Text style={[styles.footerBtnText, { color: colors.primary, fontWeight: '700' }]}>Listo</Text>
-        </Pressable>
-      </View>
-
-      <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        {/* Todos los [N] [unidad] */}
-        <Text style={styles.repeatSectionLabel}>Todos los</Text>
-        <View style={styles.repeatIntervalRow}>
-          <TextInput
-            value={String(tempRepeatInterval)}
-            onChangeText={(v) => { const n = parseInt(v); if (!isNaN(n) && n > 0) setTempRepeatInterval(n) }}
-            keyboardType="number-pad"
-            style={styles.repeatIntervalInput}
-            maxLength={3}
-            selectTextOnFocus
-          />
-          <Pressable style={styles.repeatUnitBtn} onPress={() => setShowRepeatUnitPicker(v => !v)}>
-            <Text style={styles.repeatUnitText}>
-              {UNIT_OPTIONS.find(o => o.value === tempRepeatUnit)?.label ?? 'semana'}
-            </Text>
-            <ChevronDown size={16} color={colors.textSecondary} />
-          </Pressable>
-        </View>
-
-        {showRepeatUnitPicker && (
-          <View style={[styles.expandedList, { marginBottom: 12 }]}>
-            {UNIT_OPTIONS.map(opt => (
-              <Pressable
-                key={opt.value}
-                style={styles.expandedItem}
-                onPress={() => { setTempRepeatUnit(opt.value); setShowRepeatUnitPicker(false) }}
-              >
-                <Text style={[styles.expandedItemText, tempRepeatUnit === opt.value && { color: colors.primary, fontWeight: '600' }]}>
-                  {opt.label}
-                </Text>
-                {tempRepeatUnit === opt.value && <Check size={16} color={colors.primary} />}
-              </Pressable>
-            ))}
-          </View>
-        )}
-
-        {/* Días de la semana (solo weekly) */}
-        {tempRepeatUnit === 'week' && (
-          <View style={styles.weekdayCircleRow}>
-            {WEEKDAY_SHORT.map((label, idx) => {
-              const active = tempRepeatDays.includes(idx)
-              return (
-                <Pressable
-                  key={idx}
-                  style={[styles.weekdayCircle, active && { backgroundColor: colors.primary, borderColor: colors.primary }]}
-                  onPress={() => toggleRepeatDay(idx)}
-                >
-                  <Text style={[styles.weekdayCircleText, active && { color: colors.onPrimary }]}>{label}</Text>
-                </Pressable>
-              )
-            })}
-          </View>
-        )}
-
-        {/* Establecer hora */}
-        <Pressable style={styles.repeatFieldBox} onPress={() => setShowRepeatTimePicker(true)}>
-          <Text style={{ fontSize: 15, color: tempRepeatTime ? colors.text : colors.textMuted }}>
-            {tempRepeatTime ?? 'Establecer hora'}
-          </Text>
-        </Pressable>
-
-        <View style={styles.optionsSeparator} />
-
-        {/* Comienza */}
-        <Text style={[styles.repeatSectionLabel, { marginTop: 14 }]}>Comienza</Text>
-        <View style={styles.repeatFieldBox}>
-          <Text style={{ fontSize: 15, color: colors.text }}>
-            {tempDate
-              ? format(new Date(tempDate + 'T00:00:00'), "d 'de' MMMM", { locale: es })
-              : format(new Date(), "d 'de' MMMM", { locale: es })}
-          </Text>
-        </View>
-
-        <View style={styles.optionsSeparator} />
-
-        {/* Finaliza */}
-        <Text style={[styles.repeatSectionLabel, { marginTop: 14 }]}>Finaliza</Text>
-
-        {/* Nunca */}
-        <Pressable style={styles.repeatRadioRow} onPress={() => setTempRepeatEnd('never')}>
-          <View style={[styles.radioOuter, tempRepeatEnd === 'never' && { borderColor: colors.primary }]}>
-            {tempRepeatEnd === 'never' && <View style={[styles.radioInner, { backgroundColor: colors.primary }]} />}
-          </View>
-          <Text style={styles.repeatRadioLabel}>Nunca</Text>
-        </Pressable>
-
-        {/* El [fecha] */}
-        <View style={styles.repeatRadioRow}>
-          <Pressable onPress={() => setTempRepeatEnd('on_date')} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
-            <View style={[styles.radioOuter, tempRepeatEnd === 'on_date' && { borderColor: colors.primary }]}>
-              {tempRepeatEnd === 'on_date' && <View style={[styles.radioInner, { backgroundColor: colors.primary }]} />}
-            </View>
-            <Text style={styles.repeatRadioLabel}>El</Text>
-          </Pressable>
-          <Pressable
-            style={styles.repeatEndField}
-            onPress={() => { setTempRepeatEnd('on_date'); setShowRepeatEndDatePicker(true) }}
-          >
-            <Text style={{ fontSize: 15, color: colors.text }}>
-              {tempRepeatEndDate
-                ? format(new Date(tempRepeatEndDate + 'T00:00:00'), "d 'de' MMMM", { locale: es })
-                : format(addMonths(new Date(), 3), "d 'de' MMMM", { locale: es })}
-            </Text>
-          </Pressable>
-        </View>
-
-        {/* Después de [n] repeticiones */}
-        <View style={[styles.repeatRadioRow, { alignItems: 'center' }]}>
-          <Pressable onPress={() => setTempRepeatEnd('after_occurrences')} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            <View style={[styles.radioOuter, tempRepeatEnd === 'after_occurrences' && { borderColor: colors.primary }]}>
-              {tempRepeatEnd === 'after_occurrences' && <View style={[styles.radioInner, { backgroundColor: colors.primary }]} />}
-            </View>
-            <Text style={styles.repeatRadioLabel}>Después de</Text>
-          </Pressable>
-          <TextInput
-            value={String(tempRepeatOccurrences)}
-            onChangeText={(v) => { const n = parseInt(v); if (!isNaN(n) && n > 0) setTempRepeatOccurrences(n) }}
-            keyboardType="number-pad"
-            style={[styles.repeatIntervalInput, { marginHorizontal: 8 }]}
-            maxLength={3}
-            selectTextOnFocus
-            onFocus={() => setTempRepeatEnd('after_occurrences')}
-          />
-          <Text style={styles.repeatRadioLabel}>repeticiones</Text>
-        </View>
-
-        <View style={{ height: 16 }} />
-      </ScrollView>
-    </View>
-  )
-
   // ─────────────────────────────────────────────────────────────────────────────
   // Root render
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1554,7 +1027,6 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
         <View style={styles.sheetAnchor} pointerEvents="box-none">
           {panel === 'main' && renderMainPanel()}
           {panel === 'date' && renderDatePanel()}
-          {panel === 'details' && renderDetailsPanel()}
         </View>
 
         {/* Deadline picker — centered dialog over everything */}
@@ -1562,16 +1034,17 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
       </KeyboardAvoidingView>
     </Modal>
 
-    {/* Repeat panel — full screen, same as the edit flow */}
-    <Modal
+    {/* Repeat panel — full screen, same component as the edit flow */}
+    <RepeatPanel
       visible={panel === 'repeat'}
-      animationType="slide"
-      transparent={false}
-      statusBarTranslucent
-      onRequestClose={() => setPanel('date')}
-    >
-      {renderRepeatPanel()}
-    </Modal>
+      rule={tempRepeat}
+      config={tempRepeatConfig}
+      startDate={tempDate}
+      onClose={() => setPanel('date')}
+      onDone={handleRepeatDone}
+      colors={colors}
+      insets={insets}
+    />
 
     {/* Pickers outside Modal to avoid Android nested dialog issue */}
     {open && showNativeTime && (
@@ -1593,31 +1066,6 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
           if (Platform.OS !== 'ios') setShowNativeEndTime(false)
           if (event.type === 'dismissed' || !date) return
           setTempEndTime(format(date, 'HH:mm'))
-        }}
-      />
-    )}
-    {open && showRepeatTimePicker && (
-      <DateTimePicker
-        value={tempRepeatTime ? parse(tempRepeatTime, 'HH:mm', new Date()) : new Date()}
-        mode="time"
-        is24Hour
-        display={Platform.OS === 'ios' ? 'spinner' : 'clock'}
-        onChange={(event, date) => {
-          if (Platform.OS !== 'ios') setShowRepeatTimePicker(false)
-          if (event.type === 'dismissed' || !date) return
-          setTempRepeatTime(format(date, 'HH:mm'))
-        }}
-      />
-    )}
-    {open && showRepeatEndDatePicker && (
-      <DateTimePicker
-        value={tempRepeatEndDate ? new Date(tempRepeatEndDate + 'T00:00:00') : addMonths(new Date(), 3)}
-        mode="date"
-        display={Platform.OS === 'ios' ? 'spinner' : 'calendar'}
-        onChange={(event, date) => {
-          if (Platform.OS !== 'ios') setShowRepeatEndDatePicker(false)
-          if (event.type === 'dismissed' || !date) return
-          setTempRepeatEndDate(format(date, 'yyyy-MM-dd'))
         }}
       />
     )}
@@ -1781,58 +1229,6 @@ const createStyles = (colors: ThemeTokens) =>
       color: colors.textMuted,
     },
 
-    // Date panel
-    monthNav: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingHorizontal: 4,
-      marginBottom: 12,
-    },
-    monthLabel: {
-      fontSize: 15,
-      fontWeight: '600',
-      color: colors.text,
-      textTransform: 'capitalize',
-    },
-    weekdayRow: {
-      flexDirection: 'row',
-      marginBottom: 4,
-    },
-    weekdayLabel: {
-      width: '14.2857%',
-      textAlign: 'center',
-      fontSize: 12,
-      fontWeight: '600',
-      color: colors.textMuted,
-      paddingVertical: 4,
-    },
-    calGrid: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      marginBottom: 8,
-    },
-    calCell: {
-      width: '14.2857%',
-      aspectRatio: 1,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    calDayMarker: {
-      width: 34,
-      height: 34,
-      borderRadius: 17,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    calDayText: {
-      fontSize: 14,
-      color: colors.text,
-    },
-    calDayTextSelected: {
-      color: colors.onPrimary,
-      fontWeight: '700',
-    },
     optionsSeparator: {
       height: 1,
       backgroundColor: colors.border,
@@ -1851,23 +1247,6 @@ const createStyles = (colors: ThemeTokens) =>
       flex: 1,
       marginRight: 12,
     },
-    expandedList: {
-      backgroundColor: colors.surfaceSecondary,
-      borderRadius: 10,
-      marginBottom: 4,
-      overflow: 'hidden',
-    },
-    expandedItem: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingVertical: 12,
-      paddingHorizontal: 14,
-    },
-    expandedItemText: {
-      fontSize: 14,
-      color: colors.text,
-    },
     datePanelFooter: {
       flexDirection: 'row',
       justifyContent: 'flex-end',
@@ -1882,124 +1261,6 @@ const createStyles = (colors: ThemeTokens) =>
     },
     footerBtnText: {
       fontSize: 15,
-    },
-
-    // Repeat panel
-    repeatHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingVertical: 8,
-      marginBottom: 16,
-    },
-    repeatTitle: {
-      fontSize: 16,
-      fontWeight: '700',
-      color: colors.text,
-    },
-    repeatSectionLabel: {
-      fontSize: 12,
-      color: colors.textMuted,
-      fontWeight: '600',
-      textTransform: 'uppercase',
-      letterSpacing: 0.5,
-      marginBottom: 8,
-    },
-    repeatIntervalRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 10,
-      marginBottom: 14,
-    },
-    repeatIntervalInput: {
-      width: 60,
-      height: 44,
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 8,
-      textAlign: 'center',
-      fontSize: 16,
-      color: colors.text,
-      backgroundColor: colors.surfaceSecondary,
-    },
-    repeatUnitBtn: {
-      flex: 1,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      height: 44,
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 8,
-      paddingHorizontal: 14,
-      backgroundColor: colors.surfaceSecondary,
-    },
-    repeatUnitText: {
-      fontSize: 15,
-      color: colors.text,
-    },
-    weekdayCircleRow: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      marginBottom: 14,
-    },
-    weekdayCircle: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    weekdayCircleText: {
-      fontSize: 13,
-      fontWeight: '600',
-      color: colors.text,
-    },
-    repeatFieldBox: {
-      height: 44,
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 8,
-      paddingHorizontal: 14,
-      justifyContent: 'center',
-      marginBottom: 14,
-      backgroundColor: colors.surfaceSecondary,
-    },
-    repeatRadioRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 12,
-      paddingVertical: 8,
-    },
-    radioOuter: {
-      width: 20,
-      height: 20,
-      borderRadius: 10,
-      borderWidth: 2,
-      borderColor: colors.border,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    radioInner: {
-      width: 10,
-      height: 10,
-      borderRadius: 5,
-    },
-    repeatRadioLabel: {
-      fontSize: 15,
-      color: colors.text,
-    },
-    repeatEndField: {
-      flex: 1,
-      height: 36,
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 8,
-      paddingHorizontal: 12,
-      justifyContent: 'center',
-      backgroundColor: colors.surfaceSecondary,
     },
 
     // Deadline picker — centered dialog
@@ -2046,17 +1307,6 @@ const createStyles = (colors: ThemeTokens) =>
       color: colors.textMuted,
     },
 
-    // Details panel
-    detailsInput: {
-      fontSize: 16,
-      color: colors.text,
-      minHeight: 80,
-      maxHeight: 160,
-      padding: 0,
-      marginBottom: 8,
-      outlineWidth: 0,
-    },
-
     // Location
     locationInputRow: {
       flexDirection: 'row',
@@ -2094,134 +1344,5 @@ const createStyles = (colors: ThemeTokens) =>
       fontSize: 13,
       color: colors.text,
       lineHeight: 18,
-    },
-
-    // Reminder UI
-    reminderAddedRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-      borderBottomWidth: 1,
-      borderColor: colors.border,
-    },
-    reminderAddedText: {
-      flex: 1,
-      fontSize: 14,
-      color: colors.text,
-    },
-    reminderTypePill: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
-      paddingHorizontal: 8,
-      paddingVertical: 3,
-      borderRadius: 999,
-      borderWidth: 1,
-      borderColor: colors.primary + '60',
-      backgroundColor: colors.primary + '15',
-    },
-    reminderTypePillAlarm: {
-      borderColor: colors.accent + '60',
-      backgroundColor: colors.accent + '15',
-    },
-    reminderTypePillText: {
-      fontSize: 11,
-      color: colors.primary,
-      fontWeight: '600',
-    },
-    reminderTypeRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-      borderBottomWidth: 1,
-      borderColor: colors.border,
-    },
-    reminderTypeLabel: {
-      fontSize: 13,
-      color: colors.textMuted,
-      marginRight: 2,
-    },
-    reminderTypeBtn: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
-      paddingHorizontal: 10,
-      paddingVertical: 6,
-      borderRadius: 999,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    reminderTypeBtnActive: {
-      borderColor: colors.primary,
-      backgroundColor: colors.primary + '15',
-    },
-    reminderTypeBtnAlarmActive: {
-      borderColor: colors.accent,
-      backgroundColor: colors.accent + '15',
-    },
-    reminderTypeBtnText: {
-      fontSize: 12,
-      color: colors.textSecondary,
-    },
-    customReminderRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-    },
-    customReminderInput: {
-      borderWidth: 1,
-      borderColor: colors.borderStrong,
-      borderRadius: 8,
-      paddingHorizontal: 10,
-      paddingVertical: 6,
-      fontSize: 15,
-      color: colors.text,
-      width: 72,
-      textAlign: 'center',
-    },
-    customUnitRow: {
-      flexDirection: 'row',
-      gap: 4,
-    },
-    customUnitBtn: {
-      paddingHorizontal: 8,
-      paddingVertical: 5,
-      borderRadius: 6,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    customUnitBtnActive: {
-      borderColor: colors.primary,
-      backgroundColor: colors.primary + '15',
-    },
-    customUnitText: {
-      fontSize: 12,
-      color: colors.textSecondary,
-    },
-    customReminderBeforeLabel: {
-      fontSize: 13,
-      color: colors.textSecondary,
-    },
-    customReminderUnit: {
-      fontSize: 13,
-      color: colors.textSecondary,
-      flex: 1,
-    },
-    customReminderAdd: {
-      paddingHorizontal: 14,
-      paddingVertical: 7,
-      borderRadius: 8,
-      backgroundColor: colors.primary,
-    },
-    customReminderAddText: {
-      fontSize: 13,
-      color: colors.onPrimary,
-      fontWeight: '600',
     },
   })

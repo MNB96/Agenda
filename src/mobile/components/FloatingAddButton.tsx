@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Plus } from 'lucide-react-native'
 import { Animated, Pressable, StyleSheet, ViewStyle } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -14,7 +14,9 @@ export const FloatingAddButton = ({ onPress, style }: FloatingAddButtonProps) =>
   const { colors, isDark } = useAppTheme()
   const insets = useSafeAreaInsets()
   const [isHovered, setIsHovered] = useState(false)
-  const scale = useRef(new Animated.Value(0.94)).current
+  // Lazy initializer instead of useRef().current: same "create once, stay stable across
+  // renders" behavior, without reading a ref's value during render.
+  const [scale] = useState(() => new Animated.Value(0.94))
 
   useEffect(() => {
     Animated.timing(scale, { toValue: 1, duration: 200, useNativeDriver: false }).start()

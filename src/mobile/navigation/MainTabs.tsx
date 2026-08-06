@@ -4,8 +4,8 @@ import { Pressable, StyleSheet } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { AgendaScreen } from '../screens/AgendaScreen'
-import { TodayScreen } from '../screens/TodayScreen'
+import { StudiesScreen } from '../screens/StudiesScreen'
+import { TaskScreen } from '../screens/TaskScreen'
 import { useAppTheme } from '../theme/useAppTheme'
 
 const Tab = createBottomTabNavigator()
@@ -54,7 +54,7 @@ export const MainTabs = ({ onOpenSettings, onOpenItemEditor }: MainTabsProps) =>
           ),
         }}
       >
-        {() => <TodayScreen onOpenItemEditor={onOpenItemEditor} />}
+        {() => <TaskScreen onOpenItemEditor={onOpenItemEditor} />}
       </Tab.Screen>
       <Tab.Screen
         name="Facultad"
@@ -62,7 +62,7 @@ export const MainTabs = ({ onOpenSettings, onOpenItemEditor }: MainTabsProps) =>
           tabBarIcon: ({ color, size }) => <GraduationCap color={color} size={size} />,
         }}
       >
-        {() => <AgendaScreen onOpenItemEditor={onOpenItemEditor} />}
+        {() => <StudiesScreen onOpenItemEditor={onOpenItemEditor} />}
       </Tab.Screen>
     </Tab.Navigator>
   )

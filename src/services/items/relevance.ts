@@ -63,5 +63,5 @@ export const scoreItemsForToday = (items: Item[]): ScoredItem[] => {
 
       return { item, bucket, score }
     })
-    .sort((a, b) => a.score - b.score)
+    .sort((entryA, entryB) => entryA.score - entryB.score)
 }

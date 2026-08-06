@@ -104,15 +104,15 @@ const resolveBaseDate = (item: Item): Date | null => {
   const [hours, minutes] = item.startTime
     ? item.startTime.split(':').map(Number)
     : [9, 0]
-  const d = new Date(`${dateStr}T00:00:00`)
-  d.setHours(hours, minutes, 0, 0)
-  return d
+  const resolvedDate = new Date(`${dateStr}T00:00:00`)
+  resolvedDate.setHours(hours, minutes, 0, 0)
+  return resolvedDate
 }
 
 const resolveReminderDate = (item: Item, reminder: ReminderConfig): Date | null => {
   if (reminder.mode === 'absolute' && reminder.dateTime) {
-    const d = new Date(reminder.dateTime)
-    return d > new Date() ? d : null
+    const absoluteDate = new Date(reminder.dateTime)
+    return absoluteDate > new Date() ? absoluteDate : null
   }
   const base = resolveBaseDate(item)
   if (!base) return null
@@ -126,9 +126,9 @@ const formatReminderBody = (reminder: ReminderConfig): string => {
   if (mins < 60) return `En ${mins} minutos`
   if (mins === 60) return 'En 1 hora'
   if (mins % 60 === 0) return `En ${mins / 60} horas`
-  const h = Math.floor(mins / 60)
-  const m = mins % 60
-  return `En ${h}h ${m}min`
+  const hours = Math.floor(mins / 60)
+  const minutes = mins % 60
+  return `En ${hours}h ${minutes}min`
 }
 
 // Toda tarea con fecha límite recibe, sin necesidad de configurar nada, un aviso el día

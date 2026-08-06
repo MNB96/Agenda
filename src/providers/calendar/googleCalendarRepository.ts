@@ -1,4 +1,5 @@
-import type { CalendarEvent, CalendarInfo, CalendarRepository } from '../../domain/calendar/types'
+import type { CalendarEvent, CalendarInfo } from '../../domain/calendar/types'
+import type { CalendarRepository } from '../../domain/calendar/repositories'
 import { GoogleCalendarAuthError } from './errors'
 
 const GOOGLE_CALENDAR_BASE = 'https://www.googleapis.com/calendar/v3'
@@ -26,7 +27,7 @@ export class GoogleCalendarRepository implements CalendarRepository {
       headers: buildHeaders(accessToken),
     })
     await ensureOk(response, 'No se pudieron cargar los calendarios de Google.')
-    const data = (await response.json()) as { items?: Array<Record<string, unknown>> }
+    const data = (await response.json()) as { items?: Record<string, unknown>[] }
     return (data.items ?? []).map((entry) => ({
       id: String(entry.id),
       summary: String(entry.summary ?? 'Calendario sin nombre'),
@@ -64,14 +65,14 @@ export class GoogleCalendarRepository implements CalendarRepository {
         }
 
         const data = (await response.json()) as {
-          items?: Array<{
+          items?: {
             id: string
             summary?: string
             description?: string
             location?: string
             start?: { dateTime?: string; date?: string }
             end?: { dateTime?: string; date?: string }
-          }>
+          }[]
         }
 
         return (data.items ?? [])
@@ -95,7 +96,7 @@ export class GoogleCalendarRepository implements CalendarRepository {
       }),
     )
 
-    return events.flat().sort((a, b) => a.startDateTime.localeCompare(b.startDateTime))
+    return events.flat().sort((eventA, eventB) => eventA.startDateTime.localeCompare(eventB.startDateTime))
   }
 
   async createEvent(
