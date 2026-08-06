@@ -24,6 +24,19 @@ const deleteLicenseUsagesForItems = async (itemIds: string[]) => {
   )
 }
 
+// Subtasks don't make sense without their parent, and the Today/Task list excludes any item
+// with a parentId regardless of whether that parent still exists — so removing an item without
+// also removing its subtasks left them permanently invisible and unreachable (never shown,
+// never deletable) instead of actually gone. Shared by every single-item removal path.
+const removeItemAndSubtasks = async (item: Item): Promise<void> => {
+  const allItems = await itemRepository.list()
+  const subtasks = allItems.filter((candidate) => candidate.parentId === item.id)
+  await Promise.all(subtasks.map((subtask) => cancelItemNotifications(subtask)))
+  await deleteLicenseUsagesForItems([item.id, ...subtasks.map((subtask) => subtask.id)])
+  if (subtasks.length > 0) await itemRepository.removeMany(subtasks.map((subtask) => subtask.id))
+  await itemRepository.remove(item.id)
+}
+
 export const useItems = () => {
   const queryClient = useQueryClient()
   const { accessToken, markUnauthorized } = useGoogleAuthStore()
@@ -81,11 +94,7 @@ export const useItems = () => {
       if (link && accessToken) {
         await removeCalendarEventForItem(item, link, { accessToken, markUnauthorized })
       }
-      // Sin esto, el registro de "día de estudio" asociado a esta tarea quedaba huérfano
-      // para siempre — nunca se limpiaba, y no hay pantalla para editarlo/borrarlo a mano.
-      await deleteLicenseUsagesForItems([item.id])
-
-      return itemRepository.remove(item.id)
+      await removeItemAndSubtasks(item)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ITEMS_KEY })
@@ -121,8 +130,7 @@ export const useItems = () => {
       // Calendar: no hace falta guardarla localmente como completada — Calendar ya tiene el
       // registro histórico, así que se borra directo en vez de esperar el archivado de 60 días.
       if (regenerated && next.googleCalendarLink) {
-        await deleteLicenseUsagesForItems([item.id])
-        await itemRepository.remove(item.id)
+        await removeItemAndSubtasks(item)
         return next
       }
 
@@ -136,11 +144,17 @@ export const useItems = () => {
 
   // Usado por useAutoArchiveCompleted: borra localmente items completados y ya sincronizados
   // con Google Calendar (que sigue teniendo el registro histórico), pasando por la misma
-  // limpieza de licencias que el borrado manual en vez de reimplementarla aparte.
+  // limpieza de licencias y subtareas que el borrado manual en vez de reimplementarla aparte.
   const archiveCompletedMutation = useMutation({
     mutationFn: async (items: Item[]) => {
-      await deleteLicenseUsagesForItems(items.map((item) => item.id))
-      await itemRepository.removeMany(items.map((item) => item.id))
+      const allItems = await itemRepository.list()
+      const parentIds = new Set(items.map((item) => item.id))
+      const subtasks = allItems.filter((candidate) => candidate.parentId && parentIds.has(candidate.parentId))
+      const allIds = [...items.map((item) => item.id), ...subtasks.map((subtask) => subtask.id)]
+
+      await Promise.all(subtasks.map((subtask) => cancelItemNotifications(subtask)))
+      await deleteLicenseUsagesForItems(allIds)
+      await itemRepository.removeMany(allIds)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ITEMS_KEY })

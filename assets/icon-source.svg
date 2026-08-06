@@ -1,9 +1,62 @@
-<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect x="16" y="16" width="480" height="480" rx="112" fill="#FFF9EE"/>
-  <path d="M315 100 C202 76 103 157 103 270 C103 380 193 430 282 421 C323 417 359 401 386 377" stroke="#72CBDC" stroke-width="31" stroke-linecap="round"/>
-  <path d="M350 111 C366 117 381 125 394 135" stroke="#B2D9CD" stroke-width="31" stroke-linecap="round"/>
-  <path d="M414 158 C425 172 433 187 439 202" stroke="#E8E5B9" stroke-width="31" stroke-linecap="round"/>
-  <path d="M447 231 C449 248 449 264 447 280" stroke="#FF8924" stroke-width="31" stroke-linecap="round"/>
-  <path d="M438 309 C432 325 424 340 414 353" stroke="#FF6800" stroke-width="31" stroke-linecap="round"/>
-  <path d="M192 264 L241 313 L342 207" stroke="#293A49" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1254" height="1254" viewBox="0 0 1254 1254">
+  <title>Icono de tareas para Android</title>
+  <desc>Icono redondeado con círculo segmentado multicolor y tilde central.</desc>
+
+  <defs>
+    <linearGradient id="cyan" x1="260" y1="240" x2="900" y2="960" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#66C5D8"/>
+      <stop offset="1" stop-color="#70C4D5"/>
+    </linearGradient>
+    <linearGradient id="mint" x1="795" y1="245" x2="945" y2="360" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#AFD7C8"/>
+      <stop offset="1" stop-color="#A9CFBE"/>
+    </linearGradient>
+    <linearGradient id="yellow" x1="955" y1="365" x2="1020" y2="520" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#EAE5B5"/>
+      <stop offset="1" stop-color="#E4DCA5"/>
+    </linearGradient>
+    <linearGradient id="amber" x1="1000" y1="555" x2="1025" y2="715" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FDA51F"/>
+      <stop offset="1" stop-color="#F79A1C"/>
+    </linearGradient>
+    <linearGradient id="orange" x1="1010" y1="735" x2="925" y2="890" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FF7100"/>
+      <stop offset="1" stop-color="#FA6200"/>
+    </linearGradient>
+    <linearGradient id="check" x1="430" y1="480" x2="845" y2="730" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2A4053"/>
+      <stop offset="1" stop-color="#26394A"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Fondo del icono; el exterior queda transparente -->
+  <rect x="0" y="0" width="1254" height="1254" rx="260" fill="#FEF6ED"/>
+
+  <!-- Arco principal -->
+  <path d="M 736.0 226.0
+           A 396 396 0 1 0 848.5 936.0"
+        fill="none" stroke="url(#cyan)" stroke-width="74"
+        stroke-linecap="round"/>
+
+  <!-- Segmentos de progreso -->
+  <path d="M 830.0 267.0 A 396 396 0 0 1 914.5 337.0"
+        fill="none" stroke="url(#mint)" stroke-width="74"
+        stroke-linecap="round"/>
+
+  <path d="M 967.0 403.0 A 396 396 0 0 1 1010.0 505.0"
+        fill="none" stroke="url(#yellow)" stroke-width="74"
+        stroke-linecap="round"/>
+
+  <path d="M 1024.0 592.0 A 396 396 0 0 1 1016.0 686.0"
+        fill="none" stroke="url(#amber)" stroke-width="74"
+        stroke-linecap="round"/>
+
+  <path d="M 997.0 768.0 A 396 396 0 0 1 932.0 857.0"
+        fill="none" stroke="url(#orange)" stroke-width="74"
+        stroke-linecap="round"/>
+
+  <!-- Tilde central -->
+  <path d="M 451 602 L 573 724 L 820 470"
+        fill="none" stroke="url(#check)" stroke-width="76"
+        stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

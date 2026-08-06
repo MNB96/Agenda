@@ -1,10 +1,11 @@
 import { useColorScheme } from 'react-native'
 import { getThemeTokens, type ThemeMode } from './tokens'
-import { useThemePreference } from './ThemePreferenceContext'
+import { useSettings } from '../../features/settings/useSettings'
 
 export const useAppTheme = () => {
   const colorScheme = useColorScheme()
-  const preference = useThemePreference()
+  const { data: settings } = useSettings()
+  const preference = settings?.themePreference ?? 'system'
   const mode: ThemeMode =
     preference === 'system' ? (colorScheme === 'dark' ? 'dark' : 'light') : preference
   const colors = getThemeTokens(mode)

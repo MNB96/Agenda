@@ -9,7 +9,7 @@ export type TodayBucket =
   | 'later'
   | 'long_term_goal'
 
-export interface ScoredItem {
+interface ScoredItem {
   item: Item
   bucket: TodayBucket
   score: number

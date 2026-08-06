@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Agenda Personal",
+    "name": "Tasks",
     "slug": "agenda-personal",
     "scheme": "agendaapp",
     "version": "1.0.0",
@@ -21,7 +21,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#FFF9EE"
+        "backgroundColor": "#FEF6ED"
       },
       "package": "com.agenda.personal",
       "permissions": [

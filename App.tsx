@@ -9,7 +9,6 @@ import { QuickAddSheet } from './src/mobile/modals/QuickAddSheet'
 import { ItemDetailModal } from './src/mobile/modals/ItemDetailModal'
 import { SettingsModal } from './src/mobile/modals/SettingsModal'
 import { useGoogleSessionLifecycleMobile } from './src/mobile/useGoogleSessionLifecycleMobile'
-import { ThemePreferenceProvider } from './src/mobile/theme/ThemePreferenceContext'
 import { useAppTheme } from './src/mobile/theme/useAppTheme'
 import { FloatingAddButton } from './src/mobile/components/FloatingAddButton'
 import { requestNotificationPermissions } from './src/services/notifications/itemNotifications'
@@ -36,23 +35,20 @@ const AppShell = () => {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [editingItemId, setEditingItemId] = useState<string | undefined>(undefined)
   const settingsQuery = useSettings()
-  const preference = settingsQuery.data?.themePreference ?? 'system'
 
   if (!settingsQuery.data) {
     return <View style={{ flex: 1, backgroundColor: colorScheme === 'dark' ? '#0E191D' : '#FFFFFF' }} />
   }
 
   return (
-    <ThemePreferenceProvider preference={preference}>
-      <AppShellInner
-        quickAddOpen={quickAddOpen}
-        settingsOpen={settingsOpen}
-        editingItemId={editingItemId}
-        setQuickAddOpen={setQuickAddOpen}
-        setSettingsOpen={setSettingsOpen}
-        setEditingItemId={setEditingItemId}
-      />
-    </ThemePreferenceProvider>
+    <AppShellInner
+      quickAddOpen={quickAddOpen}
+      settingsOpen={settingsOpen}
+      editingItemId={editingItemId}
+      setQuickAddOpen={setQuickAddOpen}
+      setSettingsOpen={setSettingsOpen}
+      setEditingItemId={setEditingItemId}
+    />
   )
 }
 
@@ -125,9 +121,8 @@ const AppShellInner = ({
         onClose={() => setQuickAddOpen(false)}
       />
       <ItemDetailModal
-        open={Boolean(editingItemId)}
+        itemId={editingItemId}
         onClose={() => setEditingItemId(undefined)}
-        itemId={editingItemId ?? ''}
       />
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </>

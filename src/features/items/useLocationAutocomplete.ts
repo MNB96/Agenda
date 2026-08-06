@@ -13,9 +13,13 @@ interface UseLocationAutocompleteResult {
 
 // Debounced Google Places autocomplete, shared by the create and edit item forms (previously
 // duplicated in both). `selectedLocation` is the currently committed location string, if any —
-// used to suppress a search when the query already matches what's selected.
-export const useLocationAutocomplete = (selectedLocation: string | undefined): UseLocationAutocompleteResult => {
-  const [locationQuery, setLocationQuery] = useState('')
+// used to suppress a search when the query already matches what's selected. `initialQuery` seeds
+// the input for callers that remount fresh per item (so they never need to call `reset` at all).
+export const useLocationAutocomplete = (
+  selectedLocation: string | undefined,
+  initialQuery = '',
+): UseLocationAutocompleteResult => {
+  const [locationQuery, setLocationQuery] = useState(initialQuery)
   // Raw results from the last successful search; what's actually shown is derived below
   // (empty whenever the query is blank or already matches the selected location) so clearing
   // it isn't a state update that needs to happen synchronously inside the debounce effect.

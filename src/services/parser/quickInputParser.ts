@@ -39,7 +39,7 @@ const weekdays: Record<string, 0 | 1 | 2 | 3 | 4 | 5 | 6> = {
   domingo: 0,
 }
 
-export interface ParsedQuickInput {
+interface ParsedQuickInput {
   normalizedTitle: string
   inferred: NewItemInput
   detectedType: string

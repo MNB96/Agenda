@@ -23,7 +23,6 @@ import {
   Repeat,
   Star,
   Tag,
-  Trash2,
   X,
 } from 'lucide-react-native'
 import { fetchTravelTime, getCurrentLocation } from '../../services/travelTime'
@@ -41,7 +40,7 @@ import { useLocationAutocomplete } from '../../features/items/useLocationAutocom
 import { useSettings, useLicenseUsages } from '../../features/settings/useSettings'
 import { useGoogleAuthStore } from '../../state/googleAuthStore'
 import { computeNextDate } from '../../services/items/recurrence'
-import type { Item, ReminderConfig, RepeatConfig, RepeatRule, TravelConfig } from '../../domain/items/types'
+import type { ReminderConfig, RepeatConfig, RepeatRule, TravelConfig } from '../../domain/items/types'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
 import { createId } from '../../utils/id'
@@ -53,7 +52,6 @@ type Panel = 'main' | 'date' | 'repeat'
 interface QuickAddSheetProps {
   open: boolean
   onClose: () => void
-  editingItemId?: string
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -184,11 +182,10 @@ const RowDivider = ({ colors }: { colors: ThemeTokens }) => (
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetProps) => {
-  const isEditMode = Boolean(editingItemId)
-  const { createItem, updateItem, removeItem, items, isSaving } = useItems()
+export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
+  const { createItem, isSaving } = useItems()
   const { data: settings } = useSettings()
-  const { data: licenseUsages, saveUsage, deleteUsage } = useLicenseUsages()
+  const { saveUsage } = useLicenseUsages()
   const { accessToken } = useGoogleAuthStore()
   const { colors } = useAppTheme()
   const styles = useMemo(() => createStyles(colors), [colors])
@@ -259,11 +256,11 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
   // itself, promoted to repeatRule/repeatConfig only when the outer date panel commits.
   const [tempRepeatConfig, setTempRepeatConfig] = useState<RepeatConfig | undefined>()
 
-  // ── NL parsing (create mode only) ──
+  // ── NL parsing ──
   const parsed = useMemo(() => {
-    if (isEditMode || !text.trim()) return null
+    if (!text.trim()) return null
     return parseQuickInput(text)
-  }, [text, isEditMode])
+  }, [text])
 
   // Effective values: explicit takes priority over NL-inferred
   const effectiveDate = scheduledDate ?? (nlDateDismissed ? undefined : parsed?.inferred.startDate)
@@ -271,22 +268,16 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
   const effectiveDeadline = deadline ?? parsed?.inferred.deadline
 
   // NL chips to show
-  const showNlDate = !isEditMode && !scheduledDate && !nlDateDismissed && Boolean(parsed?.inferred.startDate)
-  const showNlTime = !isEditMode && !scheduledTime && !nlTimeDismissed && Boolean(parsed?.inferred.startTime)
+  const showNlDate = !scheduledDate && !nlDateDismissed && Boolean(parsed?.inferred.startDate)
+  const showNlTime = !scheduledTime && !nlTimeDismissed && Boolean(parsed?.inferred.startTime)
 
   // Category auto-detection
   const suggestedCategoryId = useMemo(() => {
-    if (categoryId || nlCategoryDismissed || isEditMode) return undefined
+    if (categoryId || nlCategoryDismissed) return undefined
     return detectCategoryFromText(text, settings?.categories ?? [])
-  }, [text, categoryId, nlCategoryDismissed, isEditMode, settings?.categories])
+  }, [text, categoryId, nlCategoryDismissed, settings?.categories])
   const effectiveCategoryId = categoryId ?? suggestedCategoryId
   const showNlCategory = Boolean(suggestedCategoryId) && !categoryId && !nlCategoryDismissed
-
-  // Editing item reference
-  const editingItem: Item | undefined = useMemo(
-    () => (editingItemId ? items.find((item) => item.id === editingItemId) : undefined),
-    [editingItemId, items],
-  )
 
   // ── Load / reset on open ──
   useEffect(() => {
@@ -294,51 +285,30 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
     setPanel('main')
     setExpandReminder(false)
 
-    if (isEditMode && editingItem) {
-      setText(editingItem.title)
-      setImportant(editingItem.important ?? false)
-      setScheduledDate(editingItem.startDate)
-      setScheduledTime(editingItem.startTime)
-      setEndTime(editingItem.endTime)
-      setDeadline(editingItem.deadline)
-      setSyncToGoogleCalendar(editingItem.syncToGoogleCalendar ?? true)
-      setRepeatRule(editingItem.repeatRule ?? 'none')
-      setRepeatConfig(editingItem.repeatConfig)
-      setReminders(editingItem.reminderConfig ?? [])
-      setTravelConfig(editingItem.travelConfig)
-      setDescription(editingItem.description ?? '')
-      setShowDescInput(Boolean(editingItem.description?.trim()))
-      setCategoryId(editingItem.categoryId)
-      setLocation(editingItem.location)
-      resetLocationAutocomplete(editingItem.location ?? '')
-      setShowLocationInput(Boolean(editingItem.location))
-    } else {
-      setText('')
-      setImportant(false)
-      setScheduledDate(undefined)
-      setScheduledTime(undefined)
-      setEndTime(undefined)
-      setDeadline(undefined)
-      setSyncToGoogleCalendar(true)
-      setRepeatRule('none')
-      setRepeatConfig(undefined)
-      setReminders([])
-      setTravelConfig(undefined)
-      setDescription('')
-      setShowDescInput(false)
-      setCategoryId(undefined)
-      setNlDateDismissed(false)
-      setNlTimeDismissed(false)
-      setNlCategoryDismissed(false)
-      setStudyTimeBefore(undefined)
-      setLocation(undefined)
-      resetLocationAutocomplete('')
-      setShowLocationInput(false)
-    }
-    // Deliberately keyed on [open] only: this (re)seeds the draft each time the sheet opens
-    // (editingItem/isEditMode are read fresh at that point), but must NOT re-fire while the
-    // sheet stays open just because editingItem's reference changes in the background — that
-    // would wipe out text the user is actively typing.
+    setText('')
+    setImportant(false)
+    setScheduledDate(undefined)
+    setScheduledTime(undefined)
+    setEndTime(undefined)
+    setDeadline(undefined)
+    setSyncToGoogleCalendar(true)
+    setRepeatRule('none')
+    setRepeatConfig(undefined)
+    setReminders([])
+    setTravelConfig(undefined)
+    setDescription('')
+    setShowDescInput(false)
+    setCategoryId(undefined)
+    setNlDateDismissed(false)
+    setNlTimeDismissed(false)
+    setNlCategoryDismissed(false)
+    setStudyTimeBefore(undefined)
+    setLocation(undefined)
+    resetLocationAutocomplete('')
+    setShowLocationInput(false)
+    // Deliberately keyed on [open] only: this blanks the draft each time the sheet opens, but
+    // must NOT re-fire while the sheet stays open — that would wipe out text the user is
+    // actively typing.
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Android back handler ──
@@ -441,45 +411,21 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
       academicConfig: studyTimeBefore ? { studyTimeBefore } : undefined,
     }
 
-    if (isEditMode && editingItem) {
-      await updateItem({ id: editingItem.id, patch: payload })
-      // Sync license usage for edit mode
-      const existingUsage = (licenseUsages ?? []).find(usage => usage.itemId === editingItem.id)
-      const days = studyTimeBefore === 'half' ? 0.5 : studyTimeBefore === 'full' ? 1 : undefined
-      if (days !== undefined) {
-        await saveUsage({
-          id: existingUsage?.id ?? createId(),
-          itemId: editingItem.id,
-          date: effectiveDate ?? effectiveDeadline ?? new Date().toISOString().slice(0, 10),
-          days,
-          note: title,
-        })
-      } else if (existingUsage) {
-        await deleteUsage(existingUsage.id)
-      }
-    } else {
-      const created = await createItem({
-        ...payload,
-        dateWindow: parsed?.inferred.dateWindow,
-        goalConfig: parsed?.inferred.goalConfig,
+    const created = await createItem({
+      ...payload,
+      dateWindow: parsed?.inferred.dateWindow,
+      goalConfig: parsed?.inferred.goalConfig,
+    })
+    if (studyTimeBefore && created) {
+      const days = studyTimeBefore === 'half' ? 0.5 : 1
+      await saveUsage({
+        id: createId(),
+        itemId: created.id,
+        date: effectiveDate ?? effectiveDeadline ?? new Date().toISOString().slice(0, 10),
+        days,
+        note: title,
       })
-      if (studyTimeBefore && created) {
-        const days = studyTimeBefore === 'half' ? 0.5 : 1
-        await saveUsage({
-          id: createId(),
-          itemId: created.id,
-          date: effectiveDate ?? effectiveDeadline ?? new Date().toISOString().slice(0, 10),
-          days,
-          note: title,
-        })
-      }
     }
-    onClose()
-  }
-
-  const handleDelete = async () => {
-    if (!editingItem) return
-    await removeItem(editingItem)
     onClose()
   }
 
@@ -565,7 +511,7 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
           placeholderTextColor={colors.textMuted}
           style={styles.mainInput}
           multiline
-          autoFocus={!isEditMode}
+          autoFocus
           returnKeyType="default"
           blurOnSubmit={false}
           selectionColor={colors.primary}
@@ -784,16 +730,6 @@ export const QuickAddSheet = ({ open, onClose, editingItemId }: QuickAddSheetPro
               onPress={() => setImportant((v) => !v)}
               colors={colors}
             />
-            {isEditMode && (
-              <ActionIcon
-                icon={Trash2}
-                label="Eliminar"
-                active={false}
-                activeColor={colors.danger}
-                onPress={() => void handleDelete()}
-                colors={colors}
-              />
-            )}
           </View>
 
           <Pressable
@@ -1196,15 +1132,6 @@ const createStyles = (colors: ThemeTokens) =>
       color: colors.primary,
       fontWeight: '500',
       flexShrink: 1,
-    },
-    descPreview: {
-      marginBottom: 6,
-      paddingVertical: 4,
-    },
-    descPreviewText: {
-      fontSize: 14,
-      color: colors.textSecondary,
-      lineHeight: 19,
     },
     actionBar: {
       flexDirection: 'row',

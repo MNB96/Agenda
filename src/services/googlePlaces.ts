@@ -32,17 +32,15 @@ export async function searchPlaceSuggestions(query: string): Promise<PlaceSugges
 
   if (!response.ok) return []
 
-  const payload = await response.json().catch(() => null)
-  const suggestions = Array.isArray(payload?.suggestions) ? payload.suggestions : []
+  const payload = (await response.json().catch(() => null)) as {
+    suggestions?: { placePrediction?: { placeId?: string; text?: { text?: string } } }[]
+  } | null
+  const suggestions = payload?.suggestions ?? []
 
   return suggestions
-    .map((item: any) => ({
-      placeId: (item.placePrediction?.placeId as string) ?? '',
-      description: (item.placePrediction?.text?.text as string) ?? '',
+    .map((entry) => ({
+      placeId: entry.placePrediction?.placeId ?? '',
+      description: entry.placePrediction?.text?.text ?? '',
     }))
     .filter((item: PlaceSuggestion) => item.placeId && item.description)
-}
-
-export function buildMapsUrl(address: string): string {
-  return `https://maps.google.com/?q=${encodeURIComponent(address)}`
 }

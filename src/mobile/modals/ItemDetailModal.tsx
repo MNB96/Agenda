@@ -44,16 +44,15 @@ import { useGoogleAuthStore } from '../../state/googleAuthStore'
 import { computeNextDate } from '../../services/items/recurrence'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
-import type { ReminderConfig, RepeatConfig, RepeatRule, TravelConfig } from '../../domain/items/types'
+import type { Item, ReminderConfig, RepeatConfig, RepeatRule } from '../../domain/items/types'
 import { createId } from '../../utils/id'
 import { fetchTravelTime, getCurrentLocation } from '../../services/travelTime'
 import { detectCategoryFromText } from '../../services/parser/categoryDetector'
 import { isExamTask } from '../../services/parser/examDetector'
 
 interface ItemDetailModalProps {
-  open: boolean
+  itemId: string | undefined
   onClose: () => void
-  itemId: string
 }
 
 const fmtDate = (dateStr: string): string => {
@@ -62,7 +61,25 @@ const fmtDate = (dateStr: string): string => {
   return format(date, "EEE d 'de' MMM", { locale: es })
 }
 
-export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps) => {
+// Thin wrapper: finds the item and, once found, mounts the actual form keyed on its id. Keying
+// on itemId means the form (and every piece of its draft state) is a fresh component instance
+// per item — no "reset on open" effect needed to re-seed ~20 fields, and switching straight from
+// editing one item to another (if that ever happens) can't leak stale draft state between them.
+export const ItemDetailModal = ({ itemId, onClose }: ItemDetailModalProps) => {
+  const { items } = useItems()
+  const item = useMemo(() => items.find(candidate => candidate.id === itemId), [items, itemId])
+
+  if (!item) return null
+
+  return <ItemDetailModalForm key={itemId} item={item} onClose={onClose} />
+}
+
+interface ItemDetailModalFormProps {
+  item: Item
+  onClose: () => void
+}
+
+const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
   const { items, createItem, updateItem, removeItem, toggleCompleted } = useItems()
   const { data: settings } = useSettings()
   const { data: licenseUsages, saveUsage, deleteUsage } = useLicenseUsages()
@@ -71,86 +88,50 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
   const styles = useMemo(() => createStyles(colors), [colors])
   const insets = useSafeAreaInsets()
 
+  const subtasks = useMemo(() => items.filter(candidate => candidate.parentId === item.id), [items, item.id])
 
-  const item = useMemo(() => items.find(candidate => candidate.id === itemId), [items, itemId])
-  const subtasks = useMemo(() => items.filter(candidate => candidate.parentId === itemId), [items, itemId])
-
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
-  const [important, setImportant] = useState(false)
-  const [scheduledDate, setScheduledDate] = useState<string | undefined>()
-  const [scheduledTime, setScheduledTime] = useState<string | undefined>()
-  const [endTime, setEndTime] = useState<string | undefined>()
+  const [title, setTitle] = useState(item.title)
+  const [description, setDescription] = useState(item.description ?? '')
+  const [important, setImportant] = useState(item.important ?? false)
+  const [scheduledDate, setScheduledDate] = useState(item.startDate)
+  const [scheduledTime, setScheduledTime] = useState(item.startTime)
+  const [endTime, setEndTime] = useState(item.endTime)
   const [showEndTimePicker, setShowEndTimePicker] = useState(false)
-  const [deadline, setDeadline] = useState<string | undefined>()
-  const [syncToGoogleCalendar, setSyncToGoogleCalendar] = useState(true)
-  const [repeatRule, setRepeatRule] = useState<RepeatRule>('none')
-  const [repeatConfig, setRepeatConfig] = useState<RepeatConfig | undefined>()
+  const [deadline, setDeadline] = useState(item.deadline)
+  const [syncToGoogleCalendar, setSyncToGoogleCalendar] = useState(item.syncToGoogleCalendar ?? true)
+  const [repeatRule, setRepeatRule] = useState<RepeatRule>(item.repeatRule ?? 'none')
+  const [repeatConfig, setRepeatConfig] = useState<RepeatConfig | undefined>(item.repeatConfig)
   const [showRepeatPanel, setShowRepeatPanel] = useState(false)
 
-  const [goalCurrentText, setGoalCurrentText] = useState('')
+  const [goalCurrentText, setGoalCurrentText] = useState(item.goalConfig ? String(item.goalConfig.currentValue) : '')
 
-  const [categoryId, setCategoryId] = useState<string | undefined>()
-  const [location, setLocation] = useState<string | undefined>()
+  const [categoryId, setCategoryId] = useState(item.categoryId)
+  const [location, setLocation] = useState(item.location)
   const {
     locationQuery,
     setLocationQuery,
     suggestions: locationSuggestions,
     clearSuggestions: clearLocationSuggestions,
-    reset: resetLocationAutocomplete,
-  } = useLocationAutocomplete(location)
+  } = useLocationAutocomplete(location, item.location ?? '')
   const [newSubtaskText, setNewSubtaskText] = useState('')
   const subtaskInputRef = useRef<TextInput>(null)
 
-  const [reminders, setReminders] = useState<ReminderConfig[]>([])
+  const [reminders, setReminders] = useState<ReminderConfig[]>(item.reminderConfig ?? [])
   const [expandReminders, setExpandReminders] = useState(false)
   const [selectedAlarmType, setSelectedAlarmType] = useState<'notification' | 'alarm'>('notification')
   const [selectedPersistent, setSelectedPersistent] = useState(false)
   const [travelTimeLoading, setTravelTimeLoading] = useState(false)
   const [travelTimeResult, setTravelTimeResult] = useState<string | null>(null)
-  const [travelConfig, setTravelConfig] = useState<TravelConfig | undefined>()
+  const [travelConfig, setTravelConfig] = useState(item.travelConfig)
   const [categorySuggestionDismissed, setCategorySuggestionDismissed] = useState(false)
-  const [studyTimeBefore, setStudyTimeBefore] = useState<'half' | 'full' | undefined>()
-  const [gradeText, setGradeText] = useState('')
+  const [studyTimeBefore, setStudyTimeBefore] = useState(item.academicConfig?.studyTimeBefore)
+  const [gradeText, setGradeText] = useState(item.academicConfig?.grade !== undefined ? String(item.academicConfig.grade) : '')
 
   const [expandDate, setExpandDate] = useState(false)
   const [showTimePicker, setShowTimePicker] = useState(false)
   const [showDeadlinePicker, setShowDeadlinePicker] = useState(false)
 
-  useEffect(() => {
-    if (!open || !item) return
-    setTitle(item.title)
-    setDescription(item.description ?? '')
-    setImportant(item.important ?? false)
-    setScheduledDate(item.startDate)
-    setScheduledTime(item.startTime)
-    setEndTime(item.endTime)
-    setDeadline(item.deadline)
-    setSyncToGoogleCalendar(item.syncToGoogleCalendar ?? true)
-    setGoalCurrentText(item.goalConfig ? String(item.goalConfig.currentValue) : '')
-    setRepeatRule(item.repeatRule ?? 'none')
-    setRepeatConfig(item.repeatConfig)
-    setCategoryId(item.categoryId)
-    setLocation(item.location)
-    resetLocationAutocomplete(item.location ?? '')
-    setReminders(item.reminderConfig ?? [])
-    setExpandReminders(false)
-    setExpandDate(false)
-    setShowRepeatPanel(false)
-    setTravelTimeResult(null)
-    setTravelConfig(item.travelConfig)
-    setCategorySuggestionDismissed(false)
-    setStudyTimeBefore(item?.academicConfig?.studyTimeBefore)
-    setGradeText(item?.academicConfig?.grade !== undefined ? String(item.academicConfig.grade) : '')
-    // Deliberately keyed on [open, item?.id], not the full `item` object: this pre-fills the
-    // draft when the modal opens (or switches to a different item), but must NOT re-fire on
-    // every background refetch of the same item — that would silently overwrite whatever the
-    // user is mid-editing with server data. If item.id is unchanged, `item` fields read above
-    // are still the latest render's values, not stale.
-  }, [open, item?.id]) // eslint-disable-line react-hooks/exhaustive-deps
-
   const handleClose = useCallback(async () => {
-    if (!item) { onClose(); return }
     if (title.trim()) {
       await updateItem({
         id: item.id,
@@ -174,7 +155,7 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
             : undefined,
           travelConfig,
           academicConfig: (() => {
-            const ac = { ...(item?.academicConfig ?? {}) }
+            const ac = { ...(item.academicConfig ?? {}) }
             if (studyTimeBefore !== undefined) ac.studyTimeBefore = studyTimeBefore
             else delete ac.studyTimeBefore
             const grade = gradeText.trim() ? parseInt(gradeText.trim(), 10) : undefined
@@ -204,22 +185,19 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
   }, [item, title, description, important, scheduledDate, scheduledTime, endTime, deadline, syncToGoogleCalendar, goalCurrentText, travelConfig, repeatRule, repeatConfig, categoryId, location, reminders, studyTimeBefore, gradeText, licenseUsages, saveUsage, deleteUsage, updateItem, onClose])
 
   useEffect(() => {
-    if (!open) return
     const handler = BackHandler.addEventListener('hardwareBackPress', () => {
       void handleClose()
       return true
     })
     return () => handler.remove()
-  }, [open, handleClose])
+  }, [handleClose])
 
   const handleToggleComplete = async () => {
-    if (!item) return
     await toggleCompleted(item)
     onClose()
   }
 
   const handleDelete = () => {
-    if (!item) return
     Alert.alert('Eliminar tarea', '¿Eliminar esta tarea?', [
       { text: 'Cancelar', style: 'cancel' },
       {
@@ -232,7 +210,7 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
 
   const addSubtask = async () => {
     const text = newSubtaskText.trim()
-    if (!text || !item) return
+    if (!text) return
     setNewSubtaskText('')
     await createItem({ title: text, parentId: item.id, type: 'task' })
     setTimeout(() => subtaskInputRef.current?.focus(), 100)
@@ -298,9 +276,7 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
     ? (settings?.categories ?? []).find(category => category.id === suggestedCategoryId)
     : undefined
 
-  if (!open) return null
-
-  const isCompleted = item?.status === 'completed'
+  const isCompleted = item.status === 'completed'
   const allSubtasksDone = subtasks.length === 0 || subtasks.every(s => s.status === 'completed')
   const canComplete = allSubtasksDone
   const dateLabel = scheduledDate ? fmtDate(scheduledDate) : undefined
@@ -309,7 +285,7 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
   return (
     <>
       <Modal
-        visible={open}
+        visible
         animationType="slide"
         transparent={false}
         statusBarTranslucent
@@ -372,7 +348,7 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
             </View>
 
             {/* Goal progress row */}
-            {item?.goalConfig && (
+            {item.goalConfig && (
               <View style={styles.detailRow}>
                 <Target size={20} color={colors.primary} style={styles.rowIcon} />
                 <TextInput
@@ -750,7 +726,7 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
       />
 
       {/* Native pickers outside Modal to avoid Android nested dialog issue */}
-      {open && showTimePicker && (
+      {showTimePicker && (
         <DateTimePicker
           value={scheduledTime ? parse(scheduledTime, 'HH:mm', new Date()) : new Date()}
           mode="time"
@@ -763,7 +739,7 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
           }}
         />
       )}
-      {open && showEndTimePicker && (
+      {showEndTimePicker && (
         <DateTimePicker
           value={endTime ? parse(endTime, 'HH:mm', new Date()) : new Date()}
           mode="time"
@@ -776,7 +752,7 @@ export const ItemDetailModal = ({ open, onClose, itemId }: ItemDetailModalProps)
           }}
         />
       )}
-      {open && showDeadlinePicker && (
+      {showDeadlinePicker && (
         <DateTimePicker
           value={deadline ? new Date(deadline + 'T00:00:00') : new Date()}
           mode="date"

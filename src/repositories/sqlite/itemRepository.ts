@@ -40,16 +40,4 @@ export class SQLiteItemRepository implements ItemRepository {
     const placeholders = ids.map(() => '?').join(', ')
     await db.runAsync(`DELETE FROM items WHERE id IN (${placeholders})`, ids)
   }
-
-  async search(query: string): Promise<Item[]> {
-    const normalized = query.trim().toLowerCase()
-    const items = await this.list()
-    if (!normalized) return items
-    return items.filter((item) => {
-      const category = item.categoryId ?? ''
-      return [item.title, item.description, item.location, category]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(normalized))
-    })
-  }
 }
