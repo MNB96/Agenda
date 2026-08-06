@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { DefaultTheme, NavigationContainer } from '@react-navigation/native'
+import { DefaultTheme, NavigationContainer, useNavigationContainerRef } from '@react-navigation/native'
 import { StatusBar, useColorScheme, View } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { useSettings } from './src/application/settings/useSettings'
 import { MainTabs } from './src/mobile/navigation/MainTabs'
 import { QuickAddSheet } from './src/mobile/modals/QuickAddSheet'
+import { AddGoalSheet } from './src/mobile/modals/AddGoalSheet'
 import { ItemDetailModal } from './src/mobile/modals/ItemDetailModal'
 import { SettingsModal } from './src/mobile/modals/SettingsModal'
 import { useGoogleSessionLifecycleMobile } from './src/mobile/useGoogleSessionLifecycleMobile'
@@ -14,7 +15,9 @@ import { FloatingAddButton } from './src/mobile/components/FloatingAddButton'
 import { requestNotificationPermissions } from './src/infrastructure/notifications/itemNotifications'
 import { useCalendarDeleteQueue } from './src/application/calendar/useCalendarDeleteQueue'
 import { useCalendarSyncRecovery } from './src/application/calendar/useCalendarSyncRecovery'
-import { useAutoArchiveCompleted } from './src/application/items/useAutoArchiveCompleted'
+import { useAutoPurgeCompleted } from './src/application/items/useAutoPurgeCompleted'
+import { useAutoRegenerateOverdueRecurring } from './src/application/items/useAutoRegenerateOverdueRecurring'
+import { useMarkOverdueGoals } from './src/application/items/useMarkOverdueGoals'
 import { useGoogleAuthStore } from './src/state/googleAuthStore'
 
 export default function App() {
@@ -34,6 +37,7 @@ const AppShell = () => {
   const [quickAddOpen, setQuickAddOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [editingItemId, setEditingItemId] = useState<string | undefined>(undefined)
+  const [editingGoalId, setEditingGoalId] = useState<string | undefined>(undefined)
   const settingsQuery = useSettings()
 
   if (!settingsQuery.data) {
@@ -45,9 +49,11 @@ const AppShell = () => {
       quickAddOpen={quickAddOpen}
       settingsOpen={settingsOpen}
       editingItemId={editingItemId}
+      editingGoalId={editingGoalId}
       setQuickAddOpen={setQuickAddOpen}
       setSettingsOpen={setSettingsOpen}
       setEditingItemId={setEditingItemId}
+      setEditingGoalId={setEditingGoalId}
     />
   )
 }
@@ -56,27 +62,35 @@ interface AppShellInnerProps {
   quickAddOpen: boolean
   settingsOpen: boolean
   editingItemId?: string
+  editingGoalId?: string
   setQuickAddOpen: (value: boolean) => void
   setSettingsOpen: (value: boolean) => void
   setEditingItemId: (value: string | undefined) => void
+  setEditingGoalId: (value: string | undefined) => void
 }
 
 const AppShellInner = ({
   quickAddOpen,
   settingsOpen,
   editingItemId,
+  editingGoalId,
   setQuickAddOpen,
   setSettingsOpen,
   setEditingItemId,
+  setEditingGoalId,
 }: AppShellInnerProps) => {
   const { colors, isDark } = useAppTheme()
+  const navigationRef = useNavigationContainerRef()
+  const [activeTab, setActiveTab] = useState('Tareas')
 
   useGoogleSessionLifecycleMobile()
 
   const { accessToken, markUnauthorized } = useGoogleAuthStore()
   useCalendarDeleteQueue(accessToken ?? null, markUnauthorized)
   useCalendarSyncRecovery(accessToken ?? null, markUnauthorized)
-  useAutoArchiveCompleted()
+  useAutoPurgeCompleted()
+  useAutoRegenerateOverdueRecurring()
+  useMarkOverdueGoals()
 
   useEffect(() => {
     requestNotificationPermissions()
@@ -98,7 +112,7 @@ const AppShellInner = ({
     [colors],
   )
 
-  const isAnyModalOpen = quickAddOpen || settingsOpen || Boolean(editingItemId)
+  const isAnyModalOpen = quickAddOpen || settingsOpen || Boolean(editingItemId) || Boolean(editingGoalId)
 
   return (
     <>
@@ -107,18 +121,30 @@ const AppShellInner = ({
         backgroundColor="transparent"
         translucent
       />
-      <NavigationContainer theme={navTheme}>
+      <NavigationContainer
+        ref={navigationRef}
+        theme={navTheme}
+        onReady={() => setActiveTab((navigationRef.getCurrentRoute() as { name?: string } | undefined)?.name ?? 'Tareas')}
+        onStateChange={() => setActiveTab((navigationRef.getCurrentRoute() as { name?: string } | undefined)?.name ?? 'Tareas')}
+      >
         <MainTabs
           onOpenSettings={() => setSettingsOpen(true)}
           onOpenItemEditor={(itemId) => setEditingItemId(itemId)}
+          onOpenGoalEditor={(itemId) => setEditingGoalId(itemId)}
         />
       </NavigationContainer>
 
       {!isAnyModalOpen ? <FloatingAddButton onPress={() => setQuickAddOpen(true)} /> : null}
 
+      {/* Metas siempre crea goals, todo el resto siempre crea tasks (sin inferencia por NLP). */}
       <QuickAddSheet
-        open={quickAddOpen}
+        open={quickAddOpen && activeTab !== 'Metas'}
         onClose={() => setQuickAddOpen(false)}
+      />
+      <AddGoalSheet
+        open={(quickAddOpen && activeTab === 'Metas') || Boolean(editingGoalId)}
+        goalId={editingGoalId}
+        onClose={() => { setQuickAddOpen(false); setEditingGoalId(undefined) }}
       />
       <ItemDetailModal
         itemId={editingItemId}

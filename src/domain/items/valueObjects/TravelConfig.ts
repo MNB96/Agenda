@@ -7,7 +7,8 @@ export interface TravelConfigInput {
 }
 
 export class TravelConfig {
-  private readonly _brand = 'TravelConfig' as const
+  // declare = type-only, erased by the compiler — avoids a real field leaking into spreads/JSON.
+  private declare readonly _brand: void
 
   private constructor(
     public readonly transport: TransportMode,
@@ -16,7 +17,7 @@ export class TravelConfig {
   ) {}
 
   static create(input: TravelConfigInput): TravelConfig {
-    if (input.extraMinutes < 0) {
+    if (!Number.isFinite(input.extraMinutes) || input.extraMinutes < 0) {
       throw new Error('Los minutos extra de viaje no pueden ser negativos.')
     }
     return new TravelConfig(input.transport, input.extraMinutes, input.departureReminderEnabled)

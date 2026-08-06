@@ -1,32 +1,21 @@
-import { Item, type ItemProps } from '../../../domain/items/types'
+import { Item, type ItemProps } from '../../../domain/items'
 import { RepeatConfig, type RepeatConfigInput } from '../../../domain/items/valueObjects/RepeatConfig'
 import { ReminderConfig, type ReminderConfigInput } from '../../../domain/items/valueObjects/ReminderConfig'
-import { DateWindow, type DateWindowInput } from '../../../domain/items/valueObjects/DateWindow'
-import { GoalConfig, type GoalConfigInput } from '../../../domain/items/valueObjects/GoalConfig'
 import { AcademicConfig, type AcademicConfigInput } from '../../../domain/items/valueObjects/AcademicConfig'
 import { TravelConfig, type TravelConfigInput } from '../../../domain/items/valueObjects/TravelConfig'
 import { CalendarLink, type CalendarLinkInput } from '../../../domain/items/valueObjects/CalendarLink'
 
 interface RawItemJson
-  extends Omit<
-    ItemProps,
-    'repeatConfig' | 'reminderConfig' | 'dateWindow' | 'goalConfig' | 'academicConfig' | 'travelConfig' | 'calendarLink'
-  > {
+  extends Omit<ItemProps, 'repeatConfig' | 'reminderConfig' | 'academicConfig' | 'travelConfig' | 'calendarLink'> {
   repeatConfig?: RepeatConfigInput
   reminderConfig?: ReminderConfigInput[]
-  dateWindow?: DateWindowInput
-  goalConfig?: GoalConfigInput
   academicConfig?: AcademicConfigInput
   travelConfig?: TravelConfigInput
   calendarLink?: CalendarLinkInput
 }
 
-// Rebuilds real value-object instances from the plain JSON that JSON.parse produces — without
-// this, item.repeatConfig etc. would just be plain objects that happen to look right, not real
-// instances (no private brand, so they wouldn't even satisfy the Item type). Each field is
-// rebuilt independently and tolerantly: a single malformed legacy config (from before this
-// validation existed) drops just that field instead of failing the whole item.
-export const hydrateItem = (raw: unknown): Item => {
+// Rebuilds real value-object instances from plain JSON; each field is rebuilt independently and tolerantly (a malformed legacy config just drops that field).
+export const hydrateItem = (raw: unknown): Item | undefined => {
   const source = raw as RawItemJson
 
   let repeatConfig: RepeatConfig | undefined
@@ -49,24 +38,6 @@ export const hydrateItem = (raw: unknown): Item => {
         }
       })
       .filter((entry): entry is ReminderConfig => entry !== undefined)
-  }
-
-  let dateWindow: DateWindow | undefined
-  if (source.dateWindow) {
-    try {
-      dateWindow = DateWindow.create(source.dateWindow)
-    } catch {
-      dateWindow = undefined
-    }
-  }
-
-  let goalConfig: GoalConfig | undefined
-  if (source.goalConfig) {
-    try {
-      goalConfig = GoalConfig.create(source.goalConfig)
-    } catch {
-      goalConfig = undefined
-    }
   }
 
   let academicConfig: AcademicConfig | undefined
@@ -96,16 +67,20 @@ export const hydrateItem = (raw: unknown): Item => {
     }
   }
 
-  return Item.hydrate({
+  const result = Item.hydrate({
     ...source,
     repeatConfig,
     reminderConfig,
-    dateWindow,
-    goalConfig,
     academicConfig,
     travelConfig,
     calendarLink,
   })
+
+  if (!result.success) {
+    console.warn(`No se pudo hidratar el item ${String(source.id)}: ${result.error.message}`)
+    return undefined
+  }
+  return result.item
 }
 
 export const ITEM_COLUMNS =

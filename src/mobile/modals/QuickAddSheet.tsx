@@ -4,6 +4,7 @@ import {
   BackHandler,
   Keyboard,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -26,7 +27,7 @@ import {
   Tag,
   X,
 } from 'lucide-react-native'
-import { fetchTravelTime, getCurrentLocation } from '../../infrastructure/maps/travelTime'
+import { fetchTravelTime, getCurrentLocation, hasLocationPermission } from '../../infrastructure/maps/travelTime'
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker'
 import { format, isToday, parse } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -39,14 +40,14 @@ import { isExamTask } from '../../domain/items/services/examDetector'
 import { useItems } from '../../application/items/useItems'
 import { useLocationAutocomplete } from '../../application/items/useLocationAutocomplete'
 import { useSettings, useLicenseUsages } from '../../application/settings/useSettings'
+import { DEFAULT_CATEGORIES } from '../../domain/settings/types'
 import { useGoogleAuthStore } from '../../state/googleAuthStore'
 import { computeNextDate } from '../../domain/items/services/recurrence'
-import type { ReminderConfigInput, RepeatConfigInput, RepeatRule, TravelConfigInput } from '../../domain/items/types'
+import { RepeatConfig, type ReminderConfigInput, type RepeatConfigInput, type RepeatRule, type TransportMode, type TravelConfigInput } from '../../domain/items'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
+import { resolveCategoryIcon } from '../theme/categoryIcons'
 import { createId } from '../../utils/id'
-
-// ─── Types ───────────────────────────────────────────────────────────────────
 
 type Panel = 'main' | 'date' | 'repeat'
 
@@ -54,10 +55,6 @@ interface QuickAddSheetProps {
   open: boolean
   onClose: () => void
 }
-
-// ─── Constants ───────────────────────────────────────────────────────────────
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const fmtShort = (dateStr: string) => {
   const date = new Date(dateStr + 'T00:00:00')
@@ -68,8 +65,6 @@ const fmtFull = (dateStr: string) => {
   const date = new Date(dateStr + 'T00:00:00')
   return isToday(date) ? 'HOY' : format(date, "EEE d 'de' MMM", { locale: es })
 }
-
-// ─── Small components ─────────────────────────────────────────────────────────
 
 const NlChip = ({
   label,
@@ -181,11 +176,9 @@ const RowDivider = ({ colors }: { colors: ThemeTokens }) => (
   <View style={{ height: 1, backgroundColor: colors.border }} />
 )
 
-// ─── Main component ───────────────────────────────────────────────────────────
-
 export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
   const { createItem, isSaving } = useItems()
-  const { data: settings } = useSettings()
+  const { data: settings, saveSettings } = useSettings()
   const { saveUsage } = useLicenseUsages()
   const { accessToken } = useGoogleAuthStore()
   const { colors } = useAppTheme()
@@ -194,10 +187,8 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
   const titleRef = useRef<TextInput>(null)
   const descRef = useRef<TextInput>(null)
 
-  // ── Panel ──
   const [panel, setPanel] = useState<Panel>('main')
 
-  // ── Main state ──
   const [text, setText] = useState('')
   const [important, setImportant] = useState(false)
   const [scheduledDate, setScheduledDate] = useState<string | undefined>()
@@ -213,7 +204,6 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
   const [showDescInput, setShowDescInput] = useState(false)
   const [categoryId, setCategoryId] = useState<string | undefined>()
 
-  // Location
   const [location, setLocation] = useState<string | undefined>()
   const {
     locationQuery,
@@ -230,7 +220,6 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
   const [nlCategoryDismissed, setNlCategoryDismissed] = useState(false)
   const [studyTimeBefore, setStudyTimeBefore] = useState<'half' | 'full' | undefined>()
 
-  // ── Date panel temp state (committed on "Listo") ──
   const [tempDate, setTempDate] = useState<string | undefined>()
   const [tempTime, setTempTime] = useState<string | undefined>()
   const [tempEndTime, setTempEndTime] = useState<string | undefined>()
@@ -243,9 +232,10 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
   const [travelTimeLoading, setTravelTimeLoading] = useState(false)
   const [travelTimeResult, setTravelTimeResult] = useState<string | null>(null)
   const [travelConfig, setTravelConfig] = useState<TravelConfigInput | undefined>()
-  // Bumped whenever the date panel should jump its visible month back to tempDate/tempDeadline
-  // (opening the sheet, opening the deadline picker, auto-filling a date from a repeat rule) —
-  // forces MonthCalendar to remount and re-read its initial month from selectedDate.
+  const [transportMode, setTransportMode] = useState<TransportMode>('driving')
+  const [extraMinutes, setExtraMinutes] = useState(5)
+  const [departureReminderEnabled, setDepartureReminderEnabled] = useState(true)
+  // Bumped to force MonthCalendar to remount and re-read its initial month from selectedDate.
   const [dateCalendarKey, setDateCalendarKey] = useState(0)
   const [deadlineCalendarKey, setDeadlineCalendarKey] = useState(0)
   const [timeEnabled, setTimeEnabled] = useState(false)
@@ -253,41 +243,31 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
   const [deadlinePickerOpen, setDeadlinePickerOpen] = useState(false)
   const [expandReminder, setExpandReminder] = useState(false)
 
-  // Draft repeat config while the RepeatPanel is open — assembled fully by the panel
-  // itself, promoted to repeatRule/repeatConfig only when the outer date panel commits.
+  // Promoted to repeatRule/repeatConfig only when the outer date panel commits.
   const [tempRepeatConfig, setTempRepeatConfig] = useState<RepeatConfigInput | undefined>()
 
-  // ── NL parsing ──
   const parsed = useMemo(() => {
     if (!text.trim()) return null
     return parseQuickInput(text)
   }, [text])
 
-  // Effective values: explicit takes priority over NL-inferred
+  // Explicit takes priority over NL-inferred.
   const effectiveDate = scheduledDate ?? (nlDateDismissed ? undefined : parsed?.inferred.startDate)
   const effectiveTime = scheduledTime ?? (nlTimeDismissed ? undefined : parsed?.inferred.startTime)
   const effectiveDeadline = deadline ?? parsed?.inferred.deadline
 
-  // NL chips to show
   const showNlDate = !scheduledDate && !nlDateDismissed && Boolean(parsed?.inferred.startDate)
   const showNlTime = !scheduledTime && !nlTimeDismissed && Boolean(parsed?.inferred.startTime)
 
-  // Category auto-detection
   const suggestedCategoryId = useMemo(() => {
     if (categoryId || nlCategoryDismissed) return undefined
-    return detectCategoryFromText(text, settings?.categories ?? [])
-  }, [text, categoryId, nlCategoryDismissed, settings?.categories])
+    return detectCategoryFromText(text, DEFAULT_CATEGORIES)
+  }, [text, categoryId, nlCategoryDismissed])
   const effectiveCategoryId = categoryId ?? suggestedCategoryId
   const showNlCategory = Boolean(suggestedCategoryId) && !categoryId && !nlCategoryDismissed
 
-  // ── Load / reset on open ──
-  // Adjusted during render instead of in an effect (React's own recommended pattern for
-  // "reset state when a prop changes"): comparing against the previous render's `open` and
-  // calling setState conditionally here runs synchronously in the same render that flips
-  // `open` to true, so the sheet never paints stale data before resetting on a tick-later
-  // effect would. It also sidesteps the animation risk a key-based remount would carry here —
-  // nothing unmounts, the Modal keeps controlling its own slide animation via `visible={open}`
-  // exactly as before, only the state values themselves get cleared.
+  // Adjusted during render (React's pattern for "reset state when a prop changes") instead of
+  // an effect, so it runs before paint without affecting the Modal's own slide animation.
   const [wasOpen, setWasOpen] = useState(open)
   if (open !== wasOpen) {
     setWasOpen(open)
@@ -306,6 +286,9 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
       setRepeatConfig(undefined)
       setReminders([])
       setTravelConfig(undefined)
+      setTransportMode('driving')
+      setExtraMinutes(5)
+      setDepartureReminderEnabled(true)
       setDescription('')
       setShowDescInput(false)
       setCategoryId(undefined)
@@ -319,7 +302,6 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
     }
   }
 
-  // ── Android back handler ──
   useEffect(() => {
     if (!open) return
     const handler = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -331,8 +313,6 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
     })
     return () => handler.remove()
   }, [open, panel, onClose, deadlinePickerOpen])
-
-  // ── Handlers ──
 
   const openDatePanel = useCallback(() => {
     Keyboard.dismiss()
@@ -357,18 +337,20 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
   const handleRepeatDone = useCallback((rule: RepeatRule, config: RepeatConfigInput) => {
     setTempRepeat(rule)
     setTempRepeatConfig(config)
-    // Si todavía no eligieron un día en el calendario, la fecha se infiere de la
-    // repetición misma (ej. "todos los días" -> mañana; "cada semana" siendo hoy
-    // lunes -> el próximo lunes), en vez de dejar la tarea sin fecha.
+    // Si no eligieron fecha, se infiere de la repetición misma en vez de dejarla sin fecha.
     if (!tempDate) {
-      const nextDate = computeNextDate(new Date(), {
-        unit: config.unit,
-        interval: config.interval,
-        daysOfWeek: config.unit === 'week' ? config.daysOfWeek : undefined,
-        end: 'never',
-      })
-      setTempDate(format(nextDate, 'yyyy-MM-dd'))
-      setDateCalendarKey((k) => k + 1)
+      try {
+        const nextDate = computeNextDate(new Date(), RepeatConfig.create({
+          unit: config.unit,
+          interval: config.interval,
+          daysOfWeek: config.unit === 'week' ? config.daysOfWeek : undefined,
+          end: 'never',
+        }))
+        setTempDate(format(nextDate, 'yyyy-MM-dd'))
+        setDateCalendarKey((k) => k + 1)
+      } catch {
+        // Config todavía inválida mientras se edita el panel.
+      }
     }
     setPanel('date')
   }, [tempDate])
@@ -421,11 +403,7 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
 
     let created
     try {
-      created = await createItem({
-        ...payload,
-        dateWindow: parsed?.inferred.dateWindow,
-        goalConfig: parsed?.inferred.goalConfig,
-      })
+      created = await createItem(payload)
     } catch (error) {
       Alert.alert('No se pudo guardar', error instanceof Error ? error.message : 'Revisá los datos ingresados.')
       return
@@ -453,23 +431,45 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
     setTempTime(format(date, 'HH:mm'))
   }
 
+  // Apagar el switch saca el recordatorio de salida ya programado, no espera a "Calcular".
+  const handleToggleDepartureReminder = (value: boolean) => {
+    setDepartureReminderEnabled(value)
+    if (!value) {
+      setTempReminders((prev) => prev.filter((reminder) => reminder.mode !== 'departure'))
+      setTravelConfig((prev) => (prev ? { ...prev, departureReminderEnabled: false } : prev))
+    }
+  }
+
   const handleCalculateTravelTime = async () => {
     if (!location) return
+
+    // Si ya pedimos el permiso y lo sigue sin tener, el SO no vuelve a mostrar el diálogo.
+    if (settings?.locationPermissionRequested && !(await hasLocationPermission())) {
+      setTravelTimeResult('Sin permiso — abriendo Configuración')
+      void Linking.openSettings()
+      return
+    }
+
     setTravelTimeLoading(true)
     setTravelTimeResult(null)
     try {
       const pos = await getCurrentLocation()
+      if (settings && !settings.locationPermissionRequested) {
+        void saveSettings({ locationPermissionRequested: true })
+      }
       if (!pos) { setTravelTimeResult('Sin permiso de ubicación'); return }
-      const result = await fetchTravelTime(pos, location)
+      const result = await fetchTravelTime(pos, location, transportMode)
       if (!result) { setTravelTimeResult('No se pudo calcular'); return }
       setTravelTimeResult(result.summary)
-      // Recalcula con el tráfico actual y reemplaza el recordatorio de salida anterior.
-      const totalMins = result.minutes + 5
-      setTempReminders((prev) => [
-        ...prev.filter((reminder) => reminder.mode !== 'departure'),
-        { id: createId(), mode: 'departure', minutesBefore: totalMins, alarmType: selectedAlarmType, persistent: selectedPersistent },
-      ])
-      setTravelConfig({ transport: 'driving', extraMinutes: 5, departureReminderEnabled: true })
+      // Reemplaza el recordatorio de salida anterior en vez de sumarlo.
+      const totalMins = result.minutes + extraMinutes
+      setTempReminders((prev) => {
+        const withoutDeparture = prev.filter((reminder) => reminder.mode !== 'departure')
+        return departureReminderEnabled
+          ? [...withoutDeparture, { id: createId(), mode: 'departure', minutesBefore: totalMins, alarmType: selectedAlarmType, persistent: selectedPersistent }]
+          : withoutDeparture
+      })
+      setTravelConfig({ transport: transportMode, extraMinutes, departureReminderEnabled })
     } finally {
       setTravelTimeLoading(false)
     }
@@ -485,8 +485,6 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
     }
     onClose()
   }
-
-  // ── Computed display values ──
 
   const dateBadge = useMemo(() => {
     if (!effectiveDate) return null
@@ -505,10 +503,6 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
     return interval > 1 ? `Cada ${interval} ${unit}s` : `Cada ${unit}`
   }, [tempRepeat, tempRepeatConfig])
   const reminderCount = tempReminders.length
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Render helpers
-  // ─────────────────────────────────────────────────────────────────────────────
 
   const renderMainPanel = () => (
       <View
@@ -547,18 +541,26 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
               selectionColor={colors.primary}
               textAlignVertical="top"
             />
-            {(settings?.categories ?? []).length > 0 && (
+            {DEFAULT_CATEGORIES.length > 0 && (
               <View style={styles.categoryRow}>
                 <Tag size={15} color={categoryId ? colors.primary : colors.textMuted} />
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryChips}>
-                  {(settings?.categories ?? []).map(cat => {
+                  {DEFAULT_CATEGORIES.map(cat => {
                     const active = categoryId === cat.id
+                    const CategoryIcon = resolveCategoryIcon(cat.icon)
                     return (
                       <Pressable
                         key={cat.id}
                         onPress={() => setCategoryId(active ? undefined : cat.id)}
-                        style={[styles.categoryChip, active && { backgroundColor: colors.primary, borderColor: colors.primary }]}
+                        style={[
+                          styles.categoryChip,
+                          settings?.showCategoryIcons && { flexDirection: 'row', alignItems: 'center', gap: 6 },
+                          active && { backgroundColor: colors.primary, borderColor: colors.primary },
+                        ]}
                       >
+                        {settings?.showCategoryIcons && (
+                          <CategoryIcon size={13} color={active ? colors.onPrimary : cat.color} />
+                        )}
                         <Text style={[styles.categoryChipText, active && { color: colors.onPrimary }]}>{cat.name}</Text>
                       </Pressable>
                     )
@@ -569,7 +571,6 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
           </>
         )}
 
-        {/* Location input */}
         {showLocationInput && (
           <View>
             <View style={styles.locationInputRow}>
@@ -622,7 +623,6 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
           </View>
         )}
 
-        {/* NL parser chips */}
         {(showNlDate || showNlTime || showNlCategory) && (
           <View style={styles.chipsRow}>
             {showNlDate && parsed?.inferred.startDate && (
@@ -641,7 +641,7 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
             )}
             {showNlCategory && suggestedCategoryId && (
               <NlChip
-                label={`🏷 ${settings?.categories.find((category) => category.id === suggestedCategoryId)?.name ?? suggestedCategoryId}`}
+                label={`🏷 ${DEFAULT_CATEGORIES.find((category) => category.id === suggestedCategoryId)?.name ?? suggestedCategoryId}`}
                 onDismiss={() => setNlCategoryDismissed(true)}
                 colors={colors}
               />
@@ -649,7 +649,6 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
           </View>
         )}
 
-        {/* Study time selector (facultad + exam keywords) */}
         {effectiveCategoryId === 'facultad' && isExamTask(text) && (
           <View style={styles.studyTimeRow}>
             <Text style={styles.studyTimeLabel}>Día de estudio</Text>
@@ -674,7 +673,6 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
           </View>
         )}
 
-        {/* Date badge when explicitly set */}
         {dateBadge && !showNlDate && !showNlTime && (
           <Pressable style={styles.dateBadge} onPress={openDatePanel}>
             <Clock size={12} color={colors.primary} />
@@ -693,7 +691,6 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
           </Pressable>
         )}
 
-        {/* Action bar */}
         <View style={styles.actionBar}>
           <View style={styles.actionIcons}>
             <ActionIcon
@@ -767,15 +764,12 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
 
   const renderDeadlinePicker = () => (
     <>
-      {/* Extra dim overlay behind the card */}
       <Pressable
         style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.35)' }]}
         onPress={() => setDeadlinePickerOpen(false)}
       />
-      {/* Centered card */}
       <View style={styles.deadlineOverlay} pointerEvents="box-none">
         <View style={styles.deadlineCard} onStartShouldSetResponder={() => true}>
-          {/* Header */}
           <View style={styles.deadlineCardHeader}>
             <Text style={styles.deadlineCardTitle}>Fecha límite</Text>
             <Pressable onPress={() => setDeadlinePickerOpen(false)} hitSlop={12}>
@@ -794,7 +788,6 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
             accentColor={colors.accent}
           />
 
-          {/* Quitar fecha */}
           {tempDeadline && (
             <Pressable
               onPress={() => { setTempDeadline(undefined); setDeadlinePickerOpen(false) }}
@@ -826,7 +819,6 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
 
           <View style={styles.optionsSeparator} />
 
-          {/* Establecer hora */}
           <OptionRow
             label="Establecer hora"
             value={timeEnabled ? (tempTime ?? undefined) : undefined}
@@ -844,7 +836,6 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
           />
           <RowDivider colors={colors} />
 
-          {/* Hasta (hora de fin) — solo si hay hora de inicio */}
           {timeEnabled && (
             <>
               <OptionRow
@@ -859,7 +850,6 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
             </>
           )}
 
-          {/* Repetir → abre panel completo */}
           <OptionRow
             label="Repetir"
             value={repeatLabel}
@@ -871,7 +861,6 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
 
           <RowDivider colors={colors} />
 
-          {/* Fecha límite → abre sub-calendario */}
           <OptionRow
             label="Fecha límite"
             value={tempDeadline ? fmtShort(tempDeadline) : undefined}
@@ -886,7 +875,6 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
 
           <RowDivider colors={colors} />
 
-          {/* Recordatorio */}
           <OptionRow
             label="Recordatorio"
             value={reminderCount > 0 ? `${reminderCount} activo${reminderCount !== 1 ? 's' : ''}` : undefined}
@@ -908,6 +896,12 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
               hasTravelConfig={Boolean(travelConfig)}
               travelTimeResult={travelTimeResult}
               onCalculateTravelTime={() => void handleCalculateTravelTime()}
+              transportMode={transportMode}
+              onChangeTransportMode={setTransportMode}
+              extraMinutes={extraMinutes}
+              onChangeExtraMinutes={setExtraMinutes}
+              departureReminderEnabled={departureReminderEnabled}
+              onChangeDepartureReminderEnabled={handleToggleDepartureReminder}
               colors={colors}
             />
           )}
@@ -925,7 +919,6 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
           <View style={{ height: 8 }} />
         </ScrollView>
 
-        {/* Footer */}
         <View style={styles.datePanelFooter}>
           <Pressable
             onPress={() => {
@@ -946,10 +939,6 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
       </View>
   )
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Root render
-  // ─────────────────────────────────────────────────────────────────────────────
-
   return (
     <>
     <Modal
@@ -964,22 +953,19 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
         onClose()
       }}
     >
-      {/* Root: flex: 1, overlay color. KeyboardAvoidingView here (not nested inside the
-          absolutely-positioned sheet) so it has the real screen height to react to. */}
+      {/* KeyboardAvoidingView here, not nested in the absolutely-positioned sheet, so it has
+          the real screen height to react to. */}
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        {/* Backdrop — tap closes the sheet (only from main panel) */}
         <Pressable
           style={[StyleSheet.absoluteFill, { backgroundColor: colors.overlayAccent }]}
           onPress={handleBackdropPress}
         />
 
-        {/* Sheet container — bottom-anchored */}
         <View style={styles.sheetAnchor} pointerEvents="box-none">
           {panel === 'main' && renderMainPanel()}
           {panel === 'date' && renderDatePanel()}
         </View>
 
-        {/* Deadline picker — centered dialog over everything */}
         {panel === 'date' && deadlinePickerOpen && renderDeadlinePicker()}
       </KeyboardAvoidingView>
     </Modal>
@@ -1023,15 +1009,11 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
   )
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
 const createStyles = (colors: ThemeTokens) =>
   StyleSheet.create({
     sheetAnchor: {
-      // flex + justifyContent instead of position:'absolute' — the sheet's height is
-      // content-driven (ScrollView with no explicit height), and Android's layout engine
-      // sometimes fails to measure that correctly on first mount inside an absolutely
-      // positioned parent, clipping content until a later re-render forces a re-layout.
+      // flex + justifyContent instead of position:'absolute' — Android sometimes fails to
+      // measure a content-driven height correctly inside an absolutely positioned parent.
       flex: 1,
       justifyContent: 'flex-end',
     },
@@ -1204,7 +1186,6 @@ const createStyles = (colors: ThemeTokens) =>
       fontSize: 15,
     },
 
-    // Deadline picker — centered dialog
     deadlineOverlay: {
       ...StyleSheet.absoluteFill,
       justifyContent: 'center',
@@ -1248,7 +1229,6 @@ const createStyles = (colors: ThemeTokens) =>
       color: colors.textMuted,
     },
 
-    // Location
     locationInputRow: {
       flexDirection: 'row',
       alignItems: 'center',

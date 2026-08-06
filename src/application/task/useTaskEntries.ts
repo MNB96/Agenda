@@ -6,10 +6,11 @@ import { scoreItemsForToday, type TodayBucket } from '../../domain/items/service
 import { useGoogleEvents } from '../calendar/useGoogleCalendar'
 import type { CalendarEvent } from '../../domain/calendar/types'
 import { useHolidays } from '../holidays/useHolidays'
-import type { Holiday } from '../../domain/holidays/types'
-import { ITEM_TYPE, type Item } from '../../domain/items/types'
+import type { Holiday, HolidayType } from '../../domain/holidays/types'
+import { ITEM_TYPE, type Item } from '../../domain/items'
 import { useAppTheme } from '../../mobile/theme/useAppTheme'
 import type { ThemeTokens } from '../../mobile/theme/tokens'
+import { assertNever } from '../../utils/assertNever'
 
 export type TaskSectionKey = 'overdue' | 'next' | 'important' | 'later' | 'completed'
 type ActiveSectionKey = 'overdue' | 'next' | 'important' | 'later'
@@ -47,23 +48,66 @@ export interface HolidayEntry {
 
 type TaskEntry = LocalEntry | GoogleEntry | HolidayEntry
 
-// "inamovible" es el feriado real; "trasladable" es un feriado que se movió a un lunes
-// para hacer fin de semana largo; "puente" es un día no laborable extra, no un feriado en
-// sí — se distinguen con una etiqueta y un color de intensidad decreciente.
-const HOLIDAY_TYPE_LABEL: Record<string, string> = {
+// Tipado contra HolidayType, no Record<string,...>: un tipo nuevo no compila si falta acá.
+const HOLIDAY_TYPE_LABEL: Record<HolidayType, string> = {
   inamovible: 'Feriado',
   trasladable: 'Feriado trasladable',
   puente: 'Día puente',
 }
 
+const holidayColor = (type: HolidayType, colors: ThemeTokens): string => {
+  switch (type) {
+    case 'inamovible':
+      return colors.accentStrong
+    case 'trasladable':
+      return colors.accent
+    case 'puente':
+      return colors.textSecondary
+    default:
+      return assertNever(type)
+  }
+}
+
+// Regla de urgencia compartida por eventos de Google y feriados (no Items locales, que usan
+// su propia noción en relevance.ts).
+const NEXT_WITHIN_DAYS = 2
+const IMPORTANT_WITHIN_DAYS = 7
+
+type UpcomingSection = Exclude<ActiveSectionKey, 'overdue'>
+
+const classifyUpcomingSection = (dayDiff: number): UpcomingSection => {
+  if (dayDiff <= NEXT_WITHIN_DAYS) return 'next'
+  if (dayDiff <= IMPORTANT_WITHIN_DAYS) return 'important'
+  return 'later'
+}
+
+const googleEventColor = (section: UpcomingSection, colors: ThemeTokens): string => {
+  switch (section) {
+    case 'next':
+      return colors.primary
+    case 'important':
+      return colors.accent
+    case 'later':
+      return colors.cream
+    default:
+      return assertNever(section)
+  }
+}
+
+// "Hoy"/"Manana" son relativos a hoy, no fechas — a partir de pasado mañana ya se muestra la
+// fecha real porque relativo deja de ser útil de un vistazo.
+const formatUpcomingWhen = (date: Date, dayDiff: number): string => {
+  if (dayDiff === 0) return 'Hoy'
+  if (dayDiff === 1) return 'Manana'
+  return format(date, 'd MMM', { locale: es })
+}
+
 // Las tareas sin ninguna fecha van directo a su propia sección "Sin fecha" al final,
 // en vez de mezclarse con las de "Más adelante" que sí tienen una fecha real.
-const hasAnyDate = (item: Item): boolean =>
-  Boolean(item.startDate || item.deadline || (item.type === ITEM_TYPE.DATE_WINDOW && (item.dateWindow.startDate || item.dateWindow.endDate)))
+const hasAnyDate = (item: Item): boolean => Boolean(item.startDate || item.deadline)
 
 const mapLocalBucketToSection = (bucket: TodayBucket): ActiveSectionKey => {
   if (bucket === 'overdue') return 'overdue'
-  if (bucket === 'important') return 'important'
   if (bucket === 'later' || bucket === 'long_term_goal') return 'later'
   return 'next'
 }
@@ -76,19 +120,9 @@ const mapGoogleEventToEntry = (event: CalendarEvent, colors: ThemeTokens): Googl
     return null
   }
 
-  const section: TaskSectionKey = dayDiff <= 2 ? 'next' : dayDiff <= 7 ? 'important' : 'later'
-  const when =
-    dayDiff === 0
-      ? event.allDay
-        ? 'Hoy'
-        : `Hoy · ${format(start, 'HH:mm')}`
-      : dayDiff === 1
-        ? event.allDay
-          ? 'Manana'
-          : `Manana · ${format(start, 'HH:mm')}`
-        : event.allDay
-          ? format(start, 'd MMM', { locale: es })
-          : `${format(start, 'd MMM', { locale: es })} · ${format(start, 'HH:mm')}`
+  const section = classifyUpcomingSection(dayDiff)
+  const relativeWhen = formatUpcomingWhen(start, dayDiff)
+  const when = event.allDay ? relativeWhen : `${relativeWhen} · ${format(start, 'HH:mm')}`
 
   return {
     kind: 'google',
@@ -97,7 +131,7 @@ const mapGoogleEventToEntry = (event: CalendarEvent, colors: ThemeTokens): Googl
     title: event.title,
     subtitle: when,
     secondary: event.location,
-    color: section === 'important' ? colors.accent : section === 'later' ? colors.cream : colors.primary,
+    color: googleEventColor(section, colors),
     dateKey: format(start, 'yyyy-MM-dd'),
     timestamp: start.getTime(),
   }
@@ -111,23 +145,16 @@ const mapHolidayToEntry = (holiday: Holiday, colors: ThemeTokens): HolidayEntry 
     return null
   }
 
-  const section: ActiveSectionKey = dayDiff <= 2 ? 'next' : dayDiff <= 7 ? 'important' : 'later'
-  const when = dayDiff === 0 ? 'Hoy' : dayDiff === 1 ? 'Manana' : format(start, 'd MMM', { locale: es })
-  const color =
-    holiday.type === 'inamovible'
-      ? colors.accentStrong
-      : holiday.type === 'trasladable'
-        ? colors.accent
-        : colors.textSecondary
+  const section = classifyUpcomingSection(dayDiff)
 
   return {
     kind: 'holiday',
     section,
     id: `holiday-${holiday.date}`,
     title: `🇦🇷 ${holiday.name}`,
-    subtitle: when,
-    typeLabel: HOLIDAY_TYPE_LABEL[holiday.type] ?? holiday.type,
-    color,
+    subtitle: formatUpcomingWhen(start, dayDiff),
+    typeLabel: HOLIDAY_TYPE_LABEL[holiday.type],
+    color: holidayColor(holiday.type, colors),
     dateKey: format(start, 'yyyy-MM-dd'),
     timestamp: start.getTime(),
   }
@@ -144,16 +171,12 @@ interface UseTaskEntriesResult {
   hasMoreCompleted: boolean
   isLoadingMoreCompleted: boolean
   loadMoreCompleted: () => void
-  /** True while items, Google Calendar events, or holidays are still loading for the first
-   * time — lets the screen show one spinner instead of painting sections as each source
-   * resolves at its own pace (items are local/fast, holidays are cached, Google events are a
-   * network call — without this they used to pop in one at a time). */
+  /** True while items/events/holidays are still loading, so the screen shows one spinner
+   * instead of sections popping in one at a time. */
   isInitialLoading: boolean
 }
 
-// Pulls together local items, Google Calendar events and public holidays into the sectioned,
-// sorted list the Task screen renders — pure data transformation, no JSX, so it's testable
-// without mounting the screen.
+// Pure data transformation (no JSX) combining local items, Google events and holidays into sections.
 export const useTaskEntries = (): UseTaskEntriesResult => {
   const { items, isLoading: itemsLoading, dataUpdatedAt, loadMoreCompleted: fetchMoreCompleted } = useItems()
   const googleEvents = useGoogleEvents(new Date())
@@ -191,6 +214,7 @@ export const useTaskEntries = (): UseTaskEntriesResult => {
     return items.filter((item) => {
       if (item.status === 'completed') return false
       if (item.parentId) return false
+      if (item.type === ITEM_TYPE.GOAL) return false
       if (activeCategory !== 'all' && item.categoryId !== activeCategory) return false
       if (!query) return true
       return [item.title, item.description, item.location, item.categoryId]
@@ -204,6 +228,7 @@ export const useTaskEntries = (): UseTaskEntriesResult => {
     return items.filter((item) => {
       if (item.status !== 'completed') return false
       if (item.parentId) return false
+      if (item.type === ITEM_TYPE.GOAL) return false
       if (activeCategory !== 'all' && item.categoryId !== activeCategory) return false
       if (!query) return true
       return [item.title, item.description, item.location, item.categoryId]

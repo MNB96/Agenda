@@ -1,11 +1,11 @@
-import type { Item } from './types'
+import type { Item } from './Item'
 
 export interface ItemRepository {
   list(): Promise<Item[]>
   listActive(): Promise<Item[]>
   listCompleted(limit: number, offset: number): Promise<Item[]>
   listCompletedByCategory(categoryId: string, limit: number): Promise<Item[]>
-  listArchiveEligible(completedBefore: string): Promise<Item[]>
+  listPurgeEligible(completedBefore: string): Promise<Item[]>
   getById(id: string): Promise<Item | undefined>
   getByParentIds(parentIds: string[]): Promise<Item[]>
   save(item: Item): Promise<Item>

@@ -9,11 +9,8 @@ interface LoadingSpinnerProps {
   size?: number
 }
 
-// The app's own arc-and-checkmark mark, minus the checkmark, spun continuously as a loading
-// indicator — same five colors and segment gaps as the app icon, transparent background, no
-// center element. Rotated via RN's Animated (native driver) instead of the SVG's own
-// <animateTransform>, since SMIL animation support in react-native-svg is less consistent
-// across platforms than a plain Animated.View transform.
+// App icon's arc, minus the checkmark, spun via Animated (native driver) — SVG's own
+// <animateTransform> has inconsistent SMIL support across platforms.
 export const LoadingSpinner = ({ size = 100 }: LoadingSpinnerProps) => {
   const [rotation] = useState(() => new Animated.Value(0))
 

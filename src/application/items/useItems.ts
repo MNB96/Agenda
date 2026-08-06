@@ -1,11 +1,12 @@
 import { useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
-import { itemRepository, settingsRepository } from '../../app/container'
-import { Item, type ItemPatch } from '../../domain/items/types'
+import { itemRepository, settingsRepository, taskRepository } from '../../app/container'
+import { Item, ITEM_TYPE, type ItemPatch } from '../../domain/items'
 import { useGoogleAuthStore } from '../../state/googleAuthStore'
 import { useSettings } from '../settings/useSettings'
 import { cancelItemNotifications, scheduleItemNotifications } from '../../infrastructure/notifications/itemNotifications'
 import { syncItemToCalendar, removeCalendarEventForItem } from '../calendar/itemCalendarSync'
+import { isGoogleCalendarAuthError } from '../../infrastructure/calendar/errors'
 import { buildNextOccurrence } from '../../domain/items/services/recurrence'
 import { ITEM_KEY_PREFIX } from './useItem'
 import { SUBTASKS_KEY_PREFIX } from './useSubtasks'
@@ -13,16 +14,10 @@ import { SUBTASKS_KEY_PREFIX } from './useSubtasks'
 const ITEMS_KEY = ['items']
 const LICENSES_KEY = ['licenses']
 
-// Cuántos items completados se traen por página: la sección "Completadas" no tiene techo
-// natural (nada se borra salvo el auto-archivo de 60 días, que solo corre para items ya
-// sincronizados a Google Calendar) — sin esto, la app termina cargando en memoria todo el
-// historial completado desde que existe la cuenta. Los items activos sí se traen completos:
-// ese conjunto se mantiene naturalmente chico porque se completan/borran con el uso normal.
+// "Completadas" no tiene techo natural (solo la purga de 60 días la achica), así que se pagina.
 export const COMPLETED_PAGE_SIZE = 30
 
-// ItemDetailModal ya no lee subtareas/items puntuales del cache principal (useItem/useSubtasks
-// abajo), así que toda mutación que pueda cambiarlos tiene que invalidar esas queries también,
-// no solo ITEMS_KEY.
+// useItem/useSubtasks cachean por separado del listado principal, así que hay que invalidarlos también.
 const invalidateItemDetailQueries = (queryClient: QueryClient) => {
   queryClient.invalidateQueries({ queryKey: [ITEM_KEY_PREFIX] })
   queryClient.invalidateQueries({ queryKey: [SUBTASKS_KEY_PREFIX] })
@@ -36,9 +31,7 @@ const loadInitialItems = async (): Promise<Item[]> => {
   return [...active, ...completed]
 }
 
-// Shared by every write path that removes an item locally (manual delete, immediate-delete
-// on a regenerated repeat, auto-archive) so a "day of study" usage never outlives the item
-// it was planned for, no matter which path did the removing.
+// Shared by every removal path so a license usage never outlives the item it was planned for.
 const deleteLicenseUsagesForItems = async (itemIds: string[]) => {
   if (itemIds.length === 0) return
   const ids = new Set(itemIds)
@@ -48,10 +41,8 @@ const deleteLicenseUsagesForItems = async (itemIds: string[]) => {
   )
 }
 
-// Subtasks don't make sense without their parent, and the Today/Task list excludes any item
-// with a parentId regardless of whether that parent still exists — so removing an item without
-// also removing its subtasks left them permanently invisible and unreachable (never shown,
-// never deletable) instead of actually gone. Shared by every single-item removal path.
+// Removing an item without its subtasks left them invisible but undeletable — the list hides
+// any item whose parentId no longer resolves.
 const removeItemAndSubtasks = async (item: Item): Promise<void> => {
   const subtasks = await itemRepository.getByParentIds([item.id])
   const allIds = Item.idsToRemoveWith([item], subtasks)
@@ -71,9 +62,7 @@ export const useItems = () => {
     queryFn: loadInitialItems,
   })
 
-  // Trae la siguiente página de completadas y la suma al cache existente (no dispara un
-  // refetch completo). Devuelve cuántas llegaron: si vino una página llena, probablemente
-  // haya más para pedir; si vino corta (o vacía), ya se llegó al final del historial.
+  // Devuelve cuántas llegaron: página llena probablemente tenga más, corta/vacía es el final.
   const loadMoreCompleted = async (): Promise<number> => {
     const current = queryClient.getQueryData<Item[]>(ITEMS_KEY) ?? []
     const currentCompletedCount = current.filter((item) => item.status === 'completed').length
@@ -96,7 +85,7 @@ export const useItems = () => {
       item = await syncItemToCalendar(item, calendarSyncContext())
 
       const notificationIds = await scheduleItemNotifications(item)
-      item = Item.update(item, { notificationIds })
+      item = Item.linkNotifications(item, notificationIds)
       return itemRepository.save(item)
     },
     onSuccess: () => {
@@ -112,12 +101,41 @@ export const useItems = () => {
         throw new Error('No se encontro el item para actualizar.')
       }
 
+      // Cambiar el deadline de una meta la pospone: el Task viejo queda en Calendar como
+      // rastro histórico ([Pospuesto]) y la fila local se reemplaza por una nueva.
+      const isPostponingGoal = current.type === ITEM_TYPE.GOAL && 'deadline' in input.patch && input.patch.deadline !== current.deadline
+      if (isPostponingGoal) {
+        const next = Item.update(current, input.patch)
+        if (accessToken && current.calendarLink) {
+          try {
+            await taskRepository.updateTask(accessToken, current.calendarLink.eventId, {
+              title: `[Pospuesto] ${current.title}`,
+              notes: current.description,
+              dueDate: current.deadline,
+            })
+          } catch (error) {
+            if (isGoogleCalendarAuthError(error)) markUnauthorized()
+          }
+        }
+        await cancelItemNotifications(current)
+        await removeItemAndSubtasks(current)
+        const created = await createMutation.mutateAsync({
+          title: next.title,
+          description: next.description,
+          type: ITEM_TYPE.GOAL,
+          deadline: next.deadline,
+          syncToCalendar: next.syncToCalendar,
+        })
+        queryClient.invalidateQueries({ queryKey: ITEMS_KEY })
+        return created
+      }
+
       let next = Item.update(current, input.patch)
       next = await syncItemToCalendar(next, calendarSyncContext())
 
       await cancelItemNotifications(current)
       const notificationIds = await scheduleItemNotifications(next)
-      next = Item.update(next, { notificationIds })
+      next = Item.linkNotifications(next, notificationIds)
       return itemRepository.save(next)
     },
     onSuccess: (savedItem) => {
@@ -147,22 +165,16 @@ export const useItems = () => {
   const completeMutation = useMutation({
     mutationFn: async (item: Item) => {
       const completing = item.status !== 'completed'
+      let next: Item
       if (completing) {
         const subtasks = await itemRepository.getByParentIds([item.id])
-        if (!Item.canComplete(item, subtasks)) {
-          throw new Error('Completá todas las subtareas primero.')
-        }
-      }
-      let next = Item.update(item, {
-        status: completing ? 'completed' : 'active',
-        completedAt: completing ? new Date().toISOString() : undefined,
-      })
-      if (completing) {
+        next = Item.complete(item, subtasks)
         await cancelItemNotifications(item)
-        next = Item.update(next, { notificationIds: [] })
+        next = Item.linkNotifications(next, [])
       } else {
+        next = Item.reopen(item)
         const notificationIds = await scheduleItemNotifications(next)
-        next = Item.update(next, { notificationIds })
+        next = Item.linkNotifications(next, notificationIds)
       }
 
       let regenerated = false
@@ -174,9 +186,7 @@ export const useItems = () => {
         }
       }
 
-      // Tarea repetitiva que ya generó la próxima instancia y está sincronizada con Google
-      // Calendar: no hace falta guardarla localmente como completada — Calendar ya tiene el
-      // registro histórico, así que se borra directo en vez de esperar el archivado de 60 días.
+      // Ya regenerada y sincronizada: Calendar tiene el registro histórico, se borra directo.
       if (regenerated && next.calendarLink) {
         await removeItemAndSubtasks(item)
         return next
@@ -191,10 +201,8 @@ export const useItems = () => {
     },
   })
 
-  // Usado por useAutoArchiveCompleted: borra localmente items completados y ya sincronizados
-  // con Google Calendar (que sigue teniendo el registro histórico), pasando por la misma
-  // limpieza de licencias y subtareas que el borrado manual en vez de reimplementarla aparte.
-  const archiveCompletedMutation = useMutation({
+  // Usado por useAutoPurgeCompleted, reusa la misma limpieza de licencias/subtareas que el borrado manual.
+  const purgeCompletedMutation = useMutation({
     mutationFn: async (items: Item[]) => {
       const subtasks = await itemRepository.getByParentIds(items.map((item) => item.id))
       const allIds = Item.idsToRemoveWith(items, subtasks)
@@ -210,10 +218,7 @@ export const useItems = () => {
     },
   })
 
-  // Usado por useCalendarSyncRecovery una vez que ya subió los items pendientes a Google
-  // Calendar: solo persiste los items ya actualizados e invalida el cache, sin repetir el
-  // sync (eso ya lo hizo la recovery) ni la resolución/reprogramación de notificaciones que
-  // hacen createMutation/updateMutation.
+  // Usado por useCalendarSyncRecovery: solo persiste items ya sincronizados, sin repetir el sync.
   const applySyncedItemsMutation = useMutation({
     mutationFn: async (items: Item[]) => {
       await itemRepository.saveMany(items)
@@ -236,7 +241,7 @@ export const useItems = () => {
     updateItem: updateMutation.mutateAsync,
     removeItem: removeMutation.mutateAsync,
     toggleCompleted: completeMutation.mutateAsync,
-    archiveCompleted: archiveCompletedMutation.mutateAsync,
+    purgeCompleted: purgeCompletedMutation.mutateAsync,
     applySyncedItems: applySyncedItemsMutation.mutateAsync,
     loadMoreCompleted,
     isSaving:

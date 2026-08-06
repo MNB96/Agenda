@@ -1,19 +1,13 @@
 import { createId } from '../../utils/id'
-import type { ItemPatch, ItemStatus, NewItemInput, RepeatRule } from './types'
+import type { ItemStatus, RepeatRule } from './Item.types'
+import type { ItemPatch, NewItemInput } from './Item.inputs'
 import { RepeatConfig } from './valueObjects/RepeatConfig'
 import { ReminderConfig } from './valueObjects/ReminderConfig'
-import { DateWindow } from './valueObjects/DateWindow'
-import { GoalConfig } from './valueObjects/GoalConfig'
 import { AcademicConfig } from './valueObjects/AcademicConfig'
 import { TravelConfig } from './valueObjects/TravelConfig'
-import { CalendarLink } from './valueObjects/CalendarLink'
+import { CalendarLink, type CalendarLinkInput } from './valueObjects/CalendarLink'
 
-// Fields shared by every kind of item, regardless of type. task/event/deadline share this exact
-// shape today — they're distinguished only by which of these fields ends up filled (event has
-// startTime, deadline has deadline, task has neither), not by having different fields, so they
-// stay one variant (ScheduledItem). goal and date_window each own one field none of the others
-// can have (goalConfig, dateWindow) — those get their own variant so the compiler rejects the
-// mismatch instead of just documenting it in a comment.
+// Fields shared by every variant; each subtype below adds only what's exclusive to it.
 interface BaseItemProps {
   id: string
   title: string
@@ -30,20 +24,21 @@ interface BaseItemProps {
   endDate?: string
   endTime?: string
   deadline?: string
-  reminderConfig?: ReminderConfig[]
+  reminderConfig?: readonly ReminderConfig[]
   travelConfig?: TravelConfig
   academicConfig?: AcademicConfig
   syncToCalendar?: boolean
   calendarLink?: CalendarLink
   calendarSyncPending?: boolean
-  notificationIds?: string[]
+  notificationIds?: readonly string[]
   createdAt: string
   updatedAt: string
   completedAt?: string
 }
 
 abstract class BaseItem {
-  protected readonly _brand = 'Item' as const
+  // Type-only, erased by the compiler — keeps nominal typing without a real field to leak.
+  protected declare readonly _brand: void
 
   readonly id: string
   readonly title: string
@@ -60,13 +55,13 @@ abstract class BaseItem {
   readonly endDate?: string
   readonly endTime?: string
   readonly deadline?: string
-  readonly reminderConfig?: ReminderConfig[]
+  readonly reminderConfig?: readonly ReminderConfig[]
   readonly travelConfig?: TravelConfig
   readonly academicConfig?: AcademicConfig
   readonly syncToCalendar?: boolean
   readonly calendarLink?: CalendarLink
   readonly calendarSyncPending?: boolean
-  readonly notificationIds?: string[]
+  readonly notificationIds?: readonly string[]
   readonly createdAt: string
   readonly updatedAt: string
   readonly completedAt?: string
@@ -87,160 +82,185 @@ abstract class BaseItem {
     this.endDate = props.endDate
     this.endTime = props.endTime
     this.deadline = props.deadline
-    this.reminderConfig = props.reminderConfig
+    // Copy, not the caller's reference, so external mutation can't bypass Item.update.
+    this.reminderConfig = props.reminderConfig ? [...props.reminderConfig] : undefined
     this.travelConfig = props.travelConfig
     this.academicConfig = props.academicConfig
     this.syncToCalendar = props.syncToCalendar
     this.calendarLink = props.calendarLink
     this.calendarSyncPending = props.calendarSyncPending
-    this.notificationIds = props.notificationIds
+    this.notificationIds = props.notificationIds ? [...props.notificationIds] : undefined
     this.createdAt = props.createdAt
     this.updatedAt = props.updatedAt
     this.completedAt = props.completedAt
   }
 }
 
-// Single source of truth for every ItemType string value — every runtime comparison/assignment
-// in this file and elsewhere references these instead of repeating the literal, so renaming a
-// type is a one-line change here instead of a grep-and-replace across the codebase. The *type*
-// declarations below (ScheduledItemType, ItemType) are the type-level canonical definition and
-// derive from this same object via `typeof`, so there's exactly one place either has to change.
+// Single source of truth for every ItemType string — ItemType derives from it.
 export const ITEM_TYPE = {
   TASK: 'task',
-  EVENT: 'event',
-  DEADLINE: 'deadline',
   GOAL: 'goal',
-  DATE_WINDOW: 'date_window',
 } as const
 
-export type ScheduledItemType = typeof ITEM_TYPE.TASK | typeof ITEM_TYPE.EVENT | typeof ITEM_TYPE.DEADLINE
-
-interface ScheduledItemProps extends BaseItemProps {
-  type: ScheduledItemType
+interface TaskItemProps extends BaseItemProps {
+  type: typeof ITEM_TYPE.TASK
 }
 
-class ScheduledItem extends BaseItem {
-  readonly type: ScheduledItemType
-  private constructor(props: ScheduledItemProps) {
+class TaskItem extends BaseItem {
+  readonly type = ITEM_TYPE.TASK
+  private constructor(props: TaskItemProps) {
     super(props)
-    this.type = props.type
   }
-  static of(props: ScheduledItemProps): ScheduledItem {
-    return new ScheduledItem(props)
+  static of(props: TaskItemProps): TaskItem {
+    return new TaskItem(props)
   }
 }
 
 interface GoalItemProps extends BaseItemProps {
   type: typeof ITEM_TYPE.GOAL
-  goalConfig: GoalConfig
 }
 
 class GoalItem extends BaseItem {
   readonly type = ITEM_TYPE.GOAL
-  readonly goalConfig: GoalConfig
   private constructor(props: GoalItemProps) {
     super(props)
-    this.goalConfig = props.goalConfig
   }
   static of(props: GoalItemProps): GoalItem {
     return new GoalItem(props)
   }
 }
 
-interface DateWindowItemProps extends BaseItemProps {
-  type: typeof ITEM_TYPE.DATE_WINDOW
-  dateWindow: DateWindow
-}
+export type ItemType = typeof ITEM_TYPE.TASK | typeof ITEM_TYPE.GOAL
 
-class DateWindowItem extends BaseItem {
-  readonly type = ITEM_TYPE.DATE_WINDOW
-  readonly dateWindow: DateWindow
-  private constructor(props: DateWindowItemProps) {
-    super(props)
-    this.dateWindow = props.dateWindow
-  }
-  static of(props: DateWindowItemProps): DateWindowItem {
-    return new DateWindowItem(props)
-  }
-}
+// A union, not one flat bag of optionals — narrow on `item.type` before reading a variant-only field.
+export type Item = TaskItem | GoalItem
 
-export type ItemType = ScheduledItemType | typeof ITEM_TYPE.GOAL | typeof ITEM_TYPE.DATE_WINDOW
-
-// The domain entity — a union, not one flat bag of optionals. Narrow on `item.type` before
-// reading `goalConfig` (only on the 'goal' branch) or `dateWindow` (only on 'date_window');
-// every other field is common to all three variants.
-export type Item = ScheduledItem | GoalItem | DateWindowItem
-
-// Flat prop bag covering every field across all three variants — the shape you get from merging
-// current+patch, from parsed persisted JSON, or from fresh input, before it's known (or
-// re-confirmed) which variant it should become.
+// Flat prop bag for merging current+patch or parsed JSON, before it's known which variant it becomes.
 export interface ItemProps extends BaseItemProps {
   type: ItemType
-  goalConfig?: GoalConfig
-  dateWindow?: DateWindow
 }
 
-// Entity-level invariant (spans two loose fields, doesn't belong to any single value object):
-// a task can't be due before it starts. Guards new input, not old persisted data — hydrateItem
-// deliberately doesn't run this, so a legacy row from before this rule existed can still load.
+// A task can't be due before it starts. New input only — hydrateItem skips this for old rows.
 const validateItemDates = (startDate: string | undefined, deadline: string | undefined): void => {
   if (startDate && deadline && deadline < startDate) {
     throw new Error('La fecha límite no puede ser anterior a la fecha de inicio.')
   }
 }
 
-const inferType = (input: NewItemInput): ItemType => {
-  if (input.type) {
-    return input.type
+// A task's own end can't be before (or exactly when) it starts. New input only — hydrateItem skips this.
+const validateTimeRange = (
+  startDate: string | undefined,
+  startTime: string | undefined,
+  endDate: string | undefined,
+  endTime: string | undefined,
+): void => {
+  if (!startDate || !startTime) return
+  const resolvedEndDate = endDate ?? startDate
+  if (resolvedEndDate < startDate) {
+    throw new Error('La fecha de fin no puede ser anterior a la fecha de inicio.')
   }
-  if (input.goalConfig) {
-    return ITEM_TYPE.GOAL
+  if (resolvedEndDate === startDate && endTime && endTime <= startTime) {
+    throw new Error('La hora de fin debe ser posterior a la hora de inicio.')
   }
-  if (input.dateWindow?.startDate || input.dateWindow?.endDate) {
-    return ITEM_TYPE.DATE_WINDOW
-  }
-  if (input.startDate && input.startTime) {
-    return ITEM_TYPE.EVENT
-  }
-  if (input.deadline) {
-    return ITEM_TYPE.DEADLINE
-  }
-  return ITEM_TYPE.TASK
 }
 
-// Assembles the right variant from a flat prop bag, enforcing that a goal has goalConfig and a
-// date_window has dateWindow — the one place that turns "a type label plus some optional fields"
-// into something the compiler can prove is internally consistent. Extra fields that don't belong
-// to the chosen variant (e.g. a stray goalConfig on a 'task') are silently dropped, not an error
-// — only a *missing* required field for the chosen type is a real problem.
+const normalizeTitle = (title: string): string => {
+  const normalized = title.trim()
+  if (!normalized) {
+    throw new Error('El título no puede estar vacío.')
+  }
+  return normalized
+}
+
+const inferType = (input: NewItemInput): ItemType => input.type ?? ITEM_TYPE.TASK
+
+const RULE_UNIT: Record<Exclude<RepeatRule, 'none'>, RepeatConfig['unit']> = {
+  hourly: 'hour',
+  daily: 'day',
+  weekly: 'week',
+  monthly: 'month',
+  yearly: 'year',
+}
+
+// repeatConfig, repeatRule and its unit must all agree. New input only — old rows still load.
+const validateRecurrence = (repeatRule: RepeatRule | undefined, repeatConfig: RepeatConfig | undefined): void => {
+  if ((!repeatRule || repeatRule === 'none') && repeatConfig) {
+    throw new Error('No puede haber configuración de repetición sin una regla de repetición activa.')
+  }
+  if (repeatRule && repeatRule !== 'none' && !repeatConfig) {
+    throw new Error('Falta la configuración de repetición.')
+  }
+  if (repeatRule && repeatRule !== 'none' && repeatConfig && RULE_UNIT[repeatRule] !== repeatConfig.unit) {
+    throw new Error('La regla y la configuración de repetición no coinciden.')
+  }
+}
+
+// A subtask completing on its own doesn't compose with buildNextOccurrence, which doesn't carry
+// parentId forward — a recurring subtask's next instance would end up orphaned at the top level.
+const validateSubtaskHasNoRecurrence = (parentId: string | undefined, repeatConfig: RepeatConfig | undefined): void => {
+  if (parentId && repeatConfig) {
+    throw new Error('Una subtarea no puede repetirse.')
+  }
+}
+
+// A goal has no place of its own and no schedule of its own — just título, detalles, deadline,
+// submetas and importance. Reminders are still deadline-driven, handled separately.
+const validateGoalRestrictions = (
+  type: ItemType,
+  repeatRule: RepeatRule | undefined,
+  repeatConfig: RepeatConfig | undefined,
+  startDate: string | undefined,
+  location: string | undefined,
+  reminderConfig: readonly ReminderConfig[] | undefined,
+): void => {
+  if (type !== ITEM_TYPE.GOAL) return
+  if ((repeatRule && repeatRule !== 'none') || repeatConfig) {
+    throw new Error('Una meta no puede repetirse. Al cumplirla, creá una meta nueva.')
+  }
+  if (startDate) {
+    throw new Error('Una meta no puede tener fecha de inicio.')
+  }
+  if (location) {
+    throw new Error('Una meta no puede tener ubicación.')
+  }
+  if (reminderConfig?.length) {
+    throw new Error('Una meta no puede tener recordatorios.')
+  }
+}
+
+// Assembles the right variant from a flat prop bag, rejecting an unrecognized `type` instead of
+// silently defaulting it.
 const buildItem = (flat: ItemProps): Item => {
   if (flat.type === ITEM_TYPE.GOAL) {
-    if (!flat.goalConfig) {
-      throw new Error('Falta la configuración de la meta.')
-    }
-    return GoalItem.of({ ...flat, type: ITEM_TYPE.GOAL, goalConfig: flat.goalConfig })
+    return GoalItem.of({ ...flat, type: ITEM_TYPE.GOAL })
   }
-  if (flat.type === ITEM_TYPE.DATE_WINDOW) {
-    if (!flat.dateWindow) {
-      throw new Error('Falta la ventana de fechas.')
-    }
-    return DateWindowItem.of({ ...flat, type: ITEM_TYPE.DATE_WINDOW, dateWindow: flat.dateWindow })
+  // Reachable at runtime even though ItemType says it shouldn't be: a stored row's `type`
+  // could be a legacy value this domain no longer has.
+  if ((flat.type as string) !== ITEM_TYPE.TASK) {
+    throw new Error(`Tipo de item desconocido: "${flat.type}". Puede ser un dato de una versión anterior de la app.`)
   }
-  return ScheduledItem.of({ ...flat, type: flat.type })
+  return TaskItem.of({ ...flat, type: ITEM_TYPE.TASK })
 }
 
 const createItem = (input: NewItemInput): Item => {
   validateItemDates(input.startDate, input.deadline)
+  const repeatConfig = input.repeatConfig ? RepeatConfig.create(input.repeatConfig) : undefined
+  validateRecurrence(input.repeatRule, repeatConfig)
+  validateSubtaskHasNoRecurrence(input.parentId, repeatConfig)
+  const type = inferType(input)
+  const reminderConfig = input.reminderConfig?.map((reminder) => ReminderConfig.create(reminder))
+  validateGoalRestrictions(type, input.repeatRule, repeatConfig, input.startDate, input.location, reminderConfig)
+  validateTimeRange(input.startDate, input.startTime, input.endDate, input.endTime)
   const nowIso = new Date().toISOString()
   return buildItem({
     id: createId(),
-    title: input.title.trim(),
-    description: input.description?.trim(),
-    type: inferType(input),
+    title: normalizeTitle(input.title),
+    description: input.description?.trim() || undefined,
+    type,
     status: 'active',
     important: input.important,
     repeatRule: input.repeatRule,
-    repeatConfig: input.repeatConfig ? RepeatConfig.create(input.repeatConfig) : undefined,
+    repeatConfig,
     parentId: input.parentId,
     categoryId: input.categoryId,
     location: input.location,
@@ -249,10 +269,8 @@ const createItem = (input: NewItemInput): Item => {
     endDate: input.endDate,
     endTime: input.endTime,
     deadline: input.deadline,
-    dateWindow: input.dateWindow ? DateWindow.create(input.dateWindow) : undefined,
-    reminderConfig: input.reminderConfig?.map((reminder) => ReminderConfig.create(reminder)),
+    reminderConfig,
     travelConfig: input.travelConfig ? TravelConfig.create(input.travelConfig) : undefined,
-    goalConfig: input.goalConfig ? GoalConfig.create(input.goalConfig) : undefined,
     academicConfig: input.academicConfig ? AcademicConfig.create(input.academicConfig) : undefined,
     syncToCalendar: input.syncToCalendar ?? true,
     createdAt: nowIso,
@@ -261,90 +279,123 @@ const createItem = (input: NewItemInput): Item => {
 }
 
 const updateItem = (current: Item, patch: ItemPatch): Item => {
-  // 'field' in patch distinguishes "not mentioned, keep current" from "explicitly set to
-  // undefined, clear it" — both are real cases callers rely on (e.g. clearing repeatConfig
-  // when the user turns repeatRule back to 'none').
+  // 'field' in patch distinguishes "not mentioned" from "explicitly cleared".
   const repeatConfig = 'repeatConfig' in patch
     ? (patch.repeatConfig ? RepeatConfig.create(patch.repeatConfig) : undefined)
     : current.repeatConfig
   const reminderConfig = 'reminderConfig' in patch
     ? patch.reminderConfig?.map((reminder) => ReminderConfig.create(reminder))
     : current.reminderConfig
-  const dateWindow = 'dateWindow' in patch
-    ? (patch.dateWindow ? DateWindow.create(patch.dateWindow) : undefined)
-    : (current.type === ITEM_TYPE.DATE_WINDOW ? current.dateWindow : undefined)
-  const goalConfig = 'goalConfig' in patch
-    ? (patch.goalConfig ? GoalConfig.create(patch.goalConfig) : undefined)
-    : (current.type === ITEM_TYPE.GOAL ? current.goalConfig : undefined)
   const academicConfig = 'academicConfig' in patch
     ? (patch.academicConfig ? AcademicConfig.create(patch.academicConfig) : undefined)
     : current.academicConfig
   const travelConfig = 'travelConfig' in patch
     ? (patch.travelConfig ? TravelConfig.create(patch.travelConfig) : undefined)
     : current.travelConfig
-  const calendarLink = 'calendarLink' in patch
-    ? (patch.calendarLink ? CalendarLink.create(patch.calendarLink) : undefined)
-    : current.calendarLink
+  const title = patch.title !== undefined ? normalizeTitle(patch.title) : current.title
+  const description = 'description' in patch ? (patch.description?.trim() || undefined) : current.description
 
   const merged: ItemProps = {
     ...current,
     ...patch,
     type: patch.type ?? current.type,
+    title,
+    description,
     repeatConfig,
     reminderConfig,
-    dateWindow,
-    goalConfig,
     academicConfig,
     travelConfig,
-    calendarLink,
+    // Editing an item already linked to Calendar leaves it stale until the next sync.
+    calendarSyncPending: current.calendarLink ? true : current.calendarSyncPending,
     updatedAt: new Date().toISOString(),
   }
   validateItemDates(merged.startDate, merged.deadline)
+  validateRecurrence(merged.repeatRule, merged.repeatConfig)
+  validateSubtaskHasNoRecurrence(merged.parentId, merged.repeatConfig)
+  validateGoalRestrictions(merged.type, merged.repeatRule, merged.repeatConfig, merged.startDate, merged.location, merged.reminderConfig)
+  validateTimeRange(merged.startDate, merged.startTime, merged.endDate, merged.endTime)
   return buildItem(merged)
 }
 
-// Reconstructs an already-trusted Item from storage. Doesn't run validateItemDates (guards new
-// input, not old data) and tolerates a type/exclusive-field mismatch that shouldn't be possible
-// but could exist in old rows (e.g. a 'goal' whose goalConfig failed its own hydration and got
-// dropped) by falling back to a plain ScheduledItem with the rest of the data intact, instead of
-// losing the item entirely.
-const hydrateItem = (props: ItemProps): Item => {
+// Doesn't run validateItemDates (old data). Returns a result instead of throwing or silently
+// reinterpreting a corrupted row as some other item type.
+export type HydrationResult =
+  | { success: true; item: Item }
+  | { success: false; error: Error }
+
+const hydrateItem = (props: ItemProps): HydrationResult => {
   try {
-    return buildItem(props)
-  } catch {
-    return ScheduledItem.of({ ...props, type: ITEM_TYPE.TASK })
+    return { success: true, item: buildItem(props) }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error : new Error('Invalid persisted item') }
   }
 }
 
-// --- Aggregate rules: Item and its subtasks are one consistency unit ---
-// Subtasks are stored as independent rows (not embedded), so the aggregate is assembled on
-// demand by whoever fetched them — but the rules governing how they interact together belong
-// here, on the root, not wherever happens to trigger a completion or a removal.
-
-// A parent can't be marked complete while it still has open subtasks — it isn't actually
-// finished yet. Every caller that can complete an item must go through this, not just the one
-// screen that happened to add a button-disable check first.
+// Item and its subtasks are one consistency unit, even though subtasks are stored as separate rows.
 const canCompleteItem = (item: Item, subtasks: Item[]): boolean => {
-  return subtasks.every((subtask) => subtask.status === 'completed')
+  return subtasks.every((subtask) => subtask.parentId === item.id && subtask.status === 'completed')
 }
 
-// Every id that must be removed together with this set of items — subtasks don't make sense
-// without their parent (the Task list hides any item whose parentId no longer resolves), so
-// removing an item always removes its subtasks with it. Takes arrays so the same rule serves
-// both single-item removal and the batch auto-archive path.
+// Filters subtasks to the ones actually belonging to these items — a caller isn't trusted to
+// have pre-filtered, same as canCompleteItem's own parentId check.
 const itemIdsToRemoveWith = (items: Item[], subtasks: Item[]): string[] => {
-  return [...items.map((item) => item.id), ...subtasks.map((subtask) => subtask.id)]
+  const parentIds = new Set(items.map((item) => item.id))
+  const relatedSubtaskIds = subtasks.filter((subtask) => subtask.parentId && parentIds.has(subtask.parentId)).map((subtask) => subtask.id)
+  return [...new Set([...parentIds, ...relatedSubtaskIds])]
 }
 
-// Item is a `type` (a union), which can't carry static methods the way a class can — this
-// companion const lives alongside it under the same name instead (types and values occupy
-// separate namespaces in TS, so both `Item` the type and `Item` the value coexist), so every
-// existing `Item.create(...)` / `Item.update(...)` call site keeps working unchanged.
-// eslint-disable-next-line @typescript-eslint/no-redeclare -- type Item and const Item are in separate namespaces, this is intentional
+// Narrower than updateItem: each owns one system-managed field a generic ItemPatch can't reach.
+const withProps = (current: Item, overrides: Partial<ItemProps>): Item => {
+  return buildItem({ ...current, ...overrides, updatedAt: new Date().toISOString() })
+}
+
+const completeItem = (current: Item, subtasks: Item[]): Item => {
+  if (current.status !== 'active') {
+    throw new Error('Solo se puede completar un item activo.')
+  }
+  if (!canCompleteItem(current, subtasks)) {
+    throw new Error('Completá todas las subtareas primero.')
+  }
+  return withProps(current, { status: 'completed', completedAt: new Date().toISOString() })
+}
+
+const reopenItem = (current: Item): Item => {
+  if (current.status !== 'completed') {
+    throw new Error('Solo se puede reabrir un item completado.')
+  }
+  return withProps(current, { status: 'active', completedAt: undefined })
+}
+
+const linkCalendarItem = (current: Item, calendarLink: Omit<CalendarLinkInput, 'lastSyncedAt'> | undefined): Item => {
+  const now = new Date().toISOString()
+  return buildItem({
+    ...current,
+    calendarLink: calendarLink ? CalendarLink.create({ ...calendarLink, lastSyncedAt: now }) : undefined,
+    calendarSyncPending: undefined,
+    updatedAt: now,
+  })
+}
+
+// Only ever sets it to true — clearing it requires an actual successful linkCalendar.
+const markSyncPendingItem = (current: Item): Item => {
+  return withProps(current, { calendarSyncPending: true })
+}
+
+// Doesn't bump updatedAt — scheduled notification ids are bookkeeping, not a content change.
+const linkNotificationsItem = (current: Item, notificationIds: string[]): Item => {
+  return buildItem({ ...current, notificationIds })
+}
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare -- type Item and const Item are in separate namespaces
 export const Item = {
   create: createItem,
   update: updateItem,
   hydrate: hydrateItem,
   canComplete: canCompleteItem,
   idsToRemoveWith: itemIdsToRemoveWith,
+  complete: completeItem,
+  reopen: reopenItem,
+  linkCalendar: linkCalendarItem,
+  markSyncPending: markSyncPendingItem,
+  linkNotifications: linkNotificationsItem,
 }

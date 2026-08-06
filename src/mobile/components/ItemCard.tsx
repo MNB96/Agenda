@@ -3,7 +3,7 @@ import { Linking, Pressable, StyleSheet, Text, View } from 'react-native'
 import { differenceInCalendarDays, format, parseISO, startOfDay } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { AlarmClock, Bell, CalendarCheck, Repeat, Star } from 'lucide-react-native'
-import { ITEM_TYPE, type Item } from '../../domain/items/types'
+import { ITEM_TYPE, type Item } from '../../domain/items'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
 
@@ -27,27 +27,20 @@ export const ItemCard = ({ item, overdueLabel, overdueDeadlineLabel, subtaskTota
   const hasNotificationReminder = reminders.some((reminder) => reminder.alarmType !== 'alarm')
   const repeats = Boolean(item.repeatRule) && item.repeatRule !== 'none'
 
-  // La fecha ya la muestra el encabezado de sección (agrupa por día exacto), así que acá
-  // abajo del título va la hora y, si tiene una fecha límite propia, esa también —
-  // repetir la fecha del encabezado sería redundante, pero la fecha límite es otro dato.
+  // La fecha ya la muestra el encabezado de sección; acá solo hora y fecha límite (otro dato).
   const dateLabel =
-    item.type === ITEM_TYPE.DATE_WINDOW && (item.dateWindow?.startDate || item.dateWindow?.endDate)
-      ? [item.dateWindow.startDate, item.dateWindow.endDate]
-          .filter((dateStr): dateStr is string => Boolean(dateStr))
-          .map((dateStr) => format(parseISO(dateStr), 'd MMM', { locale: es }))
-          .join(' - ')
-      : [
-          item.startTime,
-          item.deadline ? `Fecha límite: ${format(parseISO(item.deadline), 'd MMM', { locale: es })}` : undefined,
-        ]
-          .filter((part): part is string => Boolean(part))
-          .join(' - ') || undefined
+    [
+      item.startTime,
+      item.deadline ? `Fecha límite: ${format(parseISO(item.deadline), 'd MMM', { locale: es })}` : undefined,
+    ]
+      .filter((part): part is string => Boolean(part))
+      .join(' - ') || undefined
 
   return (
     <Pressable style={[styles.card, item.important && styles.cardImportant]} onPress={() => onOpen?.(item)}>
       <View style={styles.row}>
         <Pressable
-          disabled={!onToggle || item.type === ITEM_TYPE.EVENT || item.type === ITEM_TYPE.DATE_WINDOW}
+          disabled={!onToggle}
           onPress={() => void onToggle?.(item)}
           style={[
             styles.checkbox,
@@ -87,11 +80,6 @@ export const ItemCard = ({ item, overdueLabel, overdueDeadlineLabel, subtaskTota
               <Text style={styles.locationMeta} numberOfLines={1}>📍 {item.location}</Text>
             </Pressable>
           ) : null}
-          {item.type === ITEM_TYPE.GOAL ? (
-            <Text style={styles.meta}>
-              {`${item.goalConfig.currentValue}/${item.goalConfig.targetValue}`}
-            </Text>
-          ) : null}
         </View>
 
         {(item.important || repeats || hasAlarmReminder || hasNotificationReminder || item.calendarLink) && (
@@ -115,6 +103,9 @@ const resolveIndicatorColor = (item: Item, colors: ThemeTokens): string => {
   if (item.status === 'completed') {
     return colors.success
   }
+  if (item.type === ITEM_TYPE.GOAL) {
+    return resolveGoalUrgencyColor(item.deadline, colors)
+  }
   if (item.deadline) {
     const days = differenceInCalendarDays(startOfDay(parseISO(item.deadline)), startOfDay(new Date()))
     if (days <= 0) {
@@ -124,13 +115,19 @@ const resolveIndicatorColor = (item: Item, colors: ThemeTokens): string => {
       return colors.warning
     }
   }
-  if (item.type === ITEM_TYPE.GOAL) {
-    return colors.cream
-  }
-  if (item.type === ITEM_TYPE.DATE_WINDOW) {
-    return colors.accent
-  }
   return colors.primary
+}
+
+// Va de neutro a rojo a medida que se acerca el deadline, llegando a danger el día que vence.
+const resolveGoalUrgencyColor = (deadline: string | undefined, colors: ThemeTokens): string => {
+  if (!deadline) return colors.cream
+  const days = differenceInCalendarDays(startOfDay(parseISO(deadline)), startOfDay(new Date()))
+  if (days <= 0) return colors.danger
+  if (days <= 3) return colors.accentStrong
+  if (days <= 7) return colors.accentSoft
+  if (days <= 14) return colors.accent
+  if (days <= 30) return colors.primary
+  return colors.cream
 }
 
 

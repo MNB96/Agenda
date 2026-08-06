@@ -3,10 +3,11 @@ import * as Google from 'expo-auth-session/providers/google'
 import { GoogleSignin } from '@react-native-google-signin/google-signin'
 import { useEffect, useMemo } from 'react'
 import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useGoogleCalendars } from '../../application/calendar/useGoogleCalendar'
 import { useSettings } from '../../application/settings/useSettings'
 import { useItems } from '../../application/items/useItems'
-import { useGoogleAuthStore, GOOGLE_TOKEN_TTL_SECONDS } from '../../state/googleAuthStore'
+import { useGoogleAuthStore, GOOGLE_TOKEN_TTL_SECONDS, GOOGLE_OAUTH_SCOPES } from '../../state/googleAuthStore'
 import { openNotificationSoundSettings, openExactAlarmSettings } from '../../infrastructure/notifications/itemNotifications'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
@@ -24,6 +25,7 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
   const { accessToken, connectedEmail, authIssue, setSession, clearSession } = useGoogleAuthStore()
   const calendarsQuery = useGoogleCalendars()
   const { colors } = useAppTheme()
+  const insets = useSafeAreaInsets()
   const styles = useMemo(() => createStyles(colors), [colors])
 
   const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
@@ -32,17 +34,14 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
     process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ??
     process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID
   const isWeb = Platform.OS === 'web'
-  // Native uses the on-device Google Sign-In SDK (Play Services), which validates the app by
-  // package name + signing fingerprint instead of a redirect URI — Google no longer allows the
-  // custom-scheme browser redirect for Android OAuth clients created after mid-2022, which is
-  // what kept causing redirect_uri_mismatch / "Custom URI scheme is not enabled" errors.
+  // Native uses the on-device Google Sign-In SDK, not the browser redirect Google blocks post-2022.
   const canUseGoogleAuth = isWeb ? Boolean(webClientId) : true
   const isConnected = Boolean(accessToken) && !authIssue
   const hasSessionToDisconnect = Boolean(accessToken || connectedEmail || authIssue)
 
   const [request, response, promptAsync] = Google.useAuthRequest({
     responseType: 'token',
-    scopes: ['https://www.googleapis.com/auth/calendar'],
+    scopes: GOOGLE_OAUTH_SCOPES,
     clientId: nativeClientId ?? 'missing-native-client-id',
     webClientId: webClientId ?? 'missing-web-client-id',
   })
@@ -66,10 +65,8 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
 
   useEffect(() => {
     if (isWeb) return
-    GoogleSignin.configure({ scopes: ['https://www.googleapis.com/auth/calendar'] })
-    // Actual silent-refresh (on mount + periodically before the token expires) lives in
-    // useGoogleSessionLifecycleMobile, which runs for the whole app lifetime — doing it
-    // here too would just race it.
+    GoogleSignin.configure({ scopes: GOOGLE_OAUTH_SCOPES })
+    // Silent-refresh itself lives in useGoogleSessionLifecycleMobile; doing it here too would race it.
   }, [isWeb])
 
   const handleConnect = async () => {
@@ -78,13 +75,10 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
       return
     }
     try {
-      GoogleSignin.configure({ scopes: ['https://www.googleapis.com/auth/calendar'] })
+      GoogleSignin.configure({ scopes: GOOGLE_OAUTH_SCOPES })
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true })
 
-      // "Reconectar" casi siempre es refrescar una sesión que Play Services ya conoce —
-      // probar en silencio primero evita abrir el selector de cuenta, que es lo que hace
-      // que el modal de Ajustes se cierre solo en algunos dispositivos al cambiar de
-      // Activity y volver.
+      // Probar en silencio primero evita el selector de cuenta, que en algunos equipos cierra el modal.
       if (GoogleSignin.hasPreviousSignIn()) {
         try {
           const silent = await GoogleSignin.signInSilently()
@@ -130,7 +124,7 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
   return (
     <Modal visible={open} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={styles.sheet} onPress={e => e.stopPropagation?.()}>
+        <Pressable style={[styles.sheet, { paddingBottom: Math.max(insets.bottom + 16, 16) }]} onPress={e => e.stopPropagation?.()}>
           <Text style={styles.title}>Ajustes</Text>
 
           <ScrollView showsVerticalScrollIndicator={false}>
@@ -144,7 +138,7 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
                   return (
                     <Pressable
                       key={mode}
-                      onPress={() => void saveSettings({ ...settings, themePreference: mode })}
+                      onPress={() => void saveSettings({ themePreference: mode })}
                       style={[
                         styles.themeOption,
                         active &&
@@ -174,9 +168,6 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
                 </Text>
               ) : null}
               <View style={styles.actionsRow}>
-                {/* Conectado y sano: no hay nada que "conectar" de nuevo, solo desconectar.
-                    authIssue (no accessToken) es la señal real de que hace falta reconectar —
-                    accessToken solo no lo distingue de "recién arrancó, nunca se conectó". */}
                 {!isConnected && (
                   <Pressable
                     disabled={isWeb && (!request || !canUseGoogleAuth)}
@@ -200,7 +191,7 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
                     const next = selected
                       ? settings.selectedCalendarIds.filter((entry) => entry !== calendar.id)
                       : [...settings.selectedCalendarIds, calendar.id]
-                    void saveSettings({ ...settings, selectedCalendarIds: next })
+                    void saveSettings({ selectedCalendarIds: next })
                   }}
                   style={styles.calendarOption}
                 >
@@ -213,13 +204,6 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
 
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Recordatorios</Text>
-              <View style={styles.switchRow}>
-                <Text style={styles.metaText}>Activar recordatorios</Text>
-                <Switch
-                  value={settings.remindersEnabled}
-                  onValueChange={(value) => void saveSettings({ ...settings, remindersEnabled: value })}
-                />
-              </View>
               {Platform.OS === 'android' ? (
                 <>
                   <Pressable style={[styles.secondaryButton, { marginTop: 8 }]} onPress={() => void openExactAlarmSettings()}>
@@ -241,13 +225,23 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
                 <TextInput
                   value={String(settings.availableExamLeaveDaysPerYear)}
                   onChangeText={(value) =>
-                    void saveSettings({ ...settings, availableExamLeaveDaysPerYear: Math.max(0, Number(value) || 0) })
+                    void saveSettings({ availableExamLeaveDaysPerYear: Math.max(0, Number(value) || 0) })
                   }
                   keyboardType="numeric"
                   style={[styles.input, { width: 60 }]}
                   placeholderTextColor={colors.textMuted}
                 />
                 <Text style={styles.metaText}>días disponibles por año</Text>
+              </View>
+            </View>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Categorías</Text>
+              <View style={styles.switchRow}>
+                <Text style={styles.metaText}>Mostrar íconos de categoría</Text>
+                <Switch
+                  value={settings.showCategoryIcons}
+                  onValueChange={(value) => void saveSettings({ showCategoryIcons: value })}
+                />
               </View>
             </View>
             <View style={styles.section}>

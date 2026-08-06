@@ -8,6 +8,7 @@ import { ItemCard } from '../components/ItemCard'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { useItems } from '../../application/items/useItems'
 import { useSettings } from '../../application/settings/useSettings'
+import { DEFAULT_CATEGORIES } from '../../domain/settings/types'
 import {
   useTaskEntries,
   type TaskSectionKey,
@@ -17,6 +18,7 @@ import {
 } from '../../application/task/useTaskEntries'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
+import { resolveCategoryIcon } from '../theme/categoryIcons'
 
 const sectionLabel: Record<TaskSectionKey, string> = {
   overdue: 'Vencidas',
@@ -67,8 +69,7 @@ const resolveDarkChipText = (
   return colors.textSecondary
 }
 
-const formatOverdueDuration = (dateStr: string): string => {
-  const past = new Date(dateStr + 'T00:00:00')
+const formatOverdueDuration = (past: Date): string => {
   const now = new Date()
   const hours = differenceInHours(now, past)
   if (hours < 24) return hours <= 1 ? 'hace 1 hora' : `hace ${hours} horas`
@@ -133,7 +134,7 @@ export const TaskScreen = ({ onOpenItemEditor }: TaskScreenProps) => {
             Todo
           </Text>
         </Pressable>
-        {(settings?.categories ?? []).map((category) => {
+        {DEFAULT_CATEGORIES.map((category) => {
           const isCategoryActive = activeCategory === category.id
           const chip = resolveCategoryChip(category.id, colors)
           const darkChipBackground =
@@ -147,12 +148,16 @@ export const TaskScreen = ({ onOpenItemEditor }: TaskScreenProps) => {
                     : 'rgba(105, 210, 231, 0.25)'
               : chip.backgroundColor
 
+          const chipTextColor = isDark ? resolveDarkChipText(category.id, isCategoryActive, colors) : chip.textColor
+          const CategoryIcon = resolveCategoryIcon(category.icon)
+
           return (
             <Pressable
               key={category.id}
               onPress={() => setActiveCategory(category.id)}
               style={[
                 styles.filterChip,
+                settings?.showCategoryIcons && { flexDirection: 'row', alignItems: 'center', gap: 6 },
                 {
                   backgroundColor: darkChipBackground,
                   borderColor: isDark && category.id === 'personal' ? colors.borderStrong : chip.borderColor,
@@ -160,14 +165,11 @@ export const TaskScreen = ({ onOpenItemEditor }: TaskScreenProps) => {
                 isCategoryActive && styles.filterChipActive,
               ]}
             >
+              {settings?.showCategoryIcons && <CategoryIcon size={13} color={chipTextColor} />}
               <Text
                 style={[
                   styles.filterChipText,
-                  {
-                    color: isDark
-                      ? resolveDarkChipText(category.id, isCategoryActive, colors)
-                      : chip.textColor,
-                  },
+                  { color: chipTextColor },
                   isCategoryActive && styles.filterChipTextActive,
                 ]}
               >
@@ -230,13 +232,17 @@ export const TaskScreen = ({ onOpenItemEditor }: TaskScreenProps) => {
                 }
                 const overdueDeadlineLabel = (() => {
                   if (bucket !== 'overdue' || !localItem.deadline) return undefined
-                  const days = differenceInCalendarDays(startOfDay(new Date()), startOfDay(new Date(localItem.deadline + 'T00:00:00')))
-                  return days > 0 ? `Venció ${formatOverdueDuration(localItem.deadline)}` : undefined
+                  const deadlineMoment = new Date(localItem.deadline + 'T00:00:00')
+                  const days = differenceInCalendarDays(startOfDay(new Date()), startOfDay(deadlineMoment))
+                  return days > 0 ? `Venció ${formatOverdueDuration(deadlineMoment)}` : undefined
                 })()
+                // Vencidas solo miran startDate: el mismo día pasa a estar vencido en cuanto pasa su startTime, no recién al día siguiente.
                 const overdueLabel = (() => {
                   if (bucket !== 'overdue' || !localItem.startDate) return undefined
-                  const days = differenceInCalendarDays(startOfDay(new Date()), startOfDay(new Date(localItem.startDate + 'T00:00:00')))
-                  return days > 0 ? formatOverdueDuration(localItem.startDate) : undefined
+                  const startMoment = localItem.startTime
+                    ? new Date(`${localItem.startDate}T${localItem.startTime}:00`)
+                    : new Date(`${localItem.startDate}T00:00:00`)
+                  return startMoment < new Date() ? formatOverdueDuration(startMoment) : undefined
                 })()
                 const subtaskInfo = subtaskMap.get(localItem.id)
                 const isActiveItem = localItem.status !== 'completed'

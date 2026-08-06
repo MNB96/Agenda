@@ -27,7 +27,6 @@ import {
   MoreVertical,
   Repeat,
   Star,
-  Target,
   Tag,
   X,
 } from 'lucide-react-native'
@@ -42,13 +41,15 @@ import { useItem } from '../../application/items/useItem'
 import { useSubtasks } from '../../application/items/useSubtasks'
 import { useLocationAutocomplete } from '../../application/items/useLocationAutocomplete'
 import { useSettings, useLicenseUsages } from '../../application/settings/useSettings'
+import { DEFAULT_CATEGORIES } from '../../domain/settings/types'
 import { useGoogleAuthStore } from '../../state/googleAuthStore'
 import { computeNextDate } from '../../domain/items/services/recurrence'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
-import { Item, ITEM_TYPE, type ReminderConfigInput, type RepeatConfigInput, type RepeatRule, type TravelConfigInput } from '../../domain/items/types'
+import { resolveCategoryIcon } from '../theme/categoryIcons'
+import { Item, ITEM_TYPE, RepeatConfig, type ReminderConfigInput, type RepeatConfigInput, type RepeatRule, type TransportMode, type TravelConfigInput } from '../../domain/items'
 import { createId } from '../../utils/id'
-import { fetchTravelTime, getCurrentLocation } from '../../infrastructure/maps/travelTime'
+import { fetchTravelTime, getCurrentLocation, hasLocationPermission } from '../../infrastructure/maps/travelTime'
 import { detectCategoryFromText } from '../../domain/items/services/categoryDetector'
 import { isExamTask } from '../../domain/items/services/examDetector'
 
@@ -63,10 +64,8 @@ const fmtDate = (dateStr: string): string => {
   return format(date, "EEE d 'de' MMM", { locale: es })
 }
 
-// Thin wrapper: finds the item and, once found, mounts the actual form keyed on its id. Keying
-// on itemId means the form (and every piece of its draft state) is a fresh component instance
-// per item — no "reset on open" effect needed to re-seed ~20 fields, and switching straight from
-// editing one item to another (if that ever happens) can't leak stale draft state between them.
+// Thin wrapper: mounts the actual form keyed on itemId, so it's a fresh component instance per
+// item — no "reset on open" effect needed to re-seed ~20 fields of draft state.
 export const ItemDetailModal = ({ itemId, onClose }: ItemDetailModalProps) => {
   const { data: item } = useItem(itemId)
 
@@ -82,7 +81,7 @@ interface ItemDetailModalFormProps {
 
 const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
   const { createItem, updateItem, removeItem, toggleCompleted } = useItems()
-  const { data: settings } = useSettings()
+  const { data: settings, saveSettings } = useSettings()
   const { data: licenseUsages, saveUsage, deleteUsage } = useLicenseUsages()
   const { accessToken } = useGoogleAuthStore()
   const { colors } = useAppTheme()
@@ -101,10 +100,10 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
   const [deadline, setDeadline] = useState(item.deadline)
   const [syncToCalendar, setSyncToCalendar] = useState(item.syncToCalendar ?? true)
   const [repeatRule, setRepeatRule] = useState<RepeatRule>(item.repeatRule ?? 'none')
-  const [repeatConfig, setRepeatConfig] = useState<RepeatConfigInput | undefined>(item.repeatConfig)
+  const [repeatConfig, setRepeatConfig] = useState<RepeatConfigInput | undefined>(
+    item.repeatConfig ? { ...item.repeatConfig, daysOfWeek: item.repeatConfig.daysOfWeek ? [...item.repeatConfig.daysOfWeek] : undefined } : undefined,
+  )
   const [showRepeatPanel, setShowRepeatPanel] = useState(false)
-
-  const [goalCurrentText, setGoalCurrentText] = useState(item.type === ITEM_TYPE.GOAL ? String(item.goalConfig.currentValue) : '')
 
   const [categoryId, setCategoryId] = useState(item.categoryId)
   const [location, setLocation] = useState(item.location)
@@ -117,13 +116,16 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
   const [newSubtaskText, setNewSubtaskText] = useState('')
   const subtaskInputRef = useRef<TextInput>(null)
 
-  const [reminders, setReminders] = useState<ReminderConfigInput[]>(item.reminderConfig ?? [])
+  const [reminders, setReminders] = useState<ReminderConfigInput[]>(item.reminderConfig ? [...item.reminderConfig] : [])
   const [expandReminders, setExpandReminders] = useState(false)
   const [selectedAlarmType, setSelectedAlarmType] = useState<'notification' | 'alarm'>('notification')
   const [selectedPersistent, setSelectedPersistent] = useState(false)
   const [travelTimeLoading, setTravelTimeLoading] = useState(false)
   const [travelTimeResult, setTravelTimeResult] = useState<string | null>(null)
   const [travelConfig, setTravelConfig] = useState<TravelConfigInput | undefined>(item.travelConfig)
+  const [transportMode, setTransportMode] = useState<TransportMode>(item.travelConfig?.transport ?? 'driving')
+  const [extraMinutes, setExtraMinutes] = useState(item.travelConfig?.extraMinutes ?? 5)
+  const [departureReminderEnabled, setDepartureReminderEnabled] = useState(item.travelConfig?.departureReminderEnabled ?? true)
   const [categorySuggestionDismissed, setCategorySuggestionDismissed] = useState(false)
   const [studyTimeBefore, setStudyTimeBefore] = useState(item.academicConfig?.studyTimeBefore)
   const [gradeText, setGradeText] = useState(item.academicConfig?.grade !== undefined ? String(item.academicConfig.grade) : '')
@@ -152,9 +154,6 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
             categoryId,
             location: location || undefined,
             reminderConfig: reminders.length > 0 ? reminders : undefined,
-            goalConfig: item.type === ITEM_TYPE.GOAL
-              ? { ...item.goalConfig, currentValue: parseFloat(goalCurrentText) || 0 }
-              : undefined,
             travelConfig,
             academicConfig: (() => {
               const ac = { ...(item.academicConfig ?? {}) }
@@ -172,7 +171,6 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
         return
       }
 
-      // Sync license usage
       const existingUsage = (licenseUsages ?? []).find(usage => usage.itemId === item.id)
       const days = studyTimeBefore === 'half' ? 0.5 : studyTimeBefore === 'full' ? 1 : undefined
       if (days !== undefined) {
@@ -188,7 +186,7 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
       }
     }
     onClose()
-  }, [item, title, description, important, scheduledDate, scheduledTime, endTime, deadline, syncToCalendar, goalCurrentText, travelConfig, repeatRule, repeatConfig, categoryId, location, reminders, studyTimeBefore, gradeText, licenseUsages, saveUsage, deleteUsage, updateItem, onClose])
+  }, [item, title, description, important, scheduledDate, scheduledTime, endTime, deadline, syncToCalendar, travelConfig, repeatRule, repeatConfig, categoryId, location, reminders, studyTimeBefore, gradeText, licenseUsages, saveUsage, deleteUsage, updateItem, onClose])
 
   useEffect(() => {
     const handler = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -231,13 +229,17 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
     setRepeatConfig(config)
     // Si la tarea todavía no tiene fecha, se infiere de la repetición misma.
     if (!scheduledDate) {
-      const nextDate = computeNextDate(new Date(), {
-        unit: config.unit,
-        interval: config.interval,
-        daysOfWeek: config.unit === 'week' ? config.daysOfWeek : undefined,
-        end: 'never',
-      })
-      setScheduledDate(format(nextDate, 'yyyy-MM-dd'))
+      try {
+        const nextDate = computeNextDate(new Date(), RepeatConfig.create({
+          unit: config.unit,
+          interval: config.interval,
+          daysOfWeek: config.unit === 'week' ? config.daysOfWeek : undefined,
+          end: 'never',
+        }))
+        setScheduledDate(format(nextDate, 'yyyy-MM-dd'))
+      } catch {
+        // Config todavía incompleta mientras se edita en el panel.
+      }
     }
     setShowRepeatPanel(false)
   }
@@ -249,24 +251,46 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
     return interval > 1 ? `Cada ${interval} ${unit}s` : `Cada ${unit}`
   }, [repeatRule, repeatConfig])
 
+  // Apagar el switch saca el recordatorio de salida ya programado, no espera a "Recalcular".
+  const handleToggleDepartureReminder = (value: boolean) => {
+    setDepartureReminderEnabled(value)
+    if (!value) {
+      setReminders((prev) => prev.filter((reminder) => reminder.mode !== 'departure'))
+      setTravelConfig((prev) => (prev ? { ...prev, departureReminderEnabled: false } : prev))
+    }
+  }
+
   const handleCalculateTravelTime = async () => {
     if (!location) return
+
+    // Ya pedido antes y sigue sin permiso: el SO no vuelve a mostrar el diálogo, vamos directo a Configuración.
+    if (settings?.locationPermissionRequested && !(await hasLocationPermission())) {
+      setTravelTimeResult('Sin permiso — abriendo Configuración')
+      void Linking.openSettings()
+      return
+    }
+
     setTravelTimeLoading(true)
     setTravelTimeResult(null)
     try {
       const pos = await getCurrentLocation()
+      if (settings && !settings.locationPermissionRequested) {
+        void saveSettings({ locationPermissionRequested: true })
+      }
       if (!pos) { setTravelTimeResult('Sin permiso de ubicación'); return }
-      const result = await fetchTravelTime(pos, location)
+      const result = await fetchTravelTime(pos, location, transportMode)
       if (!result) { setTravelTimeResult('No se pudo calcular'); return }
       setTravelTimeResult(result.summary)
-      // Recalcula con el tráfico actual y reemplaza el recordatorio de salida anterior,
-      // en vez de dejarlo congelado con la estimación de cuando se creó la tarea.
-      const totalMins = result.minutes + 5
-      setReminders((prev) => [
-        ...prev.filter((reminder) => reminder.mode !== 'departure'),
-        { id: createId(), mode: 'departure', minutesBefore: totalMins, alarmType: selectedAlarmType, persistent: selectedPersistent },
-      ])
-      setTravelConfig({ transport: 'driving', extraMinutes: 5, departureReminderEnabled: true })
+      // Reemplaza el recordatorio de salida anterior en vez de sumarlo. Si está desactivado,
+      // solo se guarda el tiempo calculado sin programar notificación.
+      const totalMins = result.minutes + extraMinutes
+      setReminders((prev) => {
+        const withoutDeparture = prev.filter((reminder) => reminder.mode !== 'departure')
+        return departureReminderEnabled
+          ? [...withoutDeparture, { id: createId(), mode: 'departure', minutesBefore: totalMins, alarmType: selectedAlarmType, persistent: selectedPersistent }]
+          : withoutDeparture
+      })
+      setTravelConfig({ transport: transportMode, extraMinutes, departureReminderEnabled })
     } finally {
       setTravelTimeLoading(false)
     }
@@ -274,12 +298,12 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
 
   const suggestedCategoryId = useMemo(() => {
     if (categoryId || categorySuggestionDismissed) return undefined
-    return detectCategoryFromText(title, settings?.categories ?? [])
-  }, [title, categoryId, categorySuggestionDismissed, settings?.categories])
+    return detectCategoryFromText(title, DEFAULT_CATEGORIES)
+  }, [title, categoryId, categorySuggestionDismissed])
 
   const showCategorySuggestion = Boolean(suggestedCategoryId)
   const suggestedCategory = suggestedCategoryId
-    ? (settings?.categories ?? []).find(category => category.id === suggestedCategoryId)
+    ? DEFAULT_CATEGORIES.find(category => category.id === suggestedCategoryId)
     : undefined
 
   const isCompleted = item.status === 'completed'
@@ -300,7 +324,6 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
           style={[styles.container, { paddingTop: insets.top }]}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
-          {/* Header */}
           <View style={styles.header}>
             <Pressable onPress={() => void handleClose()} hitSlop={12} style={styles.headerBtn}>
               <ChevronLeft size={24} color={colors.text} />
@@ -327,7 +350,6 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
           >
-            {/* Title */}
             <TextInput
               value={title}
               onChangeText={setTitle}
@@ -338,7 +360,6 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
               selectionColor={colors.primary}
             />
 
-            {/* Description row */}
             <View style={styles.detailRow}>
               <AlignLeft size={20} color={description.trim() ? colors.text : colors.textMuted} style={styles.rowIcon} />
               <TextInput
@@ -352,37 +373,26 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
               />
             </View>
 
-            {/* Goal progress row */}
-            {item.type === ITEM_TYPE.GOAL && (
-              <View style={styles.detailRow}>
-                <Target size={20} color={colors.primary} style={styles.rowIcon} />
-                <TextInput
-                  value={goalCurrentText}
-                  onChangeText={setGoalCurrentText}
-                  keyboardType="numeric"
-                  style={[styles.detailRowInput, { flex: 0, width: 70, color: colors.text }]}
-                  selectionColor={colors.primary}
-                  selectTextOnFocus
-                />
-                <Text style={styles.detailRowPlaceholder}>
-                  {` / ${item.goalConfig.targetValue}${item.goalConfig.unit ? ` ${item.goalConfig.unit}` : ''}`}
-                </Text>
-              </View>
-            )}
-
-            {/* Category row */}
-            {(settings?.categories ?? []).length > 0 && (
+            {(DEFAULT_CATEGORIES).length > 0 && (
               <View style={styles.categoryRow}>
                 <Tag size={18} color={categoryId ? colors.primary : colors.textMuted} style={styles.rowIcon} />
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryChips}>
-                  {(settings?.categories ?? []).map(cat => {
+                  {(DEFAULT_CATEGORIES).map(cat => {
                     const active = categoryId === cat.id
+                    const CategoryIcon = resolveCategoryIcon(cat.icon)
                     return (
                       <Pressable
                         key={cat.id}
                         onPress={() => setCategoryId(active ? undefined : cat.id)}
-                        style={[styles.categoryChip, active && { backgroundColor: colors.primary, borderColor: colors.primary }]}
+                        style={[
+                          styles.categoryChip,
+                          settings?.showCategoryIcons && { flexDirection: 'row', alignItems: 'center', gap: 6 },
+                          active && { backgroundColor: colors.primary, borderColor: colors.primary },
+                        ]}
                       >
+                        {settings?.showCategoryIcons && (
+                          <CategoryIcon size={13} color={active ? colors.onPrimary : cat.color} />
+                        )}
                         <Text style={[styles.categoryChipText, active && { color: colors.onPrimary }]}>{cat.name}</Text>
                       </Pressable>
                     )
@@ -391,7 +401,6 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
               </View>
             )}
 
-            {/* Category auto-suggestion */}
             {showCategorySuggestion && suggestedCategory && (
               <View style={styles.categorySuggestionRow}>
                 <Text style={styles.categorySuggestionLabel}>
@@ -414,7 +423,6 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
               </View>
             )}
 
-            {/* Study time (only for exam tasks in facultad category) */}
             {(categoryId === 'facultad' || suggestedCategoryId === 'facultad') && isExamTask(title) && (
               <View style={styles.studyTimeRow}>
                 <Text style={styles.studyTimeLabel}>Día de estudio</Text>
@@ -439,7 +447,6 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
               </View>
             )}
 
-            {/* Grade (only for exam tasks in facultad) */}
             {(categoryId === 'facultad' || suggestedCategoryId === 'facultad') && isExamTask(title) && (
               <View style={styles.gradeRow}>
                 <Text style={styles.studyTimeLabel}>Nota del examen</Text>
@@ -479,7 +486,6 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
 
             <View style={styles.rowDivider} />
 
-            {/* Location row */}
             <View>
               <View style={styles.detailRow}>
                 <Pressable
@@ -534,7 +540,6 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
 
             <View style={styles.rowDivider} />
 
-            {/* Deadline row */}
             <Pressable style={styles.detailRow} onPress={() => setShowDeadlinePicker(true)}>
               <CircleCheck size={20} color={deadline ? colors.text : colors.textMuted} style={styles.rowIcon} />
               {deadlineLabel ? (
@@ -554,7 +559,6 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
 
             <View style={styles.rowDivider} />
 
-            {/* Date / time row */}
             <Pressable style={styles.detailRow} onPress={() => setExpandDate((v) => !v)}>
               <Clock size={20} color={scheduledDate ? colors.primary : colors.textMuted} style={styles.rowIcon} />
               {dateLabel ? (
@@ -611,7 +615,6 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
 
             <View style={styles.rowDivider} />
 
-            {/* Repeat row */}
             <Pressable style={styles.detailRow} onPress={openRepeatPanel}>
               <Repeat size={20} color={repeatRule !== 'none' ? colors.primary : colors.textMuted} style={styles.rowIcon} />
               <Text style={repeatRule !== 'none' ? [styles.detailRowPlaceholder, { color: colors.primary }] : styles.detailRowPlaceholder}>
@@ -626,7 +629,6 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
 
             <View style={styles.rowDivider} />
 
-            {/* Reminders row */}
             <Pressable style={styles.detailRow} onPress={() => setExpandReminders((v) => !v)}>
               <Bell size={20} color={reminders.length > 0 ? colors.primary : colors.textMuted} style={styles.rowIcon} />
               <Text style={reminders.length > 0 ? [styles.detailRowPlaceholder, { color: colors.primary }] : styles.detailRowPlaceholder}>
@@ -652,6 +654,12 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
                 hasTravelConfig={Boolean(travelConfig)}
                 travelTimeResult={travelTimeResult}
                 onCalculateTravelTime={() => void handleCalculateTravelTime()}
+                transportMode={transportMode}
+                onChangeTransportMode={setTransportMode}
+                extraMinutes={extraMinutes}
+                onChangeExtraMinutes={setExtraMinutes}
+                departureReminderEnabled={departureReminderEnabled}
+                onChangeDepartureReminderEnabled={handleToggleDepartureReminder}
                 colors={colors}
                 indent
                 rowDividers
@@ -660,7 +668,6 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
 
             <View style={styles.rowDivider} />
 
-            {/* Subtasks */}
             {subtasks.map((sub) => (
               <View key={sub.id} style={styles.subtaskRow}>
                 <Pressable
@@ -676,7 +683,6 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
               </View>
             ))}
 
-            {/* New subtask input row */}
             <View style={styles.detailRow}>
               <CornerDownRight size={20} color={colors.textMuted} style={styles.rowIcon} />
               <TextInput
@@ -694,7 +700,6 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
             </View>
           </ScrollView>
 
-          {/* Bottom bar */}
           <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom + 8, 20) }]}>
             <Pressable
               style={({ pressed }) => [
@@ -1006,7 +1011,6 @@ const createStyles = (colors: ThemeTokens) =>
       color: colors.primary,
     },
 
-    // Reminder styles
     remindersPanel: {
       backgroundColor: colors.surfaceSecondary,
       borderRadius: 10,

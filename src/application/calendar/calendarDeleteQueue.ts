@@ -7,6 +7,7 @@ const BACKOFF_MS = [5 * 60_000, 15 * 60_000, 60 * 60_000, 6 * 60 * 60_000, 24 * 
 
 export interface PendingCalendarDelete {
   id: string
+  kind: 'event' | 'task'
   calendarId: string
   eventId: string
   itemTitle: string
@@ -29,6 +30,7 @@ async function persist(queue: PendingCalendarDelete[]): Promise<void> {
 }
 
 export async function enqueueDelete(
+  kind: 'event' | 'task',
   calendarId: string,
   eventId: string,
   itemTitle: string,
@@ -37,6 +39,7 @@ export async function enqueueDelete(
   if (queue.some((entry) => entry.eventId === eventId)) return // ya está en cola
   queue.push({
     id: `${Date.now()}-${eventId}`,
+    kind,
     calendarId,
     eventId,
     itemTitle,
@@ -48,7 +51,7 @@ export async function enqueueDelete(
 }
 
 export async function processQueue(
-  deleteEvent: (calendarId: string, eventId: string) => Promise<void>,
+  deleteResource: (kind: 'event' | 'task', calendarId: string, eventId: string) => Promise<void>,
   onExhausted: (itemTitle: string) => Promise<void>,
 ): Promise<void> {
   const queue = await load()
@@ -62,7 +65,7 @@ export async function processQueue(
 
   for (const entry of eligible) {
     try {
-      await deleteEvent(entry.calendarId, entry.eventId)
+      await deleteResource(entry.kind, entry.calendarId, entry.eventId)
       const idx = updated.findIndex((e) => e.id === entry.id)
       if (idx !== -1) updated.splice(idx, 1)
     } catch {

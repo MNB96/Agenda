@@ -1,8 +1,6 @@
 export interface CalendarInfo {
   id: string
   summary: string
-  primary?: boolean
-  selected?: boolean
 }
 
 export interface CalendarEvent {

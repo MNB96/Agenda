@@ -1,11 +1,10 @@
 import { useEffect } from 'react'
 import { Platform } from 'react-native'
 import { GoogleSignin } from '@react-native-google-signin/google-signin'
-import { useGoogleAuthStore, GOOGLE_TOKEN_TTL_SECONDS } from '../state/googleAuthStore'
+import { useGoogleAuthStore, GOOGLE_TOKEN_TTL_SECONDS, GOOGLE_OAUTH_SCOPES } from '../state/googleAuthStore'
 
 const CHECK_INTERVAL_MS = 30 * 1000
-// Refresh a bit before the token actually expires, so an active session never gets
-// caught with a genuinely-expired token — the check fires this many ms ahead of expiry.
+// Refresh this far ahead of expiry, so an active session never gets caught with a dead token.
 const REFRESH_MARGIN_MS = 5 * 60 * 1000
 
 export const useGoogleSessionLifecycleMobile = () => {
@@ -13,10 +12,8 @@ export const useGoogleSessionLifecycleMobile = () => {
 
   useEffect(() => {
     if (Platform.OS === 'web') return
-    // connectedEmail only gets cleared by an explicit "Desconectar" (clearSession); a
-    // transient refresh failure (markExpired) keeps it, which is exactly the signal we
-    // want here — keep retrying as long as the user hasn't actually disconnected, instead
-    // of giving up forever the first time a silent refresh fails (e.g. no network).
+    // connectedEmail survives a transient refresh failure (markExpired) — only an explicit
+    // "Desconectar" clears it — so this keeps retrying instead of giving up after one failure.
     if (!connectedEmail) return
 
     let cancelled = false
@@ -25,11 +22,9 @@ export const useGoogleSessionLifecycleMobile = () => {
       const stillValid = Boolean(accessToken) && Boolean(expiresAt) && Date.now() < expiresAt! - REFRESH_MARGIN_MS
       if (stillValid) return
 
-      // The token is about to expire (or already has, or a previous attempt failed).
-      // Play Services keeps its own signed-in session, so try a silent refresh from that
-      // before giving up and forcing the user to reconnect manually.
+      // Play Services keeps its own session, so try a silent refresh before forcing reconnect.
       try {
-        GoogleSignin.configure({ scopes: ['https://www.googleapis.com/auth/calendar'] })
+        GoogleSignin.configure({ scopes: GOOGLE_OAUTH_SCOPES })
         if (!GoogleSignin.hasPreviousSignIn()) throw new Error('no previous session')
         const result = await GoogleSignin.signInSilently()
         if (result.type !== 'success') throw new Error('silent sign-in did not succeed')

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { settingsRepository } from '../../app/container'
-import { validateSettings, createLicenseUsage, type LicenseUsage, type Settings } from '../../domain/settings/types'
+import { updateSettings, createLicenseUsage, DEFAULT_SETTINGS, type LicenseUsage, type Settings } from '../../domain/settings/types'
 
 const SETTINGS_KEY = ['settings']
 const LICENSES_KEY = ['licenses']
@@ -13,10 +13,11 @@ export const useSettings = () => {
     queryFn: () => settingsRepository.get(),
   })
 
+  // Patch-and-merge via updateSettings (validates), so callers don't spread the full object.
   const saveMutation = useMutation({
-    mutationFn: (next: Settings) => {
-      validateSettings(next)
-      return settingsRepository.save(next)
+    mutationFn: (patch: Partial<Settings>) => {
+      const current = query.data ?? DEFAULT_SETTINGS
+      return settingsRepository.save(updateSettings(current, patch))
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: SETTINGS_KEY }),
   })

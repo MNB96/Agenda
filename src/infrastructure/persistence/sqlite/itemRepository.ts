@@ -1,5 +1,4 @@
-import type { ItemRepository } from '../../../domain/items/repositories'
-import type { Item } from '../../../domain/items/types'
+import type { Item, ItemRepository } from '../../../domain/items'
 import { getDb } from './db'
 import { hydrateItem, ITEM_COLUMNS, ITEM_PLACEHOLDERS, toItemRowParams } from './itemRow'
 
@@ -7,17 +6,21 @@ interface ItemRow {
   data: string
 }
 
+// Drops rows hydrateItem can't reconstruct (corrupted/contradictory JSON) instead of propagating undefined.
+const hydrateRows = (rows: ItemRow[]): Item[] =>
+  rows.map((row) => hydrateItem(JSON.parse(row.data))).filter((item): item is Item => item !== undefined)
+
 export class SQLiteItemRepository implements ItemRepository {
   async list(): Promise<Item[]> {
     const db = await getDb()
     const rows = await db.getAllAsync<ItemRow>('SELECT data FROM items')
-    return rows.map((row) => hydrateItem(JSON.parse(row.data)))
+    return hydrateRows(rows)
   }
 
   async listActive(): Promise<Item[]> {
     const db = await getDb()
     const rows = await db.getAllAsync<ItemRow>("SELECT data FROM items WHERE status != 'completed'")
-    return rows.map((row) => hydrateItem(JSON.parse(row.data)))
+    return hydrateRows(rows)
   }
 
   async listCompleted(limit: number, offset: number): Promise<Item[]> {
@@ -26,7 +29,7 @@ export class SQLiteItemRepository implements ItemRepository {
       "SELECT data FROM items WHERE status = 'completed' ORDER BY completedAt DESC LIMIT ? OFFSET ?",
       [limit, offset],
     )
-    return rows.map((row) => hydrateItem(JSON.parse(row.data)))
+    return hydrateRows(rows)
   }
 
   async listCompletedByCategory(categoryId: string, limit: number): Promise<Item[]> {
@@ -35,10 +38,10 @@ export class SQLiteItemRepository implements ItemRepository {
       "SELECT data FROM items WHERE status = 'completed' AND categoryId = ? ORDER BY completedAt DESC LIMIT ?",
       [categoryId, limit],
     )
-    return rows.map((row) => hydrateItem(JSON.parse(row.data)))
+    return hydrateRows(rows)
   }
 
-  async listArchiveEligible(completedBefore: string): Promise<Item[]> {
+  async listPurgeEligible(completedBefore: string): Promise<Item[]> {
     const db = await getDb()
     const rows = await db.getAllAsync<ItemRow>(
       `SELECT data FROM items
@@ -46,7 +49,7 @@ export class SQLiteItemRepository implements ItemRepository {
          AND googleCalendarEventId IS NOT NULL`,
       [completedBefore],
     )
-    return rows.map((row) => hydrateItem(JSON.parse(row.data)))
+    return hydrateRows(rows)
   }
 
   async getById(id: string): Promise<Item | undefined> {
@@ -63,7 +66,7 @@ export class SQLiteItemRepository implements ItemRepository {
       `SELECT data FROM items WHERE parentId IN (${placeholders})`,
       parentIds,
     )
-    return rows.map((row) => hydrateItem(JSON.parse(row.data)))
+    return hydrateRows(rows)
   }
 
   async save(item: Item): Promise<Item> {
@@ -78,8 +81,7 @@ export class SQLiteItemRepository implements ItemRepository {
   async saveMany(items: Item[]): Promise<Item[]> {
     if (items.length === 0) return items
     const db = await getDb()
-    // Una sola transacción para todo el lote en vez de N commits separados (uno por save()) —
-    // se nota en useCalendarSyncRecovery cuando sincroniza varios items de golpe con Calendar.
+    // Una sola transacción para todo el lote en vez de N commits separados.
     await db.withTransactionAsync(async () => {
       for (const item of items) {
         await db.runAsync(

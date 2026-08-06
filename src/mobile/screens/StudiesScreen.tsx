@@ -10,12 +10,10 @@ import { useLicenseUsages, useSettings } from '../../application/settings/useSet
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
 import { isExamTask } from '../../domain/items/services/examDetector'
-import type { Item } from '../../domain/items/types'
+import type { Item } from '../../domain/items'
 
-// El cache principal de useItems() solo trae una página de items completados (para no
-// crecer sin límite en memoria), así que un examen viejo de facultad podría no estar ahí
-// aunque siga siendo uno de los últimos 5 completados de esa categoría específicamente.
-// Se pide aparte, acotado a la categoría, usando idx_items_status.
+// useItems() solo pagina completados en general; un examen viejo de facultad podría no estar
+// ahí, así que se pide aparte, acotado a la categoría.
 const COMPLETED_FACULTAD_QUERY_LIMIT = 20
 
 interface StudiesScreenProps {
@@ -157,14 +155,13 @@ export const StudiesScreen = ({ onOpenItemEditor }: StudiesScreenProps) => {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
 
-      {/* Resumen del cuatrimestre */}
       <View style={styles.summaryCard}>
         <Text style={styles.summaryTitle}>{semesterSummary.label}</Text>
         {semesterSummary.next ? (
           <View style={styles.summaryNextRow}>
             <View style={styles.summaryNextDot} />
             <View style={{ flex: 1 }}>
-              <Text style={styles.summaryNextLabel}>Próximo examen</Text>
+              <Text style={styles.summaryNextLabel}>Próximo fecha importante</Text>
               <Text style={styles.summaryNextExam} numberOfLines={1}>{semesterSummary.next.title}</Text>
             </View>
             {semesterSummary.nextDays !== null && (
@@ -193,13 +190,11 @@ export const StudiesScreen = ({ onOpenItemEditor }: StudiesScreenProps) => {
         </View>
       </View>
 
-      {/* Licencias */}
       {availableDays > 0 && (
         <>
           <Text style={styles.sectionHeader}>Licencias por examen</Text>
           <View style={styles.card}>
 
-            {/* Barra de progreso */}
             <View style={styles.licenseBarSection}>
               <View style={styles.licenseBarTrack}>
                 {licenseStats.usedDays > 0 && (
@@ -243,7 +238,6 @@ export const StudiesScreen = ({ onOpenItemEditor }: StudiesScreenProps) => {
               </View>
             </View>
 
-            {/* Planificadas (próximas) */}
             {licenseStats.planned.length > 0 && (
               <View style={styles.licenseListSection}>
                 <Text style={styles.licenseListTitle}>Planificadas</Text>
@@ -260,7 +254,6 @@ export const StudiesScreen = ({ onOpenItemEditor }: StudiesScreenProps) => {
               </View>
             )}
 
-            {/* Usadas (pasadas) */}
             {licenseStats.past.length > 0 && (
               <View style={styles.licenseListSection}>
                 <Text style={styles.licenseListTitle}>Usadas</Text>
@@ -288,7 +281,6 @@ export const StudiesScreen = ({ onOpenItemEditor }: StudiesScreenProps) => {
         </>
       )}
 
-      {/* Exámenes próximos */}
       {upcomingExams.length > 0 && (
         <>
           <Text style={styles.sectionHeader}>Exámenes</Text>
@@ -298,7 +290,6 @@ export const StudiesScreen = ({ onOpenItemEditor }: StudiesScreenProps) => {
         </>
       )}
 
-      {/* Otras tareas de facultad */}
       {otherFacultad.length > 0 && (
         <>
           <Text style={styles.sectionHeader}>Otras tareas</Text>
@@ -330,7 +321,6 @@ export const StudiesScreen = ({ onOpenItemEditor }: StudiesScreenProps) => {
         </>
       )}
 
-      {/* Exámenes rendidos */}
       {completedExams.length > 0 && (
         <>
           <Text style={styles.sectionHeader}>Rendidos</Text>
@@ -367,7 +357,6 @@ const createStyles = (colors: ThemeTokens) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background, paddingHorizontal: 14, paddingTop: 10 },
   content: { paddingBottom: 32 },
 
-  // Summary card
   summaryCard: {
     backgroundColor: colors.surface,
     borderRadius: 16,
@@ -397,7 +386,6 @@ const createStyles = (colors: ThemeTokens) => StyleSheet.create({
   summaryFooterValue: { fontWeight: '700', color: colors.textSecondary },
   summaryFooterDot: { fontSize: 12, color: colors.border },
 
-  // Section
   sectionHeader: {
     fontSize: 12,
     fontWeight: '700',
@@ -416,7 +404,6 @@ const createStyles = (colors: ThemeTokens) => StyleSheet.create({
     overflow: 'hidden',
   },
 
-  // Exam rows
   examRow: { flexDirection: 'row', alignItems: 'center', padding: 12, gap: 10 },
   examRowBorder: { borderTopWidth: 1, borderColor: colors.border },
   examUrgencyBar: { width: 3, height: 36, borderRadius: 2 },
@@ -436,14 +423,12 @@ const createStyles = (colors: ThemeTokens) => StyleSheet.create({
   daysNumber: { fontSize: 16, fontWeight: '700', lineHeight: 20 },
   daysLabel: { fontSize: 9, fontWeight: '500' },
 
-  // Task rows
   taskRow: { flexDirection: 'row', alignItems: 'center', padding: 12, gap: 10 },
   taskRowBorder: { borderTopWidth: 1, borderColor: colors.border },
   taskDot: { width: 6, height: 6, borderRadius: 999, backgroundColor: colors.border },
   taskTitle: { fontSize: 14, fontWeight: '500', color: colors.text },
   taskDate: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
   completedTitle: { fontSize: 14, color: colors.textMuted, textDecorationLine: 'line-through', flex: 1, marginLeft: 6 },
-  // License card
   licenseBarSection: { padding: 14, gap: 10 },
   licenseBarTrack: {
     height: 10,

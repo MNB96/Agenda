@@ -14,12 +14,10 @@ export interface LicenseUsageInput {
   note?: string
 }
 
-// A "day of study leave" logged for less than a day, or none at all, isn't a real usage —
-// today the only two values the UI ever produces are 0.5 (half day) and 1 (full day), but this
-// protects the invariant regardless of which call site constructs one.
+// Medio día o día completo son los únicos usos reales de una licencia por examen.
 export const createLicenseUsage = (input: LicenseUsageInput): LicenseUsage => {
-  if (input.days <= 0) {
-    throw new Error('Los días de licencia deben ser mayores a 0.')
+  if (input.days !== 0.5 && input.days !== 1) {
+    throw new Error('Los días de licencia deben ser 0.5 (medio día) o 1 (día completo).')
   }
   return { ...input }
 }

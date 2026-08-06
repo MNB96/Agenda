@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { AppState } from 'react-native'
-import { calendarRepository } from '../../app/container'
+import { calendarRepository, taskRepository } from '../../app/container'
 import { isGoogleCalendarAuthError } from '../../infrastructure/calendar/errors'
 import { notifyCalendarDeleteFailed } from '../../infrastructure/notifications/itemNotifications'
 import { processQueue } from './calendarDeleteQueue'
@@ -16,9 +16,13 @@ export const useCalendarDeleteQueue = (
     isProcessing.current = true
     try {
       await processQueue(
-        async (calendarId, eventId) => {
+        async (kind, calendarId, eventId) => {
           try {
-            await calendarRepository.deleteEvent(token, calendarId, eventId)
+            if (kind === 'task') {
+              await taskRepository.deleteTask(token, eventId)
+            } else {
+              await calendarRepository.deleteEvent(token, calendarId, eventId)
+            }
           } catch (error) {
             if (isGoogleCalendarAuthError(error)) markUnauthorized()
             throw error

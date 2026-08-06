@@ -1,9 +1,16 @@
 import { useReducer } from 'react'
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
-import { AlarmClock, Bell, Check, ChevronDown, Navigation, Pin, X } from 'lucide-react-native'
-import type { ReminderConfigInput } from '../../domain/items/types'
+import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native'
+import { AlarmClock, Bell, Bike, Bus, Car, Check, ChevronDown, Footprints, Navigation, Pin, X } from 'lucide-react-native'
+import type { ReminderConfigInput, TransportMode } from '../../domain/items'
 import type { ThemeTokens } from '../theme/tokens'
 import { createId } from '../../utils/id'
+
+const TRANSPORT_MODE_OPTIONS: { value: TransportMode; Icon: typeof Car }[] = [
+  { value: 'driving', Icon: Car },
+  { value: 'walking', Icon: Footprints },
+  { value: 'transit', Icon: Bus },
+  { value: 'cycling', Icon: Bike },
+]
 
 const REMINDER_PRESETS: { label: string; minutesBefore: number }[] = [
   { label: 'A la hora', minutesBefore: 0 },
@@ -66,6 +73,12 @@ interface ReminderPanelProps {
   hasTravelConfig: boolean
   travelTimeResult: string | null
   onCalculateTravelTime: () => void
+  transportMode: TransportMode
+  onChangeTransportMode: (mode: TransportMode) => void
+  extraMinutes: number
+  onChangeExtraMinutes: (minutes: number) => void
+  departureReminderEnabled: boolean
+  onChangeDepartureReminderEnabled: (value: boolean) => void
   colors: ThemeTokens
   /** ItemDetailModal indents the panel under its row icon; QuickAddSheet doesn't. */
   indent?: boolean
@@ -85,6 +98,12 @@ export const ReminderPanel = ({
   hasTravelConfig,
   travelTimeResult,
   onCalculateTravelTime,
+  transportMode,
+  onChangeTransportMode,
+  extraMinutes,
+  onChangeExtraMinutes,
+  departureReminderEnabled,
+  onChangeDepartureReminderEnabled,
   colors,
   indent,
   rowDividers,
@@ -113,7 +132,6 @@ export const ReminderPanel = ({
 
   return (
     <View style={[styles.container, indent && styles.containerIndented]}>
-      {/* Recordatorios ya agregados */}
       {reminders.map((reminder) => (
         <View key={reminder.id} style={styles.addedRow}>
           <Text style={styles.addedText}>{formatReminderLabel(reminder)}</Text>
@@ -131,7 +149,6 @@ export const ReminderPanel = ({
         </View>
       ))}
 
-      {/* Selector de tipo */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.typeRow}>
         <Text style={styles.typeLabel}>Tipo:</Text>
         <Pressable
@@ -163,7 +180,6 @@ export const ReminderPanel = ({
         </Pressable>
       </ScrollView>
 
-      {/* Presets */}
       {REMINDER_PRESETS.map((preset) => {
         const active = reminders.some((reminder) => reminder.minutesBefore === preset.minutesBefore)
         return (
@@ -176,24 +192,55 @@ export const ReminderPanel = ({
         )
       })}
 
-      {/* Travel time — solo si hay dirección y una fecha relevante */}
       {showTravelButton && (
-        <Pressable style={styles.presetRow} onPress={onCalculateTravelTime} disabled={travelTimeLoading}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-            <Navigation size={13} color={colors.primary} />
-            <Text style={[styles.presetText, { color: colors.primary }]}>
-              {travelTimeLoading
-                ? 'Calculando...'
-                : hasTravelConfig
-                  ? 'Recalcular salida (tráfico actual)'
-                  : 'Recordarme cuándo salir'}
-            </Text>
+        <>
+          <View style={styles.typeRow}>
+            <Text style={styles.typeLabel}>Cómo viajás:</Text>
+            {TRANSPORT_MODE_OPTIONS.map(({ value, Icon }) => (
+              <Pressable
+                key={value}
+                style={[styles.typeBtn, transportMode === value && styles.typeBtnActive]}
+                onPress={() => onChangeTransportMode(value)}
+              >
+                <Icon size={14} color={transportMode === value ? colors.primary : colors.textMuted} />
+              </Pressable>
+            ))}
           </View>
-          {travelTimeResult && <Text style={{ fontSize: 12, color: colors.textMuted }}>{travelTimeResult}</Text>}
-        </Pressable>
+          <View style={styles.presetRow}>
+            <Text style={styles.presetText}>Minutos extra (estacionar, esperar...)</Text>
+            <TextInput
+              value={String(extraMinutes)}
+              onChangeText={(text) => {
+                const parsed = parseInt(text, 10)
+                onChangeExtraMinutes(isNaN(parsed) || parsed < 0 ? 0 : parsed)
+              }}
+              keyboardType="number-pad"
+              style={styles.customInput}
+              maxLength={3}
+              selectTextOnFocus
+              selectionColor={colors.primary}
+            />
+          </View>
+          <View style={styles.presetRow}>
+            <Text style={styles.presetText}>Recordarme cuándo salir</Text>
+            <Switch value={departureReminderEnabled} onValueChange={onChangeDepartureReminderEnabled} />
+          </View>
+          <Pressable style={styles.presetRow} onPress={onCalculateTravelTime} disabled={travelTimeLoading}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+              <Navigation size={13} color={colors.primary} />
+              <Text style={[styles.presetText, { color: colors.primary }]}>
+                {travelTimeLoading
+                  ? 'Calculando...'
+                  : hasTravelConfig
+                    ? 'Recalcular tiempo de viaje (tráfico actual)'
+                    : 'Calcular tiempo de viaje'}
+              </Text>
+            </View>
+            {travelTimeResult && <Text style={{ fontSize: 12, color: colors.textMuted }}>{travelTimeResult}</Text>}
+          </Pressable>
+        </>
       )}
 
-      {/* Personalizado */}
       <Pressable style={styles.presetRow} onPress={() => dispatch({ type: 'patch', patch: { showInput: !draft.showInput } })}>
         <Text style={styles.presetText}>Personalizado...</Text>
         <ChevronDown

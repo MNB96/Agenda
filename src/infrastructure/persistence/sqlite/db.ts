@@ -1,18 +1,17 @@
 import * as SQLite from 'expo-sqlite'
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import type { Item } from '../../../domain/items/types'
+import type { Item } from '../../../domain/items'
 import { ITEM_COLUMNS, ITEM_PLACEHOLDERS, toItemRowParams } from './itemRow'
 
 const OLD_ITEMS_KEY = '@agenda/items'
 const MIGRATION_FLAG_KEY = 'agenda:sqlite-items-migration-v1'
 const FIELD_RENAME_MIGRATION_FLAG_KEY = 'agenda:calendar-link-field-rename-v1'
+const TYPE_UNIFICATION_MIGRATION_FLAG_KEY = 'agenda:item-type-unification-v1'
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null
 
-// One-time move from the old single-blob AsyncStorage key into SQLite. Runs as part of
-// getDb()'s init chain (not via the SQLiteItemRepository, which would call getDb() again
-// and deadlock on the same in-flight promise) so every repository call is guaranteed to
-// see the migrated data, regardless of call order at startup.
+// One-time move from the old single-blob AsyncStorage key into SQLite. Runs inside getDb()'s
+// init chain, not via SQLiteItemRepository, to avoid deadlocking on the same in-flight promise.
 const migrateFromAsyncStorage = async (db: SQLite.SQLiteDatabase): Promise<void> => {
   const alreadyMigrated = await AsyncStorage.getItem(MIGRATION_FLAG_KEY)
   if (alreadyMigrated) return
@@ -38,11 +37,9 @@ const migrateFromAsyncStorage = async (db: SQLite.SQLiteDatabase): Promise<void>
   await AsyncStorage.setItem(MIGRATION_FLAG_KEY, '1')
 }
 
-// One-time rename of Item.googleCalendarLink -> calendarLink (and its .source -> .origin) and
-// Item.syncToGoogleCalendar -> syncToCalendar inside the stored JSON blob, to keep the domain
-// model provider-agnostic. Without this, rows saved before the rename would silently read as
-// "not linked to a calendar" under the new field names — and useCalendarSyncRecovery would then
-// create a duplicate Google Calendar event for every item that already had a real one.
+// One-time field rename inside the stored JSON blob (googleCalendarLink -> calendarLink,
+// syncToGoogleCalendar -> syncToCalendar). Without it, old rows read as unlinked and
+// useCalendarSyncRecovery would create a duplicate Calendar event.
 const migrateCalendarLinkFieldNames = async (db: SQLite.SQLiteDatabase): Promise<void> => {
   const alreadyMigrated = await AsyncStorage.getItem(FIELD_RENAME_MIGRATION_FLAG_KEY)
   if (alreadyMigrated) return
@@ -85,14 +82,34 @@ const migrateCalendarLinkFieldNames = async (db: SQLite.SQLiteDatabase): Promise
   await AsyncStorage.setItem(FIELD_RENAME_MIGRATION_FLAG_KEY, '1')
 }
 
+// One-time collapse of the retired 'event'/'deadline' types into 'task' — otherwise old rows fail buildItem's unknown-type check and vanish.
+const migrateLegacyItemTypes = async (db: SQLite.SQLiteDatabase): Promise<void> => {
+  const alreadyMigrated = await AsyncStorage.getItem(TYPE_UNIFICATION_MIGRATION_FLAG_KEY)
+  if (alreadyMigrated) return
+
+  const rows = await db.getAllAsync<{ id: string; data: string }>(
+    "SELECT id, data FROM items WHERE type IN ('event', 'deadline')",
+  )
+  await db.withTransactionAsync(async () => {
+    for (const row of rows) {
+      try {
+        const parsed = JSON.parse(row.data) as Record<string, unknown>
+        parsed.type = 'task'
+        await db.runAsync('UPDATE items SET type = ?, data = ? WHERE id = ?', ['task', JSON.stringify(parsed), row.id])
+      } catch {
+        // Fila con JSON corrupto: no hay nada seguro que migrar, se deja como está.
+      }
+    }
+  })
+
+  await AsyncStorage.setItem(TYPE_UNIFICATION_MIGRATION_FLAG_KEY, '1')
+}
+
 export const getDb = (): Promise<SQLite.SQLiteDatabase> => {
   if (!dbPromise) {
     dbPromise = SQLite.openDatabaseAsync('agenda.db').then(async (db) => {
       await db.execAsync('PRAGMA journal_mode = WAL;')
-      // Con WAL activo, NORMAL es la combinación que recomienda la propia documentación de
-      // SQLite: mucho menos fsync por escritura que FULL, sin el riesgo de corrupción que
-      // synchronous=OFF tendría — como mucho se puede perder el último commit ante un
-      // apagón/crash del SO (no de la app), aceptable para una agenda personal.
+      // NORMAL + WAL: mucho menos fsync que FULL, riesgo aceptable de perder solo el último commit.
       await db.execAsync('PRAGMA synchronous = NORMAL;')
       await db.execAsync(`
         CREATE TABLE IF NOT EXISTS items (
@@ -116,6 +133,7 @@ export const getDb = (): Promise<SQLite.SQLiteDatabase> => {
       `)
       await migrateFromAsyncStorage(db)
       await migrateCalendarLinkFieldNames(db)
+      await migrateLegacyItemTypes(db)
       return db
     })
   }

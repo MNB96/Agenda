@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { AppState } from 'react-native'
-import { calendarRepository, itemRepository } from '../../app/container'
-import { isGoogleCalendarAuthError } from '../../infrastructure/calendar/errors'
-import { resolveEventDateTimes } from '../../domain/items/services/eventDateTimes'
+import { itemRepository } from '../../app/container'
+import { syncItemToCalendar } from './itemCalendarSync'
 import { useSettings } from '../settings/useSettings'
 import { useItems } from '../items/useItems'
-import { Item } from '../../domain/items/types'
+import { Item } from '../../domain/items'
 
 export const useCalendarSyncRecovery = (
   accessToken: string | null,
@@ -24,14 +23,11 @@ export const useCalendarSyncRecovery = (
     isProcessing.current = true
     try {
       const items = await itemRepository.list()
-      // No basta con mirar calendarSyncPending: tareas creadas antes de que existiera esa
-      // marca (o cuando algo falló en silencio) quedaron huérfanas para siempre, sin la
-      // marca puesta y sin link. Cualquier tarea con fecha que quiera sincronizar y todavía
-      // no tenga el link de Google es candidata — tenga o no la marca — además de las que
-      // sí tienen link pero están marcadas pendientes (reintento de una actualización fallida).
+      // No alcanza con calendarSyncPending: tareas de antes de esa marca quedaron sin link
+      // y sin marca — cualquier tarea con fecha y sin link de Google es candidata también.
       const pending = items.filter(
         (i) =>
-          (i.startDate || i.startTime) &&
+          (i.startDate || i.startTime || i.deadline) &&
           i.syncToCalendar !== false &&
           (i.calendarSyncPending || !i.calendarLink),
       )
@@ -41,59 +37,17 @@ export const useCalendarSyncRecovery = (
       const syncedItems: Item[] = []
 
       for (const item of pending) {
-        const dateTimes = resolveEventDateTimes(item)
-        if (!dateTimes) continue
-
-        try {
-          let updated = item
-          if (item.calendarLink) {
-            await calendarRepository.updateEvent(
-              token,
-              item.calendarLink.calendarId,
-              item.calendarLink.eventId,
-              {
-                summary: item.title,
-                description: item.description,
-                location: item.location,
-                startDateTime: dateTimes.start,
-                endDateTime: dateTimes.end,
-                allDay: dateTimes.allDay,
-              },
-            )
-            updated = Item.update(item, {
-              calendarSyncPending: undefined,
-              calendarLink: {
-                ...item.calendarLink,
-                lastSyncedAt: new Date().toISOString(),
-              },
-            })
-          } else {
-            const created = await calendarRepository.createEvent(token, calendarId, {
-              summary: item.title,
-              description: item.description,
-              location: item.location,
-              startDateTime: dateTimes.start,
-              endDateTime: dateTimes.end,
-              allDay: dateTimes.allDay,
-            })
-            updated = Item.update(item, {
-              calendarSyncPending: undefined,
-              calendarLink: {
-                calendarId,
-                eventId: created.eventId,
-                origin: 'app',
-                lastSyncedAt: new Date().toISOString(),
-              },
-            })
-          }
-          syncedItems.push(updated)
-        } catch (error) {
-          if (isGoogleCalendarAuthError(error)) {
+        let authFailed = false
+        const updated = await syncItemToCalendar(item, {
+          accessToken: token,
+          calendarId,
+          markUnauthorized: () => {
+            authFailed = true
             markUnauthorized()
-            break
-          }
-          // Error de red u otro: se reintentará en el próximo foreground
-        }
+          },
+        })
+        if (authFailed) break
+        if (!updated.calendarSyncPending) syncedItems.push(updated)
         await new Promise<void>((r) => setTimeout(r, 400))
       }
 

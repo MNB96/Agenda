@@ -1,11 +1,12 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
-import { GraduationCap, ListTodo, Settings } from 'lucide-react-native'
+import { GraduationCap, ListTodo, Settings, Target } from 'lucide-react-native'
 import { Pressable, StyleSheet } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { StudiesScreen } from '../screens/StudiesScreen'
 import { TaskScreen } from '../screens/TaskScreen'
+import { GoalsScreen } from '../screens/GoalsScreen'
 import { useAppTheme } from '../theme/useAppTheme'
 
 const Tab = createBottomTabNavigator()
@@ -15,9 +16,10 @@ export const TAB_BAR_HEIGHT = 70
 interface MainTabsProps {
   onOpenSettings: () => void
   onOpenItemEditor: (itemId: string) => void
+  onOpenGoalEditor: (itemId: string) => void
 }
 
-export const MainTabs = ({ onOpenSettings, onOpenItemEditor }: MainTabsProps) => {
+export const MainTabs = ({ onOpenSettings, onOpenItemEditor, onOpenGoalEditor }: MainTabsProps) => {
   const { colors } = useAppTheme()
   const { bottom } = useSafeAreaInsets()
 
@@ -63,6 +65,15 @@ export const MainTabs = ({ onOpenSettings, onOpenItemEditor }: MainTabsProps) =>
         }}
       >
         {() => <StudiesScreen onOpenItemEditor={onOpenItemEditor} />}
+      </Tab.Screen>
+      <Tab.Screen
+        name="Metas"
+        options={{
+          headerTitle: `Metas ${new Date().getFullYear()}`,
+          tabBarIcon: ({ color, size }) => <Target color={color} size={size} />,
+        }}
+      >
+        {() => <GoalsScreen onOpenGoalEditor={onOpenGoalEditor} />}
       </Tab.Screen>
     </Tab.Navigator>
   )

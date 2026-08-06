@@ -1,16 +1,17 @@
 import { useEffect, useReducer } from 'react'
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import DateTimePicker from '@react-native-community/datetimepicker'
-import { addMonths, format, parse } from 'date-fns'
+import { addMonths, format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { Check, ChevronDown, ChevronLeft } from 'lucide-react-native'
 import type { EdgeInsets } from 'react-native-safe-area-context'
-import type { RepeatConfigInput, RepeatRule } from '../../domain/items/types'
+import type { RepeatConfigInput, RepeatRule } from '../../domain/items'
 import type { ThemeTokens } from '../theme/tokens'
 
 const WEEKDAY_SHORT = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
 
 export const UNIT_OPTIONS: { label: string; value: RepeatConfigInput['unit'] }[] = [
+  { label: 'hora', value: 'hour' },
   { label: 'día', value: 'day' },
   { label: 'semana', value: 'week' },
   { label: 'mes', value: 'month' },
@@ -18,22 +19,20 @@ export const UNIT_OPTIONS: { label: string; value: RepeatConfigInput['unit'] }[]
 ]
 
 const UNIT_TO_RULE: Record<RepeatConfigInput['unit'], RepeatRule> = {
-  day: 'daily', week: 'weekly', month: 'monthly', year: 'yearly',
+  hour: 'hourly', day: 'daily', week: 'weekly', month: 'monthly', year: 'yearly',
 }
 export const RULE_TO_UNIT: Partial<Record<RepeatRule, RepeatConfigInput['unit']>> = {
-  daily: 'day', weekly: 'week', monthly: 'month', yearly: 'year',
+  hourly: 'hour', daily: 'day', weekly: 'week', monthly: 'month', yearly: 'year',
 }
 
 interface RepeatDraft {
   unit: RepeatConfigInput['unit']
   interval: number
   daysOfWeek: number[]
-  time?: string
   end: RepeatConfigInput['end']
   endDate?: string
   occurrences: number
   showUnitPicker: boolean
-  showTimePicker: boolean
   showEndDatePicker: boolean
 }
 
@@ -41,12 +40,10 @@ const buildInitialDraft = (rule: RepeatRule, config?: RepeatConfigInput): Repeat
   unit: RULE_TO_UNIT[rule] ?? 'week',
   interval: config?.interval ?? 1,
   daysOfWeek: config?.daysOfWeek ?? [],
-  time: config?.time,
   end: config?.end ?? 'never',
   endDate: config?.endDate,
   occurrences: config?.occurrences ?? 13,
   showUnitPicker: false,
-  showTimePicker: false,
   showEndDatePicker: false,
 })
 
@@ -100,7 +97,6 @@ export const RepeatPanel = ({ visible, rule, config, startDate, onClose, onDone,
       unit: draft.unit,
       interval: draft.interval,
       daysOfWeek: draft.unit === 'week' ? draft.daysOfWeek : undefined,
-      time: draft.time,
       end: draft.end,
       endDate: draft.end === 'on_date' ? draft.endDate : undefined,
       occurrences: draft.end === 'after_occurrences' ? draft.occurrences : undefined,
@@ -128,7 +124,6 @@ export const RepeatPanel = ({ visible, rule, config, startDate, onClose, onDone,
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
-            {/* Todos los [N] [unidad] */}
             <Text style={styles.sectionLabel}>Todos los</Text>
             <View style={styles.intervalRow}>
               <TextInput
@@ -171,7 +166,6 @@ export const RepeatPanel = ({ visible, rule, config, startDate, onClose, onDone,
               </View>
             )}
 
-            {/* Días de la semana (solo weekly) */}
             {draft.unit === 'week' && (
               <View style={styles.weekdayCircleRow}>
                 {WEEKDAY_SHORT.map((label, idx) => {
@@ -189,16 +183,6 @@ export const RepeatPanel = ({ visible, rule, config, startDate, onClose, onDone,
               </View>
             )}
 
-            {/* Establecer hora */}
-            <Pressable style={styles.fieldBox} onPress={() => dispatch({ type: 'patch', patch: { showTimePicker: true } })}>
-              <Text style={{ fontSize: 15, color: draft.time ? colors.text : colors.textMuted }}>
-                {draft.time ?? 'Establecer hora'}
-              </Text>
-            </Pressable>
-
-            <View style={styles.divider} />
-
-            {/* Comienza */}
             <Text style={[styles.sectionLabel, { marginTop: 14 }]}>Comienza</Text>
             <View style={styles.fieldBox}>
               <Text style={{ fontSize: 15, color: colors.text }}>
@@ -210,7 +194,6 @@ export const RepeatPanel = ({ visible, rule, config, startDate, onClose, onDone,
 
             <View style={styles.divider} />
 
-            {/* Finaliza */}
             <Text style={[styles.sectionLabel, { marginTop: 14 }]}>Finaliza</Text>
 
             <Pressable style={styles.radioRow} onPress={() => dispatch({ type: 'patch', patch: { end: 'never' } })}>
@@ -274,19 +257,6 @@ export const RepeatPanel = ({ visible, rule, config, startDate, onClose, onDone,
       </Modal>
 
       {/* Native pickers outside the Modal to avoid the Android nested-dialog issue */}
-      {visible && draft.showTimePicker && (
-        <DateTimePicker
-          value={draft.time ? parse(draft.time, 'HH:mm', new Date()) : new Date()}
-          mode="time"
-          is24Hour
-          display={Platform.OS === 'ios' ? 'spinner' : 'clock'}
-          onChange={(event, date) => {
-            if (Platform.OS !== 'ios') dispatch({ type: 'patch', patch: { showTimePicker: false } })
-            if (event.type === 'dismissed' || !date) return
-            dispatch({ type: 'patch', patch: { time: format(date, 'HH:mm') } })
-          }}
-        />
-      )}
       {visible && draft.showEndDatePicker && (
         <DateTimePicker
           value={draft.endDate ? new Date(draft.endDate + 'T00:00:00') : addMonths(new Date(), 3)}

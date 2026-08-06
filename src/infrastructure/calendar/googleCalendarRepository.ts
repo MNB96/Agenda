@@ -31,14 +31,12 @@ export class GoogleCalendarRepository implements CalendarRepository {
     return (data.items ?? []).map((entry) => ({
       id: String(entry.id),
       summary: String(entry.summary ?? 'Calendario sin nombre'),
-      primary: Boolean(entry.primary),
-      selected: Boolean(entry.selected),
     }))
   }
 
   async listEvents(
     accessToken: string,
-    calendarIds: string[],
+    calendarIds: readonly string[],
     params: { timeMin: string; timeMax: string },
   ): Promise<CalendarEvent[]> {
     const events = await Promise.all(

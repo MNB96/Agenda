@@ -1,4 +1,4 @@
-import type { ItemCategory } from '../types'
+import type { ItemCategory } from '../Item.types'
 
 const CATEGORY_KEYWORDS: { categoryId: string; keywords: string[] }[] = [
   {
@@ -49,7 +49,7 @@ const CATEGORY_KEYWORDS: { categoryId: string; keywords: string[] }[] = [
 
 export const detectCategoryFromText = (
   text: string,
-  categories: ItemCategory[],
+  categories: readonly ItemCategory[],
 ): string | undefined => {
   if (!text.trim()) return undefined
   const normalized = text.toLowerCase()

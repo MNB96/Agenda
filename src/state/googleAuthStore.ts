@@ -4,10 +4,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 
 type GoogleAuthIssue = 'expired' | 'unauthorized'
 
-// The native Google Sign-In SDK's getTokens() doesn't return an expiry, and the web
-// OAuth response doesn't always include one either — both paths fall back to Google's
-// standard access-token lifetime.
+// Neither native getTokens() nor the web OAuth response reliably includes an expiry.
 export const GOOGLE_TOKEN_TTL_SECONDS = 3600
+
+// calendar for Events, tasks for Google Tasks — kept in one place so every auth call site asks for both.
+export const GOOGLE_OAUTH_SCOPES = ['https://www.googleapis.com/auth/calendar', 'https://www.googleapis.com/auth/tasks']
 
 interface GoogleAuthState {
   accessToken?: string
@@ -20,8 +21,7 @@ interface GoogleAuthState {
   clearSession: () => void
 }
 
-// Persisted so the connection survives a full app restart — otherwise every cold start
-// wiped the in-memory session and forced the user to reconnect to Google Calendar.
+// Persisted so the connection survives a full app restart.
 export const useGoogleAuthStore = create<GoogleAuthState>()(
   persist(
     (set) => ({

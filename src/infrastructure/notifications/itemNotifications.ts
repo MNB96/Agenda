@@ -1,7 +1,7 @@
 import { Linking, Platform } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as Notifications from 'expo-notifications'
-import type { Item, ReminderConfig } from '../../domain/items/types'
+import type { Item, ReminderConfig } from '../../domain/items'
 
 const CHANNEL_MIGRATION_KEY = 'agenda:notification-channels-v3-alarm-stream'
 
@@ -16,9 +16,7 @@ export const openExactAlarmSettings = async (): Promise<void> => {
   }
 }
 
-// Android 8+ controls sound/vibration per notification channel, and the system already
-// ships a full ringtone picker for it — no need to build a custom one in-app. The app-level
-// settings screen lists both channels (Recordatorios, Alarmas), so one entry point covers both.
+// Android's own channel settings already has a full ringtone picker, no need to build one in-app.
 export const openNotificationSoundSettings = async (): Promise<void> => {
   if (Platform.OS !== 'android') return
   try {
@@ -41,10 +39,8 @@ Notifications.setNotificationHandler({
 export const initNotificationChannel = async (): Promise<void> => {
   if (Platform.OS !== 'android') return
 
-  // One-time migration: channels created before this fix have no sound configured, and
-  // Android locks channel settings after creation — recreating is the only way to fix
-  // existing installs. Only runs once, so it won't clobber a sound the user later picks
-  // themselves via openChannelSoundSettings.
+  // One-time migration: Android locks channel settings after creation, so old silent
+  // channels must be deleted and recreated to pick up the sound.
   const migrated = await AsyncStorage.getItem(CHANNEL_MIGRATION_KEY)
   if (!migrated) {
     try {
@@ -70,9 +66,7 @@ export const initNotificationChannel = async (): Promise<void> => {
     enableLights: true,
     bypassDnd: true,
     sound: 'default',
-    // Use the ALARM audio stream, not NOTIFICATION: the notification stream is silenced
-    // by the phone's ringer mode (vibrate/silent), which is exactly why a plain
-    // notification sound never played. The alarm stream ignores that, like a real alarm clock.
+    // ALARM stream, not NOTIFICATION — the latter is silenced by ringer mode (vibrate/silent).
     audioAttributes: {
       usage: Notifications.AndroidAudioUsage.ALARM,
       contentType: Notifications.AndroidAudioContentType.SONIFICATION,
@@ -110,10 +104,6 @@ const resolveBaseDate = (item: Item): Date | null => {
 }
 
 const resolveReminderDate = (item: Item, reminder: ReminderConfig): Date | null => {
-  if (reminder.mode === 'absolute' && reminder.dateTime) {
-    const absoluteDate = new Date(reminder.dateTime)
-    return absoluteDate > new Date() ? absoluteDate : null
-  }
   const base = resolveBaseDate(item)
   if (!base) return null
   const notifyAt = new Date(base.getTime() - (reminder.minutesBefore ?? 0) * 60_000)
@@ -131,10 +121,7 @@ const formatReminderBody = (reminder: ReminderConfig): string => {
   return `En ${hours}h ${minutes}min`
 }
 
-// Toda tarea con fecha límite recibe, sin necesidad de configurar nada, un aviso el día
-// anterior, otro el mismo día, y uno más (una sola vez) al día siguiente si sigue sin
-// completarse — con texto claro y color/prioridad de urgencia, ya que Android no permite
-// un ícono distinto por notificación individual.
+// Toda tarea con deadline recibe aviso automático: día antes, mismo día, y vencida al día siguiente.
 const scheduleDeadlineNotifications = async (item: Item): Promise<string[]> => {
   if (!item.deadline) return []
 
@@ -238,7 +225,7 @@ export const scheduleItemNotifications = async (item: Item): Promise<string[]> =
 }
 
 export const cancelItemNotifications = async (
-  item: { notificationIds?: string[] },
+  item: { notificationIds?: readonly string[] },
 ): Promise<void> => {
   const toCancel = item.notificationIds ?? []
   await Promise.all(

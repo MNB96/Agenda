@@ -9,7 +9,8 @@ import {
   startOfDay,
 } from 'date-fns'
 import { es } from 'date-fns/locale'
-import type { NewItemInput } from '../types'
+import type { NewItemInput } from '../Item.inputs'
+import { isValidCalendarDate } from '../../../utils/calendarDate'
 
 const months: Record<string, number> = {
   enero: 1,
@@ -58,10 +59,13 @@ const parseDatePiece = (raw: string, now: Date): Date | undefined => {
 
   const dm = text.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/)?.slice(1)
   if (dm) {
+    const day = Number(dm[0])
+    const month = Number(dm[1])
     const year = dm[2] ? Number(dm[2].length === 2 ? `20${dm[2]}` : dm[2]) : now.getFullYear()
-    const parsed = new Date(year, Number(dm[1]) - 1, Number(dm[0]))
-    if (isValid(parsed)) {
-      return parsed
+    // isValid() alone isn't enough — new Date(2026, 1, 31) doesn't fail, it silently becomes
+    // March 3rd. Checking the constructed date's own fields against the inputs catches that.
+    if (isValidCalendarDate(year, month, day)) {
+      return new Date(year, month - 1, day)
     }
   }
 
@@ -71,9 +75,8 @@ const parseDatePiece = (raw: string, now: Date): Date | undefined => {
     const day = Number(monthMatch[1])
     const month = months[monthMatch[2]]
     const year = monthMatch[3] ? Number(monthMatch[3]) : now.getFullYear()
-    const parsed = new Date(year, month - 1, day)
-    if (isValid(parsed)) {
-      return parsed
+    if (isValidCalendarDate(year, month, day)) {
+      return new Date(year, month - 1, day)
     }
   }
 
@@ -129,19 +132,6 @@ export const parseQuickInput = (text: string, now = new Date()): ParsedQuickInpu
     title: normalized,
   }
 
-  const windowMatch =
-    lower.match(/abre\s+(.+?)\s+y\s+cierra\s+(.+)/) ?? lower.match(/de\s+(.+?)\s+a\s+(.+)/)
-
-  if (windowMatch) {
-    const startDate = parseDatePiece(windowMatch[1], now)
-    const endDate = parseDatePiece(windowMatch[2], now)
-    inferred.dateWindow = {
-      startDate: startDate ? format(startDate, 'yyyy-MM-dd') : undefined,
-      endDate: endDate ? format(endDate, 'yyyy-MM-dd') : undefined,
-    }
-    hints.push('Ventana de fechas detectada')
-  }
-
   const deadlineMatch = lower.match(/(antes de|hasta)\s+(.+)/)
   if (deadlineMatch) {
     const parsedDeadline = parseDatePiece(deadlineMatch[2], now)
@@ -151,7 +141,7 @@ export const parseQuickInput = (text: string, now = new Date()): ParsedQuickInpu
     }
   }
 
-  if (!inferred.deadline && !inferred.dateWindow) {
+  if (!inferred.deadline) {
     const directDate = parseDatePiece(lower, now)
     if (directDate) {
       inferred.startDate = format(directDate, 'yyyy-MM-dd')
@@ -171,32 +161,8 @@ export const parseQuickInput = (text: string, now = new Date()): ParsedQuickInpu
     hints.push('Ubicacion detectada')
   }
 
-  const goalMatch = lower.match(/(\d+)\s*\/\s*(\d+)/)
-  if (goalMatch) {
-    inferred.goalConfig = {
-      currentValue: Number(goalMatch[1]),
-      targetValue: Number(goalMatch[2]),
-      isBinary: false,
-    }
-    hints.push('Meta con progreso detectada')
-  }
-
-  if (!inferred.goalConfig && /(meta|objetivo|leer\s+\d+|aprobar\s+\d+)/.test(lower)) {
-    const target = Number(lower.match(/(\d+)/)?.[1] ?? '1')
-    inferred.goalConfig = {
-      currentValue: 0,
-      targetValue: Math.max(target, 1),
-      isBinary: false,
-    }
-    hints.push('Meta detectada')
-  }
-
   let detectedType = 'Tarea'
-  if (inferred.dateWindow?.startDate || inferred.dateWindow?.endDate) {
-    detectedType = 'Ventana de fecha'
-  } else if (inferred.goalConfig) {
-    detectedType = 'Meta'
-  } else if (inferred.startDate && inferred.startTime) {
+  if (inferred.startDate && inferred.startTime) {
     detectedType = 'Evento'
   } else if (inferred.deadline) {
     detectedType = 'Deadline'

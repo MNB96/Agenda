@@ -4,7 +4,7 @@ export interface CalendarRepository {
   listCalendars(accessToken: string): Promise<CalendarInfo[]>
   listEvents(
     accessToken: string,
-    calendarIds: string[],
+    calendarIds: readonly string[],
     params: { timeMin: string; timeMax: string },
   ): Promise<CalendarEvent[]>
   createEvent(
