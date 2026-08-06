@@ -3,11 +3,11 @@ import * as Google from 'expo-auth-session/providers/google'
 import { GoogleSignin } from '@react-native-google-signin/google-signin'
 import { useEffect, useMemo } from 'react'
 import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native'
-import { useGoogleCalendars } from '../../features/calendar/useGoogleCalendar'
-import { useSettings } from '../../features/settings/useSettings'
-import { useItems } from '../../features/items/useItems'
+import { useGoogleCalendars } from '../../application/calendar/useGoogleCalendar'
+import { useSettings } from '../../application/settings/useSettings'
+import { useItems } from '../../application/items/useItems'
 import { useGoogleAuthStore, GOOGLE_TOKEN_TTL_SECONDS } from '../../state/googleAuthStore'
-import { openNotificationSoundSettings, openExactAlarmSettings } from '../../services/notifications/itemNotifications'
+import { openNotificationSoundSettings, openExactAlarmSettings } from '../../infrastructure/notifications/itemNotifications'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
 
@@ -187,16 +187,16 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
                 <Pressable
                   key={calendar.id}
                   onPress={() => {
-                    const selected = settings.selectedGoogleCalendarIds.includes(calendar.id)
+                    const selected = settings.selectedCalendarIds.includes(calendar.id)
                     const next = selected
-                      ? settings.selectedGoogleCalendarIds.filter((entry) => entry !== calendar.id)
-                      : [...settings.selectedGoogleCalendarIds, calendar.id]
-                    void saveSettings({ ...settings, selectedGoogleCalendarIds: next })
+                      ? settings.selectedCalendarIds.filter((entry) => entry !== calendar.id)
+                      : [...settings.selectedCalendarIds, calendar.id]
+                    void saveSettings({ ...settings, selectedCalendarIds: next })
                   }}
                   style={styles.calendarOption}
                 >
                   <Text style={styles.calendarOptionText}>
-                    {settings.selectedGoogleCalendarIds.includes(calendar.id) ? '✓' : '○'} {calendar.summary}
+                    {settings.selectedCalendarIds.includes(calendar.id) ? '✓' : '○'} {calendar.summary}
                   </Text>
                 </Pressable>
               ))}

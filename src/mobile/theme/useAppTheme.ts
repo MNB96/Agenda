@@ -1,6 +1,6 @@
 import { useColorScheme } from 'react-native'
 import { getThemeTokens, type ThemeMode } from './tokens'
-import { useSettings } from '../../features/settings/useSettings'
+import { useSettings } from '../../application/settings/useSettings'
 
 export const useAppTheme = () => {
   const colorScheme = useColorScheme()

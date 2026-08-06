@@ -19,7 +19,7 @@ export interface Settings {
   defaultReminderMinutes: number
   availableExamLeaveDaysPerYear: number
   categories: ItemCategory[]
-  selectedGoogleCalendarIds: string[]
+  selectedCalendarIds: string[]
   locationPermissionRequested: boolean
 }
 
@@ -43,6 +43,6 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultReminderMinutes: 60,
   availableExamLeaveDaysPerYear: 10,
   categories: DEFAULT_CATEGORIES,
-  selectedGoogleCalendarIds: [],
+  selectedCalendarIds: [],
   locationPermissionRequested: false,
 }

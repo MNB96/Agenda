@@ -14,5 +14,4 @@ export interface CalendarEvent {
   startDateTime: string
   endDateTime?: string
   allDay?: boolean
-  source: 'google'
 }

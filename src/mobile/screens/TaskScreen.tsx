@@ -5,15 +5,15 @@ import { differenceInCalendarDays, differenceInHours, format, isToday, startOfDa
 import { es } from 'date-fns/locale'
 import { CalendarDays } from 'lucide-react-native'
 import { ItemCard } from '../components/ItemCard'
-import { useItems } from '../../features/items/useItems'
-import { useSettings } from '../../features/settings/useSettings'
+import { useItems } from '../../application/items/useItems'
+import { useSettings } from '../../application/settings/useSettings'
 import {
   useTaskEntries,
   type TaskSectionKey,
   type LocalEntry,
   type GoogleEntry,
   type HolidayEntry,
-} from '../../features/task/useTaskEntries'
+} from '../../application/task/useTaskEntries'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
 

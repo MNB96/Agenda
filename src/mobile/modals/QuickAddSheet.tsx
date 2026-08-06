@@ -25,21 +25,21 @@ import {
   Tag,
   X,
 } from 'lucide-react-native'
-import { fetchTravelTime, getCurrentLocation } from '../../services/travelTime'
+import { fetchTravelTime, getCurrentLocation } from '../../infrastructure/maps/travelTime'
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker'
 import { format, isToday, parse } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { MonthCalendar } from '../components/MonthCalendar'
 import { RepeatPanel, UNIT_OPTIONS, RULE_TO_UNIT } from '../components/RepeatPanel'
 import { ReminderPanel } from '../components/ReminderPanel'
-import { parseQuickInput } from '../../services/parser/quickInputParser'
-import { detectCategoryFromText } from '../../services/parser/categoryDetector'
-import { isExamTask } from '../../services/parser/examDetector'
-import { useItems } from '../../features/items/useItems'
-import { useLocationAutocomplete } from '../../features/items/useLocationAutocomplete'
-import { useSettings, useLicenseUsages } from '../../features/settings/useSettings'
+import { parseQuickInput } from '../../domain/items/factories/quickInputParser'
+import { detectCategoryFromText } from '../../domain/items/services/categoryDetector'
+import { isExamTask } from '../../domain/items/services/examDetector'
+import { useItems } from '../../application/items/useItems'
+import { useLocationAutocomplete } from '../../application/items/useLocationAutocomplete'
+import { useSettings, useLicenseUsages } from '../../application/settings/useSettings'
 import { useGoogleAuthStore } from '../../state/googleAuthStore'
-import { computeNextDate } from '../../services/items/recurrence'
+import { computeNextDate } from '../../domain/items/services/recurrence'
 import type { ReminderConfig, RepeatConfig, RepeatRule, TravelConfig } from '../../domain/items/types'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
@@ -203,7 +203,7 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
   const [scheduledTime, setScheduledTime] = useState<string | undefined>()
   const [endTime, setEndTime] = useState<string | undefined>()
   const [deadline, setDeadline] = useState<string | undefined>()
-  const [syncToGoogleCalendar, setSyncToGoogleCalendar] = useState(true)
+  const [syncToCalendar, setSyncToCalendar] = useState(true)
   const [repeatRule, setRepeatRule] = useState<RepeatRule>('none')
   const [repeatConfig, setRepeatConfig] = useState<RepeatConfig | undefined>()
   const [reminders, setReminders] = useState<ReminderConfig[]>([])
@@ -291,7 +291,7 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
     setScheduledTime(undefined)
     setEndTime(undefined)
     setDeadline(undefined)
-    setSyncToGoogleCalendar(true)
+    setSyncToCalendar(true)
     setRepeatRule('none')
     setRepeatConfig(undefined)
     setReminders([])
@@ -400,7 +400,7 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
       endDate: effectiveTime && endTime ? effectiveDate : undefined,
       endTime: effectiveTime ? endTime : undefined,
       deadline: effectiveDeadline,
-      syncToGoogleCalendar,
+      syncToCalendar,
       repeatRule: repeatRule !== 'none' ? repeatRule : undefined,
       repeatConfig: repeatRule !== 'none' ? repeatConfig : undefined,
       reminderConfig: reminders.length > 0 ? reminders : undefined,
@@ -903,7 +903,7 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
               <RowDivider colors={colors} />
               <View style={styles.syncRow}>
                 <Text style={styles.syncRowLabel}>Sincronizar con Google Calendar</Text>
-                <Switch value={syncToGoogleCalendar} onValueChange={setSyncToGoogleCalendar} />
+                <Switch value={syncToCalendar} onValueChange={setSyncToCalendar} />
               </View>
             </>
           )}

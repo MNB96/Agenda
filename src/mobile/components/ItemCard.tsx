@@ -94,10 +94,10 @@ export const ItemCard = ({ item, overdueLabel, overdueDeadlineLabel, subtaskTota
           ) : null}
         </View>
 
-        {(item.important || repeats || hasAlarmReminder || hasNotificationReminder || item.googleCalendarLink) && (
+        {(item.important || repeats || hasAlarmReminder || hasNotificationReminder || item.calendarLink) && (
           <View style={styles.indicatorStack}>
             {item.important && <Star size={16} color="#F38630" fill="#F38630" />}
-            {item.googleCalendarLink && <CalendarCheck size={16} color="#4285F4" />}
+            {item.calendarLink && <CalendarCheck size={16} color="#4285F4" />}
             {repeats && <Repeat size={16} color={colors.textMuted} />}
             {hasAlarmReminder ? (
               <AlarmClock size={17} color={colors.accent} />

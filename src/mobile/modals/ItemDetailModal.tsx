@@ -37,20 +37,20 @@ import { ReminderPanel } from '../components/ReminderPanel'
 import DateTimePicker from '@react-native-community/datetimepicker'
 import { format, isToday, parse } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { useItems } from '../../features/items/useItems'
-import { useItem } from '../../features/items/useItem'
-import { useSubtasks } from '../../features/items/useSubtasks'
-import { useLocationAutocomplete } from '../../features/items/useLocationAutocomplete'
-import { useSettings, useLicenseUsages } from '../../features/settings/useSettings'
+import { useItems } from '../../application/items/useItems'
+import { useItem } from '../../application/items/useItem'
+import { useSubtasks } from '../../application/items/useSubtasks'
+import { useLocationAutocomplete } from '../../application/items/useLocationAutocomplete'
+import { useSettings, useLicenseUsages } from '../../application/settings/useSettings'
 import { useGoogleAuthStore } from '../../state/googleAuthStore'
-import { computeNextDate } from '../../services/items/recurrence'
+import { computeNextDate } from '../../domain/items/services/recurrence'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
 import type { Item, ReminderConfig, RepeatConfig, RepeatRule } from '../../domain/items/types'
 import { createId } from '../../utils/id'
-import { fetchTravelTime, getCurrentLocation } from '../../services/travelTime'
-import { detectCategoryFromText } from '../../services/parser/categoryDetector'
-import { isExamTask } from '../../services/parser/examDetector'
+import { fetchTravelTime, getCurrentLocation } from '../../infrastructure/maps/travelTime'
+import { detectCategoryFromText } from '../../domain/items/services/categoryDetector'
+import { isExamTask } from '../../domain/items/services/examDetector'
 
 interface ItemDetailModalProps {
   itemId: string | undefined
@@ -99,7 +99,7 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
   const [endTime, setEndTime] = useState(item.endTime)
   const [showEndTimePicker, setShowEndTimePicker] = useState(false)
   const [deadline, setDeadline] = useState(item.deadline)
-  const [syncToGoogleCalendar, setSyncToGoogleCalendar] = useState(item.syncToGoogleCalendar ?? true)
+  const [syncToCalendar, setSyncToCalendar] = useState(item.syncToCalendar ?? true)
   const [repeatRule, setRepeatRule] = useState<RepeatRule>(item.repeatRule ?? 'none')
   const [repeatConfig, setRepeatConfig] = useState<RepeatConfig | undefined>(item.repeatConfig)
   const [showRepeatPanel, setShowRepeatPanel] = useState(false)
@@ -145,7 +145,7 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
           endDate: scheduledTime && endTime ? scheduledDate : undefined,
           endTime: scheduledTime ? endTime : undefined,
           deadline,
-          syncToGoogleCalendar,
+          syncToCalendar,
           repeatRule: repeatRule !== 'none' ? repeatRule : undefined,
           repeatConfig: repeatRule !== 'none' ? repeatConfig : undefined,
           categoryId,
@@ -183,7 +183,7 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
       }
     }
     onClose()
-  }, [item, title, description, important, scheduledDate, scheduledTime, endTime, deadline, syncToGoogleCalendar, goalCurrentText, travelConfig, repeatRule, repeatConfig, categoryId, location, reminders, studyTimeBefore, gradeText, licenseUsages, saveUsage, deleteUsage, updateItem, onClose])
+  }, [item, title, description, important, scheduledDate, scheduledTime, endTime, deadline, syncToCalendar, goalCurrentText, travelConfig, repeatRule, repeatConfig, categoryId, location, reminders, studyTimeBefore, gradeText, licenseUsages, saveUsage, deleteUsage, updateItem, onClose])
 
   useEffect(() => {
     const handler = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -600,7 +600,7 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
                 <View style={styles.rowDivider} />
                 <View style={styles.syncRow}>
                   <Text style={styles.syncRowLabel}>Sincronizar con Google Calendar</Text>
-                  <Switch value={syncToGoogleCalendar} onValueChange={setSyncToGoogleCalendar} />
+                  <Switch value={syncToCalendar} onValueChange={setSyncToCalendar} />
                 </View>
               </>
             )}

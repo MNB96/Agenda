@@ -57,11 +57,12 @@ export interface DateWindow {
   endDate?: string
 }
 
-export interface GoogleCalendarLink {
+export interface CalendarLink {
   calendarId: string
   eventId: string
   lastSyncedAt: string
-  source: 'app' | 'google'
+  /** 'app' if this app created the calendar event; 'external' if it was pre-existing and only linked. */
+  origin: 'app' | 'external'
 }
 
 export interface ItemCategory {
@@ -93,8 +94,8 @@ export interface Item {
   travelConfig?: TravelConfig
   goalConfig?: GoalConfig
   academicConfig?: AcademicConfig
-  syncToGoogleCalendar?: boolean
-  googleCalendarLink?: GoogleCalendarLink
+  syncToCalendar?: boolean
+  calendarLink?: CalendarLink
   calendarSyncPending?: boolean
   notificationIds?: string[]
   createdAt: string
@@ -122,5 +123,5 @@ export interface NewItemInput {
   travelConfig?: TravelConfig
   goalConfig?: GoalConfig
   academicConfig?: AcademicConfig
-  syncToGoogleCalendar?: boolean
+  syncToCalendar?: boolean
 }
