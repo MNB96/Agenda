@@ -38,6 +38,8 @@ import DateTimePicker from '@react-native-community/datetimepicker'
 import { format, isToday, parse } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { useItems } from '../../features/items/useItems'
+import { useItem } from '../../features/items/useItem'
+import { useSubtasks } from '../../features/items/useSubtasks'
 import { useLocationAutocomplete } from '../../features/items/useLocationAutocomplete'
 import { useSettings, useLicenseUsages } from '../../features/settings/useSettings'
 import { useGoogleAuthStore } from '../../state/googleAuthStore'
@@ -66,8 +68,7 @@ const fmtDate = (dateStr: string): string => {
 // per item — no "reset on open" effect needed to re-seed ~20 fields, and switching straight from
 // editing one item to another (if that ever happens) can't leak stale draft state between them.
 export const ItemDetailModal = ({ itemId, onClose }: ItemDetailModalProps) => {
-  const { items } = useItems()
-  const item = useMemo(() => items.find(candidate => candidate.id === itemId), [items, itemId])
+  const { data: item } = useItem(itemId)
 
   if (!item) return null
 
@@ -80,7 +81,7 @@ interface ItemDetailModalFormProps {
 }
 
 const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
-  const { items, createItem, updateItem, removeItem, toggleCompleted } = useItems()
+  const { createItem, updateItem, removeItem, toggleCompleted } = useItems()
   const { data: settings } = useSettings()
   const { data: licenseUsages, saveUsage, deleteUsage } = useLicenseUsages()
   const { accessToken } = useGoogleAuthStore()
@@ -88,7 +89,7 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
   const styles = useMemo(() => createStyles(colors), [colors])
   const insets = useSafeAreaInsets()
 
-  const subtasks = useMemo(() => items.filter(candidate => candidate.parentId === item.id), [items, item.id])
+  const { data: subtasks = [] } = useSubtasks(item.id)
 
   const [title, setTitle] = useState(item.title)
   const [description, setDescription] = useState(item.description ?? '')

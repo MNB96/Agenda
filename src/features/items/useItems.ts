@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { itemRepository, settingsRepository } from '../../app/container'
 import type { Item } from '../../domain/items/types'
 import { createItem, updateItem } from './itemService'
@@ -8,9 +8,34 @@ import { useSettings } from '../settings/useSettings'
 import { cancelItemNotifications, scheduleItemNotifications } from '../../services/notifications/itemNotifications'
 import { syncItemToCalendar, removeCalendarEventForItem } from '../../services/calendar/itemCalendarSync'
 import { buildNextOccurrence } from '../../services/items/recurrence'
+import { ITEM_KEY_PREFIX } from './useItem'
+import { SUBTASKS_KEY_PREFIX } from './useSubtasks'
 
 const ITEMS_KEY = ['items']
 const LICENSES_KEY = ['licenses']
+
+// Cuántos items completados se traen por página: la sección "Completadas" no tiene techo
+// natural (nada se borra salvo el auto-archivo de 60 días, que solo corre para items ya
+// sincronizados a Google Calendar) — sin esto, la app termina cargando en memoria todo el
+// historial completado desde que existe la cuenta. Los items activos sí se traen completos:
+// ese conjunto se mantiene naturalmente chico porque se completan/borran con el uso normal.
+export const COMPLETED_PAGE_SIZE = 30
+
+// ItemDetailModal ya no lee subtareas/items puntuales del cache principal (useItem/useSubtasks
+// abajo), así que toda mutación que pueda cambiarlos tiene que invalidar esas queries también,
+// no solo ITEMS_KEY.
+const invalidateItemDetailQueries = (queryClient: QueryClient) => {
+  queryClient.invalidateQueries({ queryKey: [ITEM_KEY_PREFIX] })
+  queryClient.invalidateQueries({ queryKey: [SUBTASKS_KEY_PREFIX] })
+}
+
+const loadInitialItems = async (): Promise<Item[]> => {
+  const [active, completed] = await Promise.all([
+    itemRepository.listActive(),
+    itemRepository.listCompleted(COMPLETED_PAGE_SIZE, 0),
+  ])
+  return [...active, ...completed]
+}
 
 // Shared by every write path that removes an item locally (manual delete, immediate-delete
 // on a regenerated repeat, auto-archive) so a "day of study" usage never outlives the item
@@ -29,8 +54,7 @@ const deleteLicenseUsagesForItems = async (itemIds: string[]) => {
 // also removing its subtasks left them permanently invisible and unreachable (never shown,
 // never deletable) instead of actually gone. Shared by every single-item removal path.
 const removeItemAndSubtasks = async (item: Item): Promise<void> => {
-  const allItems = await itemRepository.list()
-  const subtasks = allItems.filter((candidate) => candidate.parentId === item.id)
+  const subtasks = await itemRepository.getByParentIds([item.id])
   await Promise.all(subtasks.map((subtask) => cancelItemNotifications(subtask)))
   await deleteLicenseUsagesForItems([item.id, ...subtasks.map((subtask) => subtask.id)])
   if (subtasks.length > 0) await itemRepository.removeMany(subtasks.map((subtask) => subtask.id))
@@ -44,8 +68,21 @@ export const useItems = () => {
 
   const query = useQuery({
     queryKey: ITEMS_KEY,
-    queryFn: () => itemRepository.list(),
+    queryFn: loadInitialItems,
   })
+
+  // Trae la siguiente página de completadas y la suma al cache existente (no dispara un
+  // refetch completo). Devuelve cuántas llegaron: si vino una página llena, probablemente
+  // haya más para pedir; si vino corta (o vacía), ya se llegó al final del historial.
+  const loadMoreCompleted = async (): Promise<number> => {
+    const current = queryClient.getQueryData<Item[]>(ITEMS_KEY) ?? []
+    const currentCompletedCount = current.filter((item) => item.status === 'completed').length
+    const nextPage = await itemRepository.listCompleted(COMPLETED_PAGE_SIZE, currentCompletedCount)
+    if (nextPage.length > 0) {
+      queryClient.setQueryData<Item[]>(ITEMS_KEY, (old) => [...(old ?? []), ...nextPage])
+    }
+    return nextPage.length
+  }
 
   const calendarSyncContext = () => ({
     accessToken,
@@ -62,7 +99,10 @@ export const useItems = () => {
       item = updateItem(item, { notificationIds })
       return itemRepository.save(item)
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ITEMS_KEY }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ITEMS_KEY })
+      invalidateItemDetailQueries(queryClient)
+    },
   })
 
   const updateMutation = useMutation({
@@ -84,6 +124,7 @@ export const useItems = () => {
       queryClient.setQueryData<Item[]>(ITEMS_KEY, (old) =>
         (old ?? []).map((item) => (item.id === savedItem.id ? savedItem : item)),
       )
+      invalidateItemDetailQueries(queryClient)
     },
   })
 
@@ -99,6 +140,7 @@ export const useItems = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ITEMS_KEY })
       queryClient.invalidateQueries({ queryKey: LICENSES_KEY })
+      invalidateItemDetailQueries(queryClient)
     },
   })
 
@@ -139,6 +181,7 @@ export const useItems = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ITEMS_KEY })
       queryClient.invalidateQueries({ queryKey: LICENSES_KEY })
+      invalidateItemDetailQueries(queryClient)
     },
   })
 
@@ -147,10 +190,9 @@ export const useItems = () => {
   // limpieza de licencias y subtareas que el borrado manual en vez de reimplementarla aparte.
   const archiveCompletedMutation = useMutation({
     mutationFn: async (items: Item[]) => {
-      const allItems = await itemRepository.list()
-      const parentIds = new Set(items.map((item) => item.id))
-      const subtasks = allItems.filter((candidate) => candidate.parentId && parentIds.has(candidate.parentId))
-      const allIds = [...items.map((item) => item.id), ...subtasks.map((subtask) => subtask.id)]
+      const parentIds = items.map((item) => item.id)
+      const subtasks = await itemRepository.getByParentIds(parentIds)
+      const allIds = [...parentIds, ...subtasks.map((subtask) => subtask.id)]
 
       await Promise.all(subtasks.map((subtask) => cancelItemNotifications(subtask)))
       await deleteLicenseUsagesForItems(allIds)
@@ -159,6 +201,7 @@ export const useItems = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ITEMS_KEY })
       queryClient.invalidateQueries({ queryKey: LICENSES_KEY })
+      invalidateItemDetailQueries(queryClient)
     },
   })
 
@@ -168,9 +211,12 @@ export const useItems = () => {
   // hacen createMutation/updateMutation.
   const applySyncedItemsMutation = useMutation({
     mutationFn: async (items: Item[]) => {
-      await Promise.all(items.map((item) => itemRepository.save(item)))
+      await itemRepository.saveMany(items)
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ITEMS_KEY }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ITEMS_KEY })
+      invalidateItemDetailQueries(queryClient)
+    },
   })
 
   const sortedItems = useMemo(
@@ -187,6 +233,7 @@ export const useItems = () => {
     toggleCompleted: completeMutation.mutateAsync,
     archiveCompleted: archiveCompletedMutation.mutateAsync,
     applySyncedItems: applySyncedItemsMutation.mutateAsync,
+    loadMoreCompleted,
     isSaving:
       createMutation.isPending ||
       updateMutation.isPending ||

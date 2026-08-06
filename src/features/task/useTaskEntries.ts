@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { addDays, differenceInCalendarDays, format, parseISO, startOfDay } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { useItems } from '../items/useItems'
+import { COMPLETED_PAGE_SIZE, useItems } from '../items/useItems'
 import { scoreItemsForToday, type TodayBucket } from '../../services/items/relevance'
 import { useGoogleEvents } from '../calendar/useGoogleCalendar'
 import type { CalendarEvent } from '../../domain/calendar/types'
@@ -141,13 +141,16 @@ interface UseTaskEntriesResult {
   sections: [TaskSectionKey, TaskEntry[]][]
   localItemsById: Map<string, Item>
   subtaskMap: Map<string, { total: number; done: number }>
+  hasMoreCompleted: boolean
+  isLoadingMoreCompleted: boolean
+  loadMoreCompleted: () => void
 }
 
 // Pulls together local items, Google Calendar events and public holidays into the sectioned,
 // sorted list the Task screen renders — pure data transformation, no JSX, so it's testable
 // without mounting the screen.
 export const useTaskEntries = (): UseTaskEntriesResult => {
-  const { items } = useItems()
+  const { items, dataUpdatedAt, loadMoreCompleted: fetchMoreCompleted } = useItems()
   const googleEvents = useGoogleEvents(new Date())
   const holidayYears = useMemo(() => {
     const now = new Date()
@@ -158,6 +161,25 @@ export const useTaskEntries = (): UseTaskEntriesResult => {
 
   const [search, setSearch] = useState('')
   const [activeCategory, setActiveCategory] = useState<'all' | string>('all')
+
+  const [hasMoreCompleted, setHasMoreCompleted] = useState(true)
+  const [isLoadingMoreCompleted, setIsLoadingMoreCompleted] = useState(false)
+  // Cualquier invalidación de la query principal (crear/editar/completar/borrar un item en
+  // cualquier lado) vuelve a traer solo la primera página de completadas y descarta lo que
+  // se había cargado de más — hay que asumir de nuevo que puede haber más para pedir.
+  const [lastSeenDataUpdatedAt, setLastSeenDataUpdatedAt] = useState(dataUpdatedAt)
+  if (dataUpdatedAt !== lastSeenDataUpdatedAt) {
+    setLastSeenDataUpdatedAt(dataUpdatedAt)
+    setHasMoreCompleted(true)
+  }
+
+  const loadMoreCompleted = () => {
+    if (isLoadingMoreCompleted || !hasMoreCompleted) return
+    setIsLoadingMoreCompleted(true)
+    fetchMoreCompleted()
+      .then((loadedCount) => setHasMoreCompleted(loadedCount === COMPLETED_PAGE_SIZE))
+      .finally(() => setIsLoadingMoreCompleted(false))
+  }
 
   const filteredItems = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -311,5 +333,18 @@ export const useTaskEntries = (): UseTaskEntriesResult => {
     return result
   }, [colors, completedItems, filteredItems, googleEvents.data, holidays.data, items, scored, noDateItems, search])
 
-  return { search, setSearch, activeCategory, setActiveCategory, sections, localItemsById, subtaskMap }
+  return {
+    search,
+    setSearch,
+    activeCategory,
+    setActiveCategory,
+    sections,
+    localItemsById,
+    subtaskMap,
+    // Si la última página cargada vino corta (o el total nunca llegó a una página completa),
+    // ya sabemos que no hay más sin necesidad de pedirlas.
+    hasMoreCompleted: hasMoreCompleted && completedItems.length > 0 && completedItems.length % COMPLETED_PAGE_SIZE === 0,
+    isLoadingMoreCompleted,
+    loadMoreCompleted,
+  }
 }

@@ -1,14 +1,22 @@
 import { differenceInCalendarDays, format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { Bell, BookOpen, CheckCircle, Clock } from 'lucide-react-native'
+import { itemRepository } from '../../app/container'
 import { useItems } from '../../features/items/useItems'
 import { useLicenseUsages, useSettings } from '../../features/settings/useSettings'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
 import { isExamTask } from '../../services/parser/examDetector'
 import type { Item } from '../../domain/items/types'
+
+// El cache principal de useItems() solo trae una página de items completados (para no
+// crecer sin límite en memoria), así que un examen viejo de facultad podría no estar ahí
+// aunque siga siendo uno de los últimos 5 completados de esa categoría específicamente.
+// Se pide aparte, acotado a la categoría, usando idx_items_status.
+const COMPLETED_FACULTAD_QUERY_LIMIT = 20
 
 interface StudiesScreenProps {
   onOpenItemEditor: (itemId: string) => void
@@ -28,6 +36,10 @@ const studyLabel = (v: 'half' | 'full') => (v === 'half' ? '½ día' : '1 día')
 
 export const StudiesScreen = ({ onOpenItemEditor }: StudiesScreenProps) => {
   const { items } = useItems()
+  const { data: completedFacultadItems = [] } = useQuery({
+    queryKey: ['items', 'completed', 'facultad'],
+    queryFn: () => itemRepository.listCompletedByCategory('facultad', COMPLETED_FACULTAD_QUERY_LIMIT),
+  })
   const { data: settings } = useSettings()
   const { data: licenseUsages } = useLicenseUsages()
   const { colors } = useAppTheme()
@@ -84,8 +96,8 @@ export const StudiesScreen = ({ onOpenItemEditor }: StudiesScreenProps) => {
         return dateA.localeCompare(dateB)
       })
 
-    const completedExams = facultadItems
-      .filter(item => item.status === 'completed' && isExamTask(item.title))
+    const completedExams = completedFacultadItems
+      .filter(item => isExamTask(item.title))
       .sort((examA, examB) => (examB.completedAt ?? '').localeCompare(examA.completedAt ?? ''))
       .slice(0, 5)
 
@@ -95,7 +107,7 @@ export const StudiesScreen = ({ onOpenItemEditor }: StudiesScreenProps) => {
       otherFacultad,
       completedExams,
     }
-  }, [items])
+  }, [items, completedFacultadItems])
 
   const renderExamRow = (exam: Item, i: number) => {
     const examDate = exam.startDate ?? exam.deadline

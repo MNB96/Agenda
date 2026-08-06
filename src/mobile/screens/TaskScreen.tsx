@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import Swipeable from 'react-native-gesture-handler/Swipeable'
 import { differenceInCalendarDays, differenceInHours, format, isToday, startOfDay } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -99,6 +99,9 @@ export const TaskScreen = ({ onOpenItemEditor }: TaskScreenProps) => {
     sections,
     localItemsById,
     subtaskMap,
+    hasMoreCompleted,
+    isLoadingMoreCompleted,
+    loadMoreCompleted,
   } = useTaskEntries()
 
   return (
@@ -288,6 +291,19 @@ export const TaskScreen = ({ onOpenItemEditor }: TaskScreenProps) => {
                 </View>
               )
             })}
+            {bucket === 'completed' && hasMoreCompleted ? (
+              <Pressable
+                style={styles.loadMoreButton}
+                disabled={isLoadingMoreCompleted}
+                onPress={loadMoreCompleted}
+              >
+                {isLoadingMoreCompleted ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <Text style={styles.loadMoreText}>Cargar más completadas</Text>
+                )}
+              </Pressable>
+            ) : null}
           </View>
           )
         }}
@@ -401,6 +417,17 @@ const createStyles = (colors: ThemeTokens) =>
     swipeCompleteText: {
       color: '#FFFFFF',
       fontSize: 22,
+      fontWeight: '700',
+    },
+    loadMoreButton: {
+      alignSelf: 'center',
+      paddingVertical: 10,
+      paddingHorizontal: 16,
+      marginTop: 4,
+    },
+    loadMoreText: {
+      color: colors.primary,
+      fontSize: 14,
       fontWeight: '700',
     },
   })

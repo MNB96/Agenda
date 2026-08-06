@@ -1,7 +1,7 @@
 import { differenceInCalendarDays } from 'date-fns'
 import type { Item } from '../../domain/items/types'
 
-const ARCHIVE_AFTER_DAYS = 60
+export const ARCHIVE_AFTER_DAYS = 60
 
 /**
  * A completed item is safe to delete from local storage once it's old enough AND it's

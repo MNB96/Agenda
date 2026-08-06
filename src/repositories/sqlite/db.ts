@@ -41,6 +41,11 @@ export const getDb = (): Promise<SQLite.SQLiteDatabase> => {
   if (!dbPromise) {
     dbPromise = SQLite.openDatabaseAsync('agenda.db').then(async (db) => {
       await db.execAsync('PRAGMA journal_mode = WAL;')
+      // Con WAL activo, NORMAL es la combinación que recomienda la propia documentación de
+      // SQLite: mucho menos fsync por escritura que FULL, sin el riesgo de corrupción que
+      // synchronous=OFF tendría — como mucho se puede perder el último commit ante un
+      // apagón/crash del SO (no de la app), aceptable para una agenda personal.
+      await db.execAsync('PRAGMA synchronous = NORMAL;')
       await db.execAsync(`
         CREATE TABLE IF NOT EXISTS items (
           id TEXT PRIMARY KEY NOT NULL,
