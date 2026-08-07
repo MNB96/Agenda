@@ -8,6 +8,7 @@ import { useSettings } from './src/application/settings/useSettings'
 import { MainTabs } from './src/mobile/navigation/MainTabs'
 import { QuickAddSheet } from './src/mobile/modals/QuickAddSheet'
 import { AddGoalSheet } from './src/mobile/modals/AddGoalSheet'
+import { AddHabitSheet } from './src/mobile/modals/AddHabitSheet'
 import { ItemDetailModal } from './src/mobile/modals/ItemDetailModal'
 import { SettingsModal } from './src/mobile/modals/SettingsModal'
 import { useGoogleSessionLifecycleMobile } from './src/mobile/useGoogleSessionLifecycleMobile'
@@ -41,6 +42,7 @@ const AppShell = () => {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [editingItemId, setEditingItemId] = useState<string | undefined>(undefined)
   const [editingGoalId, setEditingGoalId] = useState<string | undefined>(undefined)
+  const [editingHabitId, setEditingHabitId] = useState<string | undefined>(undefined)
   const settingsQuery = useSettings()
 
   if (!settingsQuery.data) {
@@ -53,10 +55,12 @@ const AppShell = () => {
       settingsOpen={settingsOpen}
       editingItemId={editingItemId}
       editingGoalId={editingGoalId}
+      editingHabitId={editingHabitId}
       setQuickAddOpen={setQuickAddOpen}
       setSettingsOpen={setSettingsOpen}
       setEditingItemId={setEditingItemId}
       setEditingGoalId={setEditingGoalId}
+      setEditingHabitId={setEditingHabitId}
     />
   )
 }
@@ -66,10 +70,12 @@ interface AppShellInnerProps {
   settingsOpen: boolean
   editingItemId?: string
   editingGoalId?: string
+  editingHabitId?: string
   setQuickAddOpen: (value: boolean) => void
   setSettingsOpen: (value: boolean) => void
   setEditingItemId: (value: string | undefined) => void
   setEditingGoalId: (value: string | undefined) => void
+  setEditingHabitId: (value: string | undefined) => void
 }
 
 const AppShellInner = ({
@@ -77,10 +83,12 @@ const AppShellInner = ({
   settingsOpen,
   editingItemId,
   editingGoalId,
+  editingHabitId,
   setQuickAddOpen,
   setSettingsOpen,
   setEditingItemId,
   setEditingGoalId,
+  setEditingHabitId,
 }: AppShellInnerProps) => {
   const { colors, isDark } = useAppTheme()
   const navigationRef = useNavigationContainerRef()
@@ -115,7 +123,7 @@ const AppShellInner = ({
     [colors],
   )
 
-  const isAnyModalOpen = quickAddOpen || settingsOpen || Boolean(editingItemId) || Boolean(editingGoalId)
+  const isAnyModalOpen = quickAddOpen || settingsOpen || Boolean(editingItemId) || Boolean(editingGoalId) || Boolean(editingHabitId)
 
   return (
     <>
@@ -134,20 +142,26 @@ const AppShellInner = ({
           onOpenSettings={() => setSettingsOpen(true)}
           onOpenItemEditor={(itemId) => setEditingItemId(itemId)}
           onOpenGoalEditor={(itemId) => setEditingGoalId(itemId)}
+          onOpenHabitEditor={(habitId) => setEditingHabitId(habitId)}
         />
       </NavigationContainer>
 
       {!isAnyModalOpen ? <FloatingAddButton onPress={() => setQuickAddOpen(true)} /> : null}
 
-      {/* Metas siempre crea goals, todo el resto siempre crea tasks (sin inferencia por NLP). */}
+      {/* Metas siempre crea goals, Hábitos siempre crea hábitos, el resto siempre crea tasks (sin inferencia por NLP). */}
       <QuickAddSheet
-        open={quickAddOpen && activeTab !== 'Metas'}
+        open={quickAddOpen && activeTab !== 'Metas' && activeTab !== 'Hábitos'}
         onClose={() => setQuickAddOpen(false)}
       />
       <AddGoalSheet
         open={(quickAddOpen && activeTab === 'Metas') || Boolean(editingGoalId)}
         goalId={editingGoalId}
         onClose={() => { setQuickAddOpen(false); setEditingGoalId(undefined) }}
+      />
+      <AddHabitSheet
+        open={(quickAddOpen && activeTab === 'Hábitos') || Boolean(editingHabitId)}
+        habitId={editingHabitId}
+        onClose={() => { setQuickAddOpen(false); setEditingHabitId(undefined) }}
       />
       <ItemDetailModal
         itemId={editingItemId}

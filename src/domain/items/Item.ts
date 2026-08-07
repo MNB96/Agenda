@@ -203,8 +203,12 @@ const validateSubtaskHasNoRecurrence = (parentId: string | undefined, repeatConf
   }
 }
 
+// Only these categories apply to goals. Single source of truth — domain/settings/types.ts
+// derives its GOAL_CATEGORIES list from this same array.
+export const GOAL_CATEGORY_IDS = ['personal', 'facultad', 'trabajo'] as const
+
 // A goal has no place of its own and no schedule of its own — just título, detalles, deadline,
-// submetas and importance. Reminders are still deadline-driven, handled separately.
+// categoría, submetas y importancia. Reminders are still deadline-driven, handled separately.
 const validateGoalRestrictions = (
   type: ItemType,
   repeatRule: RepeatRule | undefined,
@@ -212,6 +216,7 @@ const validateGoalRestrictions = (
   startDate: string | undefined,
   location: string | undefined,
   reminderConfig: readonly ReminderConfig[] | undefined,
+  categoryId: string | undefined,
 ): void => {
   if (type !== ITEM_TYPE.GOAL) return
   if ((repeatRule && repeatRule !== 'none') || repeatConfig) {
@@ -225,6 +230,9 @@ const validateGoalRestrictions = (
   }
   if (reminderConfig?.length) {
     throw new Error('Una meta no puede tener recordatorios.')
+  }
+  if (categoryId && !(GOAL_CATEGORY_IDS as readonly string[]).includes(categoryId)) {
+    throw new Error('Una meta solo puede tener categoría Personal o Facultad.')
   }
 }
 
@@ -249,7 +257,7 @@ const createItem = (input: NewItemInput): Item => {
   validateSubtaskHasNoRecurrence(input.parentId, repeatConfig)
   const type = inferType(input)
   const reminderConfig = input.reminderConfig?.map((reminder) => ReminderConfig.create(reminder))
-  validateGoalRestrictions(type, input.repeatRule, repeatConfig, input.startDate, input.location, reminderConfig)
+  validateGoalRestrictions(type, input.repeatRule, repeatConfig, input.startDate, input.location, reminderConfig, input.categoryId)
   validateTimeRange(input.startDate, input.startTime, input.endDate, input.endTime)
   const nowIso = new Date().toISOString()
   return buildItem({
@@ -312,7 +320,7 @@ const updateItem = (current: Item, patch: ItemPatch): Item => {
   validateItemDates(merged.startDate, merged.deadline)
   validateRecurrence(merged.repeatRule, merged.repeatConfig)
   validateSubtaskHasNoRecurrence(merged.parentId, merged.repeatConfig)
-  validateGoalRestrictions(merged.type, merged.repeatRule, merged.repeatConfig, merged.startDate, merged.location, merged.reminderConfig)
+  validateGoalRestrictions(merged.type, merged.repeatRule, merged.repeatConfig, merged.startDate, merged.location, merged.reminderConfig, merged.categoryId)
   validateTimeRange(merged.startDate, merged.startTime, merged.endDate, merged.endTime)
   return buildItem(merged)
 }

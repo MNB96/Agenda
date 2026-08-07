@@ -20,12 +20,16 @@ import {
   AlignLeft,
   Bell,
   Clock,
+  CornerDownRight,
   Flag,
+  ListChecks,
   MapPin,
+  Plus,
   Repeat,
   Star,
   Tag,
   X,
+  XCircle,
 } from 'lucide-react-native'
 import { fetchTravelTime, getCurrentLocation, hasLocationPermission } from '../../infrastructure/maps/travelTime'
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker'
@@ -43,7 +47,7 @@ import { useSettings, useLicenseUsages } from '../../application/settings/useSet
 import { DEFAULT_CATEGORIES } from '../../domain/settings/types'
 import { useGoogleAuthStore } from '../../state/googleAuthStore'
 import { computeNextDate } from '../../domain/items/services/recurrence'
-import { RepeatConfig, type ReminderConfigInput, type RepeatConfigInput, type RepeatRule, type TransportMode, type TravelConfigInput } from '../../domain/items'
+import { ITEM_TYPE, RepeatConfig, type ReminderConfigInput, type RepeatConfigInput, type RepeatRule, type TransportMode, type TravelConfigInput } from '../../domain/items'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
 import { resolveCategoryIcon } from '../theme/categoryIcons'
@@ -204,6 +208,10 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
   const [showDescInput, setShowDescInput] = useState(false)
   const [categoryId, setCategoryId] = useState<string | undefined>()
 
+  const [showSubtasksInput, setShowSubtasksInput] = useState(false)
+  const [pendingSubtasks, setPendingSubtasks] = useState<string[]>([])
+  const [newSubtaskText, setNewSubtaskText] = useState('')
+
   const [location, setLocation] = useState<string | undefined>()
   const {
     locationQuery,
@@ -292,6 +300,9 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
       setDescription('')
       setShowDescInput(false)
       setCategoryId(undefined)
+      setShowSubtasksInput(false)
+      setPendingSubtasks([])
+      setNewSubtaskText('')
       setNlDateDismissed(false)
       setNlTimeDismissed(false)
       setNlCategoryDismissed(false)
@@ -404,6 +415,9 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
     let created
     try {
       created = await createItem(payload)
+      for (const subtaskTitle of pendingSubtasks) {
+        await createItem({ title: subtaskTitle, parentId: created.id, type: ITEM_TYPE.TASK })
+      }
     } catch (error) {
       Alert.alert('No se pudo guardar', error instanceof Error ? error.message : 'Revisá los datos ingresados.')
       return
@@ -419,6 +433,17 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
       })
     }
     onClose()
+  }
+
+  const addPendingSubtask = () => {
+    const text = newSubtaskText.trim()
+    if (!text) return
+    setNewSubtaskText('')
+    setPendingSubtasks((prev) => [...prev, text])
+  }
+
+  const removePendingSubtask = (index: number) => {
+    setPendingSubtasks((prev) => prev.filter((_, i) => i !== index))
   }
 
   const handleDayPress = (dayStr: string) => {
@@ -571,6 +596,37 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
           </>
         )}
 
+        {showSubtasksInput && (
+          <View style={styles.subtaskSection}>
+            {pendingSubtasks.map((subtaskTitle, index) => (
+              <View key={index} style={styles.subtaskRow}>
+                <View style={styles.subtaskCheck} />
+                <Text style={styles.subtaskTitle}>{subtaskTitle}</Text>
+                <Pressable onPress={() => removePendingSubtask(index)} hitSlop={8}>
+                  <XCircle size={18} color={colors.textMuted} />
+                </Pressable>
+              </View>
+            ))}
+            <View style={styles.subtaskInputRow}>
+              <CornerDownRight size={18} color={colors.textMuted} />
+              <TextInput
+                value={newSubtaskText}
+                onChangeText={setNewSubtaskText}
+                placeholder="Agregar subtarea"
+                placeholderTextColor={colors.textMuted}
+                style={styles.subtaskInput}
+                returnKeyType="done"
+                blurOnSubmit={false}
+                onSubmitEditing={addPendingSubtask}
+                selectionColor={colors.primary}
+              />
+              <Pressable onPress={addPendingSubtask} disabled={!newSubtaskText.trim()} hitSlop={8}>
+                <Plus size={20} color={newSubtaskText.trim() ? colors.primary : colors.textMuted} />
+              </Pressable>
+            </View>
+          </View>
+        )}
+
         {showLocationInput && (
           <View>
             <View style={styles.locationInputRow}>
@@ -713,6 +769,20 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
               label="Fecha y hora"
               active={Boolean(effectiveDate)}
               onPress={openDatePanel}
+              colors={colors}
+            />
+            <ActionIcon
+              icon={ListChecks}
+              label="Subtareas"
+              active={showSubtasksInput || pendingSubtasks.length > 0}
+              onPress={() => {
+                if (showSubtasksInput) {
+                  setShowSubtasksInput(false)
+                  Keyboard.dismiss()
+                } else {
+                  setShowSubtasksInput(true)
+                }
+              }}
               colors={colors}
             />
             <ActionIcon
@@ -1229,6 +1299,41 @@ const createStyles = (colors: ThemeTokens) =>
       color: colors.textMuted,
     },
 
+    subtaskSection: {
+      marginBottom: 8,
+    },
+    subtaskRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 8,
+      gap: 12,
+    },
+    subtaskCheck: {
+      width: 20,
+      height: 20,
+      borderRadius: 999,
+      borderWidth: 1.8,
+      borderColor: colors.borderStrong,
+      backgroundColor: 'transparent',
+    },
+    subtaskTitle: {
+      fontSize: 15,
+      color: colors.text,
+      flex: 1,
+    },
+    subtaskInputRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      paddingVertical: 8,
+    },
+    subtaskInput: {
+      flex: 1,
+      fontSize: 15,
+      color: colors.text,
+      padding: 0,
+      outlineWidth: 0,
+    },
     locationInputRow: {
       flexDirection: 'row',
       alignItems: 'center',

@@ -24,6 +24,16 @@ const toBody = (payload: { title: string; notes?: string; dueDate?: string }) =>
 })
 
 export class GoogleTasksRepository implements TaskRepository {
+  async listTasks(accessToken: string): Promise<{ taskId: string; title: string; dueDate?: string }[]> {
+    const query = new URLSearchParams({ showCompleted: 'true', showHidden: 'true', maxResults: '100' })
+    const response = await fetch(`${GOOGLE_TASKS_BASE}?${query.toString()}`, {
+      headers: buildHeaders(accessToken),
+    })
+    await ensureOk(response, 'No se pudieron cargar las tareas de Google Tasks.')
+    const data = (await response.json()) as { items?: { id: string; title?: string; due?: string }[] }
+    return (data.items ?? []).map((t) => ({ taskId: t.id, title: t.title ?? '', dueDate: t.due?.slice(0, 10) }))
+  }
+
   async createTask(accessToken: string, payload: { title: string; notes?: string; dueDate?: string }): Promise<{ taskId: string }> {
     const response = await fetch(GOOGLE_TASKS_BASE, {
       method: 'POST',

@@ -25,10 +25,12 @@ import {
   CornerDownRight,
   MapPin,
   MoreVertical,
+  Plus,
   Repeat,
   Star,
   Tag,
   X,
+  XCircle,
 } from 'lucide-react-native'
 import { MonthCalendar } from '../components/MonthCalendar'
 import { RepeatPanel, UNIT_OPTIONS, RULE_TO_UNIT } from '../components/RepeatPanel'
@@ -218,6 +220,10 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
     setNewSubtaskText('')
     await createItem({ title: text, parentId: item.id, type: ITEM_TYPE.TASK })
     setTimeout(() => subtaskInputRef.current?.focus(), 100)
+  }
+
+  const removeSubtask = async (subtask: Item) => {
+    await removeItem(subtask)
   }
 
   const openRepeatPanel = () => {
@@ -680,6 +686,9 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
                 <Text style={[styles.subtaskTitle, sub.status === 'completed' && styles.done]}>
                   {sub.title}
                 </Text>
+                <Pressable onPress={() => void removeSubtask(sub)} hitSlop={8}>
+                  <XCircle size={18} color={colors.textMuted} />
+                </Pressable>
               </View>
             ))}
 
@@ -697,6 +706,9 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
                 onSubmitEditing={() => void addSubtask()}
                 selectionColor={colors.primary}
               />
+              <Pressable onPress={() => void addSubtask()} disabled={!newSubtaskText.trim()} hitSlop={8}>
+                <Plus size={20} color={newSubtaskText.trim() ? colors.primary : colors.textMuted} />
+              </Pressable>
             </View>
           </ScrollView>
 

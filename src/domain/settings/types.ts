@@ -1,4 +1,4 @@
-import type { ItemCategory } from '../items'
+import { GOAL_CATEGORY_IDS, type ItemCategory } from '../items'
 
 export type { LicenseUsage, LicenseUsageInput } from './LicenseUsage'
 export { createLicenseUsage } from './LicenseUsage'
@@ -21,6 +21,11 @@ export const DEFAULT_CATEGORIES: readonly ItemCategory[] = [
   { id: 'salud', name: 'Salud', color: '#B8DDD1', icon: 'Cross' },
   { id: 'compras', name: 'Compras', color: '#E6E5C2', icon: 'ShoppingCart' },
 ]
+
+// The subset of DEFAULT_CATEGORIES a goal is allowed to have — see Item.ts's validateGoalRestrictions.
+export const GOAL_CATEGORIES: readonly ItemCategory[] = DEFAULT_CATEGORIES.filter((category) =>
+  (GOAL_CATEGORY_IDS as readonly string[]).includes(category.id),
+)
 
 export const DEFAULT_SETTINGS: Settings = {
   id: 'main',

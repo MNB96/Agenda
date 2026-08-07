@@ -167,7 +167,7 @@ interface UseTaskEntriesResult {
   setActiveCategory: (value: 'all' | string) => void
   sections: [TaskSectionKey, TaskEntry[]][]
   localItemsById: Map<string, Item>
-  subtaskMap: Map<string, { total: number; done: number }>
+  subtasksByParent: Map<string, Item[]>
   hasMoreCompleted: boolean
   isLoadingMoreCompleted: boolean
   loadMoreCompleted: () => void
@@ -242,14 +242,12 @@ export const useTaskEntries = (): UseTaskEntriesResult => {
 
   const scored = scoreItemsForToday(datedItems)
 
-  const subtaskMap = useMemo(() => {
-    const map = new Map<string, { total: number; done: number }>()
+  const subtasksByParent = useMemo(() => {
+    const map = new Map<string, Item[]>()
     items.filter(item => item.parentId).forEach(sub => {
-      const existing = map.get(sub.parentId!) ?? { total: 0, done: 0 }
-      map.set(sub.parentId!, {
-        total: existing.total + 1,
-        done: existing.done + (sub.status === 'completed' ? 1 : 0),
-      })
+      const existing = map.get(sub.parentId!) ?? []
+      existing.push(sub)
+      map.set(sub.parentId!, existing)
     })
     return map
   }, [items])
@@ -370,7 +368,7 @@ export const useTaskEntries = (): UseTaskEntriesResult => {
     setActiveCategory,
     sections,
     localItemsById,
-    subtaskMap,
+    subtasksByParent,
     // Si la última página cargada vino corta (o el total nunca llegó a una página completa),
     // ya sabemos que no hay más sin necesidad de pedirlas.
     hasMoreCompleted: hasMoreCompleted && completedItems.length > 0 && completedItems.length % COMPLETED_PAGE_SIZE === 0,

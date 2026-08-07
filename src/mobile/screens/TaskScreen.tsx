@@ -1,10 +1,9 @@
 import { useMemo } from 'react'
 import { ActivityIndicator, Alert, FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
-import Swipeable from 'react-native-gesture-handler/Swipeable'
 import { differenceInCalendarDays, differenceInHours, format, isToday, startOfDay } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { CalendarDays } from 'lucide-react-native'
-import { ItemCard } from '../components/ItemCard'
+import { SwipeableItemCard } from '../components/SwipeableItemCard'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { useItems } from '../../application/items/useItems'
 import { useSettings } from '../../application/settings/useSettings'
@@ -88,7 +87,7 @@ interface TaskScreenProps {
 }
 
 export const TaskScreen = ({ onOpenItemEditor }: TaskScreenProps) => {
-  const { toggleCompleted } = useItems()
+  const { toggleCompleted, removeItem } = useItems()
   const { data: settings } = useSettings()
   const { colors, isDark } = useAppTheme()
   const styles = useMemo(() => createStyles(colors), [colors])
@@ -100,7 +99,7 @@ export const TaskScreen = ({ onOpenItemEditor }: TaskScreenProps) => {
     setActiveCategory,
     sections,
     localItemsById,
-    subtaskMap,
+    subtasksByParent,
     hasMoreCompleted,
     isLoadingMoreCompleted,
     loadMoreCompleted,
@@ -244,16 +243,13 @@ export const TaskScreen = ({ onOpenItemEditor }: TaskScreenProps) => {
                     : new Date(`${localItem.startDate}T00:00:00`)
                   return startMoment < new Date() ? formatOverdueDuration(startMoment) : undefined
                 })()
-                const subtaskInfo = subtaskMap.get(localItem.id)
-                const isActiveItem = localItem.status !== 'completed'
-                const card = (
-                  <ItemCard
+                return (
+                  <SwipeableItemCard
                     key={localItem.id}
                     item={localItem}
                     overdueDeadlineLabel={overdueDeadlineLabel}
                     overdueLabel={overdueLabel}
-                    subtaskTotal={subtaskInfo?.total}
-                    subtaskDone={subtaskInfo?.done}
+                    subtasks={subtasksByParent.get(localItem.id)}
                     onToggle={async (item) => {
                       try {
                         await toggleCompleted(item)
@@ -261,33 +257,18 @@ export const TaskScreen = ({ onOpenItemEditor }: TaskScreenProps) => {
                         Alert.alert('No se pudo completar', error instanceof Error ? error.message : 'Intentá de nuevo.')
                       }
                     }}
+                    onToggleSubtask={async (sub) => { await toggleCompleted(sub) }}
                     onOpen={() => onOpenItemEditor(localItem.id)}
-                  />
-                )
-                if (!isActiveItem) return card
-                return (
-                  <Swipeable
-                    key={localItem.id}
-                    friction={2}
-                    rightThreshold={80}
-                    renderRightActions={() => (
-                      <View style={styles.swipeCompleteAction}>
-                        <Text style={styles.swipeCompleteText}>✓</Text>
-                      </View>
-                    )}
-                    onSwipeableOpen={(dir) => {
-                      if (dir !== 'right') return
-                      void (async () => {
-                        try {
-                          await toggleCompleted(localItem)
-                        } catch (error) {
-                          Alert.alert('No se pudo completar', error instanceof Error ? error.message : 'Intentá de nuevo.')
-                        }
-                      })()
+                    onDelete={async (item) => {
+                      try {
+                        await removeItem(item)
+                      } catch (error) {
+                        Alert.alert('No se pudo eliminar', error instanceof Error ? error.message : 'Intentá de nuevo.')
+                      }
                     }}
-                  >
-                    {card}
-                  </Swipeable>
+                    deleteConfirmTitle="Eliminar tarea"
+                    deleteConfirmMessage="¿Eliminar esta tarea?"
+                  />
                 )
               }
 
@@ -438,17 +419,6 @@ const createStyles = (colors: ThemeTokens) =>
     },
     emptyTitle: { color: colors.text, fontSize: 19, fontWeight: '800' },
     emptySubtitle: { color: colors.textSecondary, fontSize: 15, marginTop: 4, textAlign: 'center' },
-    swipeCompleteAction: {
-      backgroundColor: colors.success,
-      justifyContent: 'center',
-      alignItems: 'center',
-      width: 72,
-    },
-    swipeCompleteText: {
-      color: '#FFFFFF',
-      fontSize: 22,
-      fontWeight: '700',
-    },
     loadMoreButton: {
       alignSelf: 'center',
       paddingVertical: 10,

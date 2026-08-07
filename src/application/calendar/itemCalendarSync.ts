@@ -13,7 +13,7 @@ interface SyncContext {
 
 // An explicit end turns it into a real Calendar Event; anything else becomes a Google Task,
 // whose due date has no time component anyway — no invented duration either way.
-const resolveTargetKind = (item: Item): 'event' | 'task' =>
+export const resolveTargetKind = (item: Item): 'event' | 'task' =>
   item.startDate && item.startTime && item.endTime ? 'event' : 'task'
 
 const eventPayloadFor = (item: Item, dateTimes: NonNullable<ReturnType<typeof resolveEventDateTimes>>) => ({

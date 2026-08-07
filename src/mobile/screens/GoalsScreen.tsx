@@ -1,12 +1,14 @@
-import { useMemo } from 'react'
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { useMemo, useState } from 'react'
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { differenceInCalendarDays } from 'date-fns'
 import { Target } from 'lucide-react-native'
-import { ItemCard } from '../components/ItemCard'
+import { SwipeableItemCard } from '../components/SwipeableItemCard'
 import { useItems } from '../../application/items/useItems'
-import { ITEM_TYPE } from '../../domain/items'
+import { ITEM_TYPE, type Item } from '../../domain/items'
 import { isGoalPastDeadlineUnfulfilled } from '../../domain/items/services/goalDeadline'
+import { GOAL_CATEGORIES } from '../../domain/settings/types'
 import { useAppTheme } from '../theme/useAppTheme'
+import { resolveCategoryIcon } from '../theme/categoryIcons'
 import type { ThemeTokens } from '../theme/tokens'
 
 interface GoalsScreenProps {
@@ -20,13 +22,22 @@ const formatOverdueDays = (deadline: string): string => {
 }
 
 export const GoalsScreen = ({ onOpenGoalEditor }: GoalsScreenProps) => {
-  const { items, toggleCompleted } = useItems()
+  const { items, toggleCompleted, removeItem } = useItems()
   const { colors } = useAppTheme()
   const styles = useMemo(() => createStyles(colors), [colors])
 
+  const [search, setSearch] = useState('')
+  const [activeCategory, setActiveCategory] = useState<'all' | string>('all')
+
   const { overdueGoals, activeGoals, completedGoals } = useMemo(() => {
+    const query = search.trim().toLowerCase()
     // Submetas no van en el listado principal — solo cuentan para el progreso de su meta padre.
-    const goals = items.filter((item) => item.type === ITEM_TYPE.GOAL && !item.parentId)
+    const goals = items.filter((item) => {
+      if (item.type !== ITEM_TYPE.GOAL || item.parentId) return false
+      if (activeCategory !== 'all' && item.categoryId !== activeCategory) return false
+      if (!query) return true
+      return [item.title, item.description].filter(Boolean).some((value) => String(value).toLowerCase().includes(query))
+    })
     const active = goals
       .filter((goal) => goal.status === 'active')
       .sort((goalA, goalB) => (goalA.deadline ?? 'zzz').localeCompare(goalB.deadline ?? 'zzz'))
@@ -36,16 +47,14 @@ export const GoalsScreen = ({ onOpenGoalEditor }: GoalsScreenProps) => {
       .filter((goal) => goal.status === 'completed')
       .sort((goalA, goalB) => (goalB.completedAt ?? '').localeCompare(goalA.completedAt ?? ''))
     return { overdueGoals: overdue, activeGoals: notOverdue, completedGoals: completed }
-  }, [items])
+  }, [items, search, activeCategory])
 
-  const subgoalMap = useMemo(() => {
-    const map = new Map<string, { total: number; done: number }>()
+  const subgoalsByParent = useMemo(() => {
+    const map = new Map<string, Item[]>()
     items.filter((item) => item.parentId).forEach((sub) => {
-      const existing = map.get(sub.parentId!) ?? { total: 0, done: 0 }
-      map.set(sub.parentId!, {
-        total: existing.total + 1,
-        done: existing.done + (sub.status === 'completed' ? 1 : 0),
-      })
+      const existing = map.get(sub.parentId!) ?? []
+      existing.push(sub)
+      map.set(sub.parentId!, existing)
     })
     return map
   }, [items])
@@ -58,7 +67,55 @@ export const GoalsScreen = ({ onOpenGoalEditor }: GoalsScreenProps) => {
     }
   }
 
-  if (overdueGoals.length === 0 && activeGoals.length === 0 && completedGoals.length === 0) {
+  const handleDelete = async (item: Parameters<typeof removeItem>[0]) => {
+    try {
+      await removeItem(item)
+    } catch (error) {
+      Alert.alert('No se pudo eliminar', error instanceof Error ? error.message : 'Intentá de nuevo.')
+    }
+  }
+
+  const hasAnyGoals = items.some((item) => item.type === ITEM_TYPE.GOAL && !item.parentId)
+  const isEmptyResult = overdueGoals.length === 0 && activeGoals.length === 0 && completedGoals.length === 0
+
+  const filters = (
+    <>
+      <TextInput
+        placeholder="Buscar metas o categorías"
+        placeholderTextColor={colors.textMuted}
+        value={search}
+        onChangeText={setSearch}
+        style={styles.searchInput}
+      />
+      <View style={styles.filtersWrapper}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filtersRow}>
+          <Pressable onPress={() => setActiveCategory('all')} style={[styles.filterChip, activeCategory === 'all' && styles.filterChipActive]}>
+            <Text style={[styles.filterChipText, activeCategory === 'all' && styles.filterChipTextActive]}>Todas</Text>
+          </Pressable>
+          {GOAL_CATEGORIES.map((category) => {
+            const isCategoryActive = activeCategory === category.id
+            const CategoryIcon = resolveCategoryIcon(category.icon)
+            return (
+              <Pressable
+                key={category.id}
+                onPress={() => setActiveCategory(category.id)}
+                style={[
+                  styles.filterChip,
+                  { flexDirection: 'row', alignItems: 'center', gap: 6 },
+                  isCategoryActive && [styles.filterChipActive, { backgroundColor: category.color, borderColor: category.color }],
+                ]}
+              >
+                <CategoryIcon size={13} color={isCategoryActive ? '#FFFFFF' : colors.textMuted} />
+                <Text style={[styles.filterChipText, isCategoryActive && styles.filterChipTextActive]}>{category.name}</Text>
+              </Pressable>
+            )
+          })}
+        </ScrollView>
+      </View>
+    </>
+  )
+
+  if (!hasAnyGoals) {
     return (
       <View style={styles.emptyState}>
         <View style={styles.emptyIconWrap}>
@@ -71,49 +128,72 @@ export const GoalsScreen = ({ onOpenGoalEditor }: GoalsScreenProps) => {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {overdueGoals.length > 0 && (
-        <>
-          <Text style={[styles.sectionHeader, { color: colors.danger }]}>Vencidas</Text>
-          {overdueGoals.map((goal) => (
-            <ItemCard
-              key={goal.id}
-              item={goal}
-              overdueDeadlineLabel={goal.deadline ? formatOverdueDays(goal.deadline) : undefined}
-              subtaskTotal={subgoalMap.get(goal.id)?.total}
-              subtaskDone={subgoalMap.get(goal.id)?.done}
-              onToggle={handleToggle}
-              onOpen={() => onOpenGoalEditor(goal.id)}
-            />
-          ))}
-        </>
-      )}
+    <View style={styles.container}>
+      {filters}
+      <ScrollView contentContainerStyle={styles.content}>
+        {isEmptyResult ? (
+          <Text style={styles.noResultsText}>No hay metas que coincidan.</Text>
+        ) : (
+          <>
+            {overdueGoals.length > 0 && (
+              <>
+                <Text style={[styles.sectionHeader, { color: colors.danger }]}>Vencidas</Text>
+                {overdueGoals.map((goal) => (
+                  <SwipeableItemCard
+                    key={goal.id}
+                    item={goal}
+                    overdueDeadlineLabel={goal.deadline ? formatOverdueDays(goal.deadline) : undefined}
+                    subtasks={subgoalsByParent.get(goal.id)}
+                    onToggle={handleToggle}
+                    onToggleSubtask={handleToggle}
+                    onOpen={() => onOpenGoalEditor(goal.id)}
+                    onDelete={handleDelete}
+                    deleteConfirmTitle="Eliminar meta"
+                    deleteConfirmMessage="¿Eliminar esta meta?"
+                  />
+                ))}
+              </>
+            )}
 
-      {activeGoals.length > 0 && (
-        <>
-          {overdueGoals.length > 0 && <Text style={styles.sectionHeader}>Activas</Text>}
-          {activeGoals.map((goal) => (
-            <ItemCard
-              key={goal.id}
-              item={goal}
-              subtaskTotal={subgoalMap.get(goal.id)?.total}
-              subtaskDone={subgoalMap.get(goal.id)?.done}
-              onToggle={handleToggle}
-              onOpen={() => onOpenGoalEditor(goal.id)}
-            />
-          ))}
-        </>
-      )}
+            {activeGoals.length > 0 && (
+              <>
+                {overdueGoals.length > 0 && <Text style={styles.sectionHeader}>Activas</Text>}
+                {activeGoals.map((goal) => (
+                  <SwipeableItemCard
+                    key={goal.id}
+                    item={goal}
+                    subtasks={subgoalsByParent.get(goal.id)}
+                    onToggle={handleToggle}
+                    onToggleSubtask={handleToggle}
+                    onOpen={() => onOpenGoalEditor(goal.id)}
+                    onDelete={handleDelete}
+                    deleteConfirmTitle="Eliminar meta"
+                    deleteConfirmMessage="¿Eliminar esta meta?"
+                  />
+                ))}
+              </>
+            )}
 
-      {completedGoals.length > 0 && (
-        <>
-          <Text style={styles.sectionHeader}>Cumplidas</Text>
-          {completedGoals.map((goal) => (
-            <ItemCard key={goal.id} item={goal} onToggle={handleToggle} onOpen={() => onOpenGoalEditor(goal.id)} />
-          ))}
-        </>
-      )}
-    </ScrollView>
+            {completedGoals.length > 0 && (
+              <>
+                <Text style={styles.sectionHeader}>Cumplidas</Text>
+                {completedGoals.map((goal) => (
+                  <SwipeableItemCard
+                    key={goal.id}
+                    item={goal}
+                    onToggle={handleToggle}
+                    onOpen={() => onOpenGoalEditor(goal.id)}
+                    onDelete={handleDelete}
+                    deleteConfirmTitle="Eliminar meta"
+                    deleteConfirmMessage="¿Eliminar esta meta?"
+                  />
+                ))}
+              </>
+            )}
+          </>
+        )}
+      </ScrollView>
+    </View>
   )
 }
 
@@ -121,6 +201,33 @@ const createStyles = (colors: ThemeTokens) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background, paddingHorizontal: 14, paddingTop: 10 },
     content: { paddingBottom: 32 },
+    searchInput: {
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.borderStrong,
+      borderRadius: 14,
+      paddingHorizontal: 14,
+      paddingVertical: 11,
+      marginBottom: 12,
+      color: colors.text,
+      fontSize: 16,
+    },
+    filtersWrapper: { marginBottom: 4, paddingVertical: 4 },
+    filtersRow: { flexDirection: 'row', gap: 8, alignItems: 'center', paddingRight: 12 },
+    filterChip: {
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 999,
+      minHeight: 36,
+      alignSelf: 'flex-start',
+      justifyContent: 'center',
+      paddingHorizontal: 14,
+      paddingVertical: 0,
+    },
+    filterChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+    filterChipText: { fontSize: 14, lineHeight: 19, fontWeight: '600', color: colors.textSecondary },
+    filterChipTextActive: { color: '#FFFFFF', fontWeight: '800' },
     sectionHeader: {
       fontSize: 12,
       fontWeight: '700',
@@ -130,6 +237,12 @@ const createStyles = (colors: ThemeTokens) =>
       marginTop: 16,
       marginBottom: 4,
       marginLeft: 2,
+    },
+    noResultsText: {
+      color: colors.textSecondary,
+      fontSize: 15,
+      textAlign: 'center',
+      marginTop: 40,
     },
     emptyState: {
       flex: 1,

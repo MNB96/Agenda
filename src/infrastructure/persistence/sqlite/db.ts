@@ -130,6 +130,23 @@ export const getDb = (): Promise<SQLite.SQLiteDatabase> => {
         );
         CREATE INDEX IF NOT EXISTS idx_items_status ON items(status);
         CREATE INDEX IF NOT EXISTS idx_items_parentId ON items(parentId);
+
+        CREATE TABLE IF NOT EXISTS habits (
+          id TEXT PRIMARY KEY NOT NULL,
+          title TEXT NOT NULL,
+          categoryId TEXT,
+          regularity TEXT NOT NULL,
+          reminder TEXT,
+          notificationIds TEXT,
+          createdAt TEXT NOT NULL,
+          updatedAt TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS habit_completions (
+          habitId TEXT NOT NULL,
+          date TEXT NOT NULL,
+          PRIMARY KEY (habitId, date)
+        );
+        CREATE INDEX IF NOT EXISTS idx_habit_completions_habitId ON habit_completions(habitId);
       `)
       await migrateFromAsyncStorage(db)
       await migrateCalendarLinkFieldNames(db)

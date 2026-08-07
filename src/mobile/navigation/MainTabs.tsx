@@ -1,5 +1,5 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
-import { GraduationCap, ListTodo, Settings, Target } from 'lucide-react-native'
+import { Flame, GraduationCap, ListTodo, Settings, Target } from 'lucide-react-native'
 import { Pressable, StyleSheet } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { format } from 'date-fns'
@@ -7,6 +7,7 @@ import { es } from 'date-fns/locale'
 import { StudiesScreen } from '../screens/StudiesScreen'
 import { TaskScreen } from '../screens/TaskScreen'
 import { GoalsScreen } from '../screens/GoalsScreen'
+import { HabitsScreen } from '../screens/HabitsScreen'
 import { useAppTheme } from '../theme/useAppTheme'
 
 const Tab = createBottomTabNavigator()
@@ -17,9 +18,10 @@ interface MainTabsProps {
   onOpenSettings: () => void
   onOpenItemEditor: (itemId: string) => void
   onOpenGoalEditor: (itemId: string) => void
+  onOpenHabitEditor: (habitId: string) => void
 }
 
-export const MainTabs = ({ onOpenSettings, onOpenItemEditor, onOpenGoalEditor }: MainTabsProps) => {
+export const MainTabs = ({ onOpenSettings, onOpenItemEditor, onOpenGoalEditor, onOpenHabitEditor }: MainTabsProps) => {
   const { colors } = useAppTheme()
   const { bottom } = useSafeAreaInsets()
 
@@ -74,6 +76,14 @@ export const MainTabs = ({ onOpenSettings, onOpenItemEditor, onOpenGoalEditor }:
         }}
       >
         {() => <GoalsScreen onOpenGoalEditor={onOpenGoalEditor} />}
+      </Tab.Screen>
+      <Tab.Screen
+        name="Hábitos"
+        options={{
+          tabBarIcon: ({ color, size }) => <Flame color={color} size={size} />,
+        }}
+      >
+        {() => <HabitsScreen onOpenHabitEditor={onOpenHabitEditor} />}
       </Tab.Screen>
     </Tab.Navigator>
   )

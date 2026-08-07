@@ -1,8 +1,8 @@
-import { useMemo } from 'react'
-import { Linking, Pressable, StyleSheet, Text, View } from 'react-native'
+import { useMemo, useState } from 'react'
+import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native'
 import { differenceInCalendarDays, format, parseISO, startOfDay } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { AlarmClock, Bell, CalendarCheck, Repeat, Star } from 'lucide-react-native'
+import { AlarmClock, Bell, CalendarCheck, Check, ChevronDown, ChevronUp, GraduationCap, Heart, Repeat, Star } from 'lucide-react-native'
 import { ITEM_TYPE, type Item } from '../../domain/items'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
@@ -11,21 +11,27 @@ interface ItemCardProps {
   item: Item
   overdueLabel?: string
   overdueDeadlineLabel?: string
-  subtaskTotal?: number
-  subtaskDone?: number
+  subtasks?: Item[]
   onToggle?: (item: Item) => Promise<void>
+  onToggleSubtask?: (subtask: Item) => Promise<void>
   onOpen?: (item: Item) => void
 }
 
-export const ItemCard = ({ item, overdueLabel, overdueDeadlineLabel, subtaskTotal, subtaskDone, onToggle, onOpen }: ItemCardProps) => {
+export const ItemCard = ({ item, overdueLabel, overdueDeadlineLabel, subtasks = [], onToggle, onToggleSubtask, onOpen }: ItemCardProps) => {
   const { colors } = useAppTheme()
   const styles = useMemo(() => createStyles(colors), [colors])
+  const [expanded, setExpanded] = useState(false)
 
   const indicatorColor = resolveIndicatorColor(item, colors)
   const reminders = item.reminderConfig ?? []
   const hasAlarmReminder = reminders.some((reminder) => reminder.alarmType === 'alarm')
   const hasNotificationReminder = reminders.some((reminder) => reminder.alarmType !== 'alarm')
   const repeats = Boolean(item.repeatRule) && item.repeatRule !== 'none'
+  const subtaskDone = subtasks.filter((sub) => sub.status === 'completed').length
+  const ChevronIcon = expanded ? ChevronUp : ChevronDown
+  const showCategoryIcon = item.type === ITEM_TYPE.GOAL && item.status !== 'completed'
+  // Solo personal/facultad aplican a metas — ver validateGoalRestrictions en Item.ts.
+  const CategoryIcon = showCategoryIcon && item.categoryId === 'facultad' ? GraduationCap : showCategoryIcon && item.categoryId === 'personal' ? Heart : undefined
 
   // La fecha ya la muestra el encabezado de sección; acá solo hora y fecha límite (otro dato).
   const dateLabel =
@@ -47,19 +53,12 @@ export const ItemCard = ({ item, overdueLabel, overdueDeadlineLabel, subtaskTota
             { borderColor: indicatorColor },
             item.status === 'completed' ? [styles.checkboxDone, { backgroundColor: colors.success }] : undefined,
           ]}
-        />
+        >
+          {CategoryIcon && <CategoryIcon size={14} color={indicatorColor} />}
+        </Pressable>
 
         <View style={styles.content}>
-          <View style={styles.titleRow}>
-            <Text style={[styles.title, item.status === 'completed' ? styles.done : undefined, { flex: 1 }]}>{item.title}</Text>
-            {(subtaskTotal ?? 0) > 0 && (
-              <View style={[styles.subtaskBadge, subtaskDone === subtaskTotal && { backgroundColor: colors.success + '22', borderColor: colors.success + '55' }]}>
-                <Text style={[styles.subtaskBadgeText, subtaskDone === subtaskTotal && { color: colors.success }]}>
-                  {subtaskDone}/{subtaskTotal}
-                </Text>
-              </View>
-            )}
-          </View>
+          <Text style={[styles.title, item.status === 'completed' ? styles.done : undefined]}>{item.title}</Text>
           {overdueDeadlineLabel ? (
             <Text style={styles.overdueDeadlineLabel}>{overdueDeadlineLabel}</Text>
           ) : null}
@@ -80,6 +79,34 @@ export const ItemCard = ({ item, overdueLabel, overdueDeadlineLabel, subtaskTota
               <Text style={styles.locationMeta} numberOfLines={1}>📍 {item.location}</Text>
             </Pressable>
           ) : null}
+
+          {subtasks.length > 0 && (
+            <>
+              <Pressable style={styles.progressRow} onPress={() => setExpanded((v) => !v)} hitSlop={6}>
+                <View style={styles.progressBarTrack}>
+                  <View style={[styles.progressBarFill, { width: `${(subtaskDone / subtasks.length) * 100}%`, backgroundColor: colors.primary }]} />
+                </View>
+                <Text style={styles.progressLabel}>{subtaskDone} de {subtasks.length}</Text>
+                <ChevronIcon size={16} color={colors.textMuted} />
+              </Pressable>
+              {expanded && subtasks.map((sub) => (
+                <Pressable
+                  key={sub.id}
+                  style={styles.subtaskRow}
+                  onPress={() => {
+                    void onToggleSubtask?.(sub).catch((error: unknown) => {
+                      Alert.alert('No se pudo completar', error instanceof Error ? error.message : 'Intentá de nuevo.')
+                    })
+                  }}
+                >
+                  <View style={[styles.subtaskCheck, sub.status === 'completed' && { backgroundColor: colors.primary, borderColor: colors.primary }]}>
+                    {sub.status === 'completed' && <Check size={12} color="#FFFFFF" />}
+                  </View>
+                  <Text style={[styles.subtaskTitle, sub.status === 'completed' && styles.done]}>{sub.title}</Text>
+                </Pressable>
+              ))}
+            </>
+          )}
         </View>
 
         {(item.important || repeats || hasAlarmReminder || hasNotificationReminder || item.calendarLink) && (
@@ -159,6 +186,8 @@ const createStyles = (colors: ThemeTokens) =>
       borderWidth: 1.6,
       marginTop: 0,
       backgroundColor: colors.surface,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     checkboxDone: {
       borderColor: colors.success,
@@ -171,11 +200,6 @@ const createStyles = (colors: ThemeTokens) =>
       alignItems: 'center',
       alignSelf: 'center',
       gap: 6,
-    },
-    titleRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 0,
     },
     title: {
       fontSize: 17,
@@ -208,19 +232,49 @@ const createStyles = (colors: ThemeTokens) =>
       color: colors.textMuted,
       marginTop: 3,
     },
-    subtaskBadge: {
-      borderWidth: 1,
-      borderColor: colors.borderStrong,
-      borderRadius: 999,
-      paddingHorizontal: 7,
-      paddingVertical: 2,
-      marginLeft: 6,
-      alignSelf: 'flex-start',
-      backgroundColor: colors.surfaceSecondary,
+    progressRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginTop: 8,
     },
-    subtaskBadgeText: {
-      fontSize: 11,
+    progressBarTrack: {
+      flex: 1,
+      height: 4,
+      borderRadius: 999,
+      backgroundColor: colors.border,
+      overflow: 'hidden',
+    },
+    progressBarFill: {
+      height: 4,
+      borderRadius: 999,
+    },
+    progressLabel: {
+      fontSize: 12,
       color: colors.textMuted,
       fontWeight: '600',
+    },
+    subtaskRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      paddingVertical: 6,
+      paddingLeft: 4,
+      marginTop: 2,
+    },
+    subtaskCheck: {
+      width: 18,
+      height: 18,
+      borderRadius: 999,
+      borderWidth: 1.6,
+      borderColor: colors.borderStrong,
+      backgroundColor: 'transparent',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    subtaskTitle: {
+      fontSize: 14,
+      color: colors.text,
+      flex: 1,
     },
   })
