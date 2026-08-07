@@ -57,7 +57,6 @@ export const initNotificationChannel = async (): Promise<void> => {
     importance: Notifications.AndroidImportance.HIGH,
     vibrationPattern: [0, 250, 250, 250],
     enableLights: true,
-    sound: 'default',
   })
   await Notifications.setNotificationChannelAsync('alarmas', {
     name: 'Alarmas',
@@ -65,7 +64,7 @@ export const initNotificationChannel = async (): Promise<void> => {
     vibrationPattern: [0, 500, 200, 500],
     enableLights: true,
     bypassDnd: true,
-    sound: 'default',
+    // Sin 'sound' explícito: cae al sonido default del sistema sin disparar la validación de sonido custom.
     // ALARM stream, not NOTIFICATION — the latter is silenced by ringer mode (vibrate/silent).
     audioAttributes: {
       usage: Notifications.AndroidAudioUsage.ALARM,

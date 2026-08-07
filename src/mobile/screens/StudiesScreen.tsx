@@ -161,7 +161,7 @@ export const StudiesScreen = ({ onOpenItemEditor }: StudiesScreenProps) => {
           <View style={styles.summaryNextRow}>
             <View style={styles.summaryNextDot} />
             <View style={{ flex: 1 }}>
-              <Text style={styles.summaryNextLabel}>Próximo fecha importante</Text>
+              <Text style={styles.summaryNextLabel}>Próxima fecha importante</Text>
               <Text style={styles.summaryNextExam} numberOfLines={1}>{semesterSummary.next.title}</Text>
             </View>
             {semesterSummary.nextDays !== null && (

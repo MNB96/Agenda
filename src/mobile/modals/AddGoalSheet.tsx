@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { CornerDownRight, Flag, Star, Trash2, X } from 'lucide-react-native'
+import { CornerDownRight, Flag, Star, Trash2, X, XCircle } from 'lucide-react-native'
 import { format, isToday } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { MonthCalendar } from '../components/MonthCalendar'
@@ -83,6 +83,8 @@ export const AddGoalSheet = ({ open, goalId, onClose }: AddGoalSheetProps) => {
   const [deadline, setDeadline] = useState<string | undefined>()
   const [deadlinePickerOpen, setDeadlinePickerOpen] = useState(false)
   const [newSubgoalText, setNewSubgoalText] = useState('')
+  // Subgoals typed before the goal itself is saved (no parentId yet) — created in handleSave.
+  const [pendingSubgoals, setPendingSubgoals] = useState<string[]>([])
 
   // Same "adjust state during render" pattern QuickAddSheet uses: create mode resets to blank
   // as soon as the sheet opens; edit mode prefills once the fetched item actually arrives.
@@ -97,6 +99,7 @@ export const AddGoalSheet = ({ open, goalId, onClose }: AddGoalSheetProps) => {
       setDeadline(undefined)
       setDeadlinePickerOpen(false)
       setNewSubgoalText('')
+      setPendingSubgoals([])
       setSyncedGoalId(undefined)
     } else if (!open) {
       setSyncedGoalId(undefined)
@@ -128,13 +131,16 @@ export const AddGoalSheet = ({ open, goalId, onClose }: AddGoalSheetProps) => {
           },
         })
       } else {
-        await createItem({
+        const created = await createItem({
           title: title.trim(),
           description: description.trim() || undefined,
           type: ITEM_TYPE.GOAL,
           important,
           deadline,
         })
+        for (const subgoalTitle of pendingSubgoals) {
+          await createItem({ title: subgoalTitle, parentId: created.id, type: ITEM_TYPE.GOAL })
+        }
       }
     } catch (error) {
       Alert.alert('No se pudo guardar', error instanceof Error ? error.message : 'Revisá los datos ingresados.')
@@ -145,9 +151,17 @@ export const AddGoalSheet = ({ open, goalId, onClose }: AddGoalSheetProps) => {
 
   const addSubgoal = async () => {
     const text = newSubgoalText.trim()
-    if (!text || !goalId) return
+    if (!text) return
     setNewSubgoalText('')
-    await createItem({ title: text, parentId: goalId, type: ITEM_TYPE.GOAL })
+    if (goalId) {
+      await createItem({ title: text, parentId: goalId, type: ITEM_TYPE.GOAL })
+    } else {
+      setPendingSubgoals((prev) => [...prev, text])
+    }
+  }
+
+  const removePendingSubgoal = (index: number) => {
+    setPendingSubgoals((prev) => prev.filter((_, i) => i !== index))
   }
 
   const handleDelete = () => {
@@ -229,10 +243,9 @@ export const AddGoalSheet = ({ open, goalId, onClose }: AddGoalSheetProps) => {
                 colors={colors}
               />
 
-              {isEditing && (
-                <>
-                  <View style={styles.optionsSeparator} />
-                  {subgoals.map((sub) => (
+              <View style={styles.optionsSeparator} />
+              {isEditing
+                ? subgoals.map((sub) => (
                     <View key={sub.id} style={styles.subgoalRow}>
                       <Pressable
                         onPress={() => void toggleCompleted(sub)}
@@ -240,23 +253,30 @@ export const AddGoalSheet = ({ open, goalId, onClose }: AddGoalSheetProps) => {
                       />
                       <Text style={[styles.subgoalTitle, sub.status === 'completed' && styles.subgoalTitleDone]}>{sub.title}</Text>
                     </View>
+                  ))
+                : pendingSubgoals.map((subgoalTitle, index) => (
+                    <View key={index} style={styles.subgoalRow}>
+                      <View style={styles.subgoalCheck} />
+                      <Text style={styles.subgoalTitle}>{subgoalTitle}</Text>
+                      <Pressable onPress={() => removePendingSubgoal(index)} hitSlop={8}>
+                        <XCircle size={18} color={colors.textMuted} />
+                      </Pressable>
+                    </View>
                   ))}
-                  <View style={styles.subgoalInputRow}>
-                    <CornerDownRight size={18} color={colors.textMuted} />
-                    <TextInput
-                      value={newSubgoalText}
-                      onChangeText={setNewSubgoalText}
-                      placeholder="Agregar submeta"
-                      placeholderTextColor={colors.textMuted}
-                      style={styles.subgoalInput}
-                      returnKeyType="done"
-                      blurOnSubmit={false}
-                      onSubmitEditing={() => void addSubgoal()}
-                      selectionColor={colors.primary}
-                    />
-                  </View>
-                </>
-              )}
+              <View style={styles.subgoalInputRow}>
+                <CornerDownRight size={18} color={colors.textMuted} />
+                <TextInput
+                  value={newSubgoalText}
+                  onChangeText={setNewSubgoalText}
+                  placeholder="Agregar submeta"
+                  placeholderTextColor={colors.textMuted}
+                  style={styles.subgoalInput}
+                  returnKeyType="done"
+                  blurOnSubmit={false}
+                  onSubmitEditing={() => void addSubgoal()}
+                  selectionColor={colors.primary}
+                />
+              </View>
 
               <View style={styles.actionBar}>
                 {isEditing && item && (

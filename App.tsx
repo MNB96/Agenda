@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DefaultTheme, NavigationContainer, useNavigationContainerRef } from '@react-navigation/native'
 import { StatusBar, useColorScheme, View } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
+import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { useSettings } from './src/application/settings/useSettings'
 import { MainTabs } from './src/mobile/navigation/MainTabs'
 import { QuickAddSheet } from './src/mobile/modals/QuickAddSheet'
@@ -24,11 +25,13 @@ export default function App() {
   const queryClient = useMemo(() => new QueryClient(), [])
 
   return (
-    <SafeAreaProvider>
-      <QueryClientProvider client={queryClient}>
-        <AppShell />
-      </QueryClientProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <QueryClientProvider client={queryClient}>
+          <AppShell />
+        </QueryClientProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   )
 }
 
