@@ -1,4 +1,5 @@
 import { GOAL_CATEGORY_IDS, type ItemCategory } from '../items'
+import { HABIT_CATEGORY_IDS } from '../habits'
 
 export type { LicenseUsage, LicenseUsageInput } from './LicenseUsage'
 export { createLicenseUsage } from './LicenseUsage'
@@ -25,6 +26,11 @@ export const DEFAULT_CATEGORIES: readonly ItemCategory[] = [
 // The subset of DEFAULT_CATEGORIES a goal is allowed to have — see Item.ts's validateGoalRestrictions.
 export const GOAL_CATEGORIES: readonly ItemCategory[] = DEFAULT_CATEGORIES.filter((category) =>
   (GOAL_CATEGORY_IDS as readonly string[]).includes(category.id),
+)
+
+// The subset of DEFAULT_CATEGORIES a habit is allowed to have — see Habit.ts's validateCategory.
+export const HABIT_CATEGORIES: readonly ItemCategory[] = DEFAULT_CATEGORIES.filter((category) =>
+  (HABIT_CATEGORY_IDS as readonly string[]).includes(category.id),
 )
 
 export const DEFAULT_SETTINGS: Settings = {

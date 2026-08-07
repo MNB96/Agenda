@@ -64,8 +64,14 @@ export const isCompletedForCurrentPeriod = (
   return completionDates.some((date) => periodOrdinal(parseISO(date), regularity) === nowOrdinal)
 }
 
-// Monday-to-Sunday completion status for a daily habit's current week (used by the detail screen's grid).
-export const weekCompletionStatus = (completionDates: readonly string[], now: Date = new Date()): boolean[] => {
+export interface WeekDayStatus {
+  date: string
+  done: boolean
+}
+
+// Monday-to-Sunday completion status for a daily habit's current week — paired with each day's
+// date so callers can toggle a specific day, not just read it.
+export const weekCompletionStatus = (completionDates: readonly string[], now: Date = new Date()): WeekDayStatus[] => {
   const completedDays = new Set(completionDates.map((date) => date.slice(0, 10)))
   const monday = new Date(now)
   const offsetFromMonday = (monday.getDay() + 6) % 7
@@ -73,6 +79,7 @@ export const weekCompletionStatus = (completionDates: readonly string[], now: Da
   return Array.from({ length: 7 }, (_, i) => {
     const day = new Date(monday)
     day.setDate(monday.getDate() + i)
-    return completedDays.has(format(day, 'yyyy-MM-dd'))
+    const date = format(day, 'yyyy-MM-dd')
+    return { date, done: completedDays.has(date) }
   })
 }

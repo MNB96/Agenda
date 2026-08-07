@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef } from 'react'
 import { AppState } from 'react-native'
 import { calendarRepository, itemRepository, taskRepository } from '../../app/container'
 import { syncItemToCalendar, resolveTargetKind } from './itemCalendarSync'
-import { isGoogleCalendarAuthError } from '../../infrastructure/calendar/errors'
 import { useSettings } from '../settings/useSettings'
 import { useItems } from '../items/useItems'
 import { Item, type CalendarLinkInput } from '../../domain/items'
@@ -63,18 +62,16 @@ export const useCalendarSyncRecovery = (
       const timeMin = relevantDates.length ? new Date(Math.min(...relevantDates.map((d) => new Date(d).getTime()))) : now
       const timeMax = relevantDates.length ? new Date(Math.max(...relevantDates.map((d) => new Date(d).getTime())) + DAY_MS) : now
 
-      let existingEvents: CalendarEvent[]
-      let existingTasks: { taskId: string; title: string; dueDate?: string }[]
+      // Solo es para evitar duplicados — si una lista falla, no desconecta toda la sesión por eso.
+      let existingEvents: CalendarEvent[] = []
       try {
-        ;[existingEvents, existingTasks] = await Promise.all([
-          calendarRepository.listEvents(token, calendarIds, { timeMin: timeMin.toISOString(), timeMax: timeMax.toISOString() }),
-          taskRepository.listTasks(token),
-        ])
-      } catch (error) {
-        // Sin poder confirmar qué ya existe, mejor no sincronizar esta vuelta que arriesgar duplicados.
-        if (isGoogleCalendarAuthError(error)) markUnauthorized()
-        return
-      }
+        existingEvents = await calendarRepository.listEvents(token, calendarIds, { timeMin: timeMin.toISOString(), timeMax: timeMax.toISOString() })
+      } catch {}
+
+      let existingTasks: { taskId: string; title: string; dueDate?: string }[] = []
+      try {
+        existingTasks = await taskRepository.listTasks(token)
+      } catch {}
 
       // Se aplica por item, no al final del lote: si no, el evento recién creado aparece
       // duplicado (como entrada "google") hasta que termina todo el lote.

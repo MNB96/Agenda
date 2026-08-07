@@ -2,8 +2,10 @@ import { useMemo, useState } from 'react'
 import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native'
 import { differenceInCalendarDays, format, parseISO, startOfDay } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { AlarmClock, Bell, CalendarCheck, Check, ChevronDown, ChevronUp, GraduationCap, Heart, Repeat, Star } from 'lucide-react-native'
+import { AlarmClock, Bell, CalendarCheck, Check, ChevronDown, ChevronUp, Repeat, Star } from 'lucide-react-native'
 import { ITEM_TYPE, type Item } from '../../domain/items'
+import { GOAL_CATEGORIES } from '../../domain/settings/types'
+import { CategoryGlyph } from '../theme/CategoryGlyph'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
 
@@ -30,8 +32,7 @@ export const ItemCard = ({ item, overdueLabel, overdueDeadlineLabel, subtasks = 
   const subtaskDone = subtasks.filter((sub) => sub.status === 'completed').length
   const ChevronIcon = expanded ? ChevronUp : ChevronDown
   const showCategoryIcon = item.type === ITEM_TYPE.GOAL && item.status !== 'completed'
-  // Solo personal/facultad aplican a metas — ver validateGoalRestrictions en Item.ts.
-  const CategoryIcon = showCategoryIcon && item.categoryId === 'facultad' ? GraduationCap : showCategoryIcon && item.categoryId === 'personal' ? Heart : undefined
+  const category = showCategoryIcon ? GOAL_CATEGORIES.find((cat) => cat.id === item.categoryId) : undefined
 
   // La fecha ya la muestra el encabezado de sección; acá solo hora y fecha límite (otro dato).
   const dateLabel =
@@ -54,7 +55,7 @@ export const ItemCard = ({ item, overdueLabel, overdueDeadlineLabel, subtasks = 
             item.status === 'completed' ? [styles.checkboxDone, { backgroundColor: colors.success }] : undefined,
           ]}
         >
-          {CategoryIcon && <CategoryIcon size={14} color={indicatorColor} />}
+          {category && <CategoryGlyph iconName={category.icon} size={14} color={indicatorColor} />}
         </Pressable>
 
         <View style={styles.content}>

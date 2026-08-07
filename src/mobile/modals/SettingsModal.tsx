@@ -6,6 +6,7 @@ import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useGoogleCalendars } from '../../application/calendar/useGoogleCalendar'
 import { useSettings } from '../../application/settings/useSettings'
+import { useDataExport } from '../../application/settings/useDataExport'
 import { useItems } from '../../application/items/useItems'
 import { useGoogleAuthStore, GOOGLE_TOKEN_TTL_SECONDS, GOOGLE_OAUTH_SCOPES } from '../../state/googleAuthStore'
 import { openNotificationSoundSettings, openExactAlarmSettings } from '../../infrastructure/notifications/itemNotifications'
@@ -24,6 +25,7 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
   const { items, removeItem } = useItems()
   const { accessToken, connectedEmail, authIssue, setSession, clearSession } = useGoogleAuthStore()
   const calendarsQuery = useGoogleCalendars()
+  const { exportData, isExporting } = useDataExport()
   const { colors } = useAppTheme()
   const insets = useSafeAreaInsets()
   const styles = useMemo(() => createStyles(colors), [colors])
@@ -78,8 +80,9 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
       GoogleSignin.configure({ scopes: GOOGLE_OAUTH_SCOPES })
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true })
 
-      // Probar en silencio primero evita el selector de cuenta, que en algunos equipos cierra el modal.
-      if (GoogleSignin.hasPreviousSignIn()) {
+      // If the last session already failed (e.g. missing a scope), reusing it silently would
+      // just return the same broken session — force interactive consent to actually renew it.
+      if (GoogleSignin.hasPreviousSignIn() && !authIssue) {
         try {
           const silent = await GoogleSignin.signInSilently()
           if (silent.type === 'success') {
@@ -117,6 +120,14 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
     clearSession()
   }
 
+  const handleExportData = async () => {
+    try {
+      await exportData()
+    } catch (error) {
+      Alert.alert('No se pudo exportar', error instanceof Error ? error.message : 'Intentá de nuevo.')
+    }
+  }
+
   if (!settings) {
     return null
   }
@@ -127,7 +138,7 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
         <Pressable style={[styles.sheet, { paddingBottom: Math.max(insets.bottom + 16, 16) }]} onPress={e => e.stopPropagation?.()}>
           <Text style={styles.title}>Ajustes</Text>
 
-          <ScrollView showsVerticalScrollIndicator={false}>
+          <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator={false}>
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Tema</Text>
               <View style={styles.themeRow}>
@@ -246,6 +257,15 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
             </View>
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Datos</Text>
+              <Pressable
+                style={[styles.secondaryButton, isExporting && styles.disabled]}
+                disabled={isExporting}
+                onPress={() => void handleExportData()}
+              >
+                <Text style={styles.secondaryButtonText}>
+                  {isExporting ? 'Exportando...' : 'Descargar mis datos (JSON)'}
+                </Text>
+              </Pressable>
               {(() => {
                 const completedCount = items.filter(item => item.status === 'completed').length
                 return (
@@ -304,6 +324,9 @@ const createStyles = (colors: ThemeTokens) => StyleSheet.create({
     padding: 16,
     borderTopWidth: 1,
     borderColor: colors.border,
+  },
+  scrollArea: {
+    flexShrink: 1,
   },
   title: {
     fontSize: 20,

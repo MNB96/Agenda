@@ -328,7 +328,7 @@ export const AddGoalSheet = ({ open, goalId, onClose }: AddGoalSheetProps) => {
           ]}
         >
           <Text style={[styles.completeBtnText, !canComplete && !isCompleted && { color: colors.textMuted }]}>
-            {isCompleted ? 'No cumplida' : 'Cumplida'}
+            {isCompleted ? 'Marcar como no cumplida' : 'Marcar como cumplida'}
           </Text>
         </Pressable>
       )}
@@ -489,14 +489,14 @@ const createStyles = (colors: ThemeTokens) =>
     subgoalInput: { flex: 1, fontSize: 15, color: colors.text, padding: 0, outlineWidth: 0 },
     actionBar: { flexDirection: 'row', alignItems: 'center', marginTop: 14 },
     completeBtn: {
+      flex: 1,
       backgroundColor: colors.primary + '22',
       borderRadius: 999,
-      paddingVertical: 10,
-      paddingHorizontal: 16,
+      paddingVertical: 14,
       alignItems: 'center',
     },
     completeBtnDisabled: { backgroundColor: colors.border },
-    completeBtnText: { fontSize: 14, fontWeight: '600', color: colors.primary },
+    completeBtnText: { fontSize: 15, fontWeight: '600', color: colors.primary },
     saveBtn: { fontSize: 15, fontWeight: '700', color: colors.primary, paddingVertical: 6, paddingHorizontal: 4 },
     saveBtnDisabled: { color: colors.textMuted },
     deadlineOverlay: { ...StyleSheet.absoluteFill, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },

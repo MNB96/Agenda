@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { Platform } from 'react-native'
 import { GoogleSignin } from '@react-native-google-signin/google-signin'
 import { useGoogleAuthStore, GOOGLE_TOKEN_TTL_SECONDS, GOOGLE_OAUTH_SCOPES } from '../state/googleAuthStore'
@@ -8,7 +8,9 @@ const CHECK_INTERVAL_MS = 30 * 1000
 const REFRESH_MARGIN_MS = 5 * 60 * 1000
 
 export const useGoogleSessionLifecycleMobile = () => {
-  const { accessToken, expiresAt, connectedEmail, markExpired, setSession } = useGoogleAuthStore()
+  const { accessToken, expiresAt, connectedEmail, authIssue, markExpired, setSession } = useGoogleAuthStore()
+  // Guards against a slow refresh overlapping the next tick and clobbering a token a newer call already refreshed.
+  const isRefreshing = useRef(false)
 
   useEffect(() => {
     if (Platform.OS === 'web') return
@@ -19,8 +21,11 @@ export const useGoogleSessionLifecycleMobile = () => {
     let cancelled = false
 
     const ensureSession = async () => {
+      // A real 401/403 (missing scope) can't be fixed by a silent refresh — retrying loops forever.
+      if (authIssue === 'unauthorized') return
       const stillValid = Boolean(accessToken) && Boolean(expiresAt) && Date.now() < expiresAt! - REFRESH_MARGIN_MS
-      if (stillValid) return
+      if (stillValid || isRefreshing.current) return
+      isRefreshing.current = true
 
       // Play Services keeps its own session, so try a silent refresh before forcing reconnect.
       try {
@@ -37,6 +42,8 @@ export const useGoogleSessionLifecycleMobile = () => {
         })
       } catch {
         if (!cancelled) markExpired()
+      } finally {
+        isRefreshing.current = false
       }
     }
 
@@ -46,5 +53,5 @@ export const useGoogleSessionLifecycleMobile = () => {
       cancelled = true
       clearInterval(timer)
     }
-  }, [accessToken, expiresAt, connectedEmail, markExpired, setSession])
+  }, [accessToken, expiresAt, connectedEmail, authIssue, markExpired, setSession])
 }

@@ -2,20 +2,18 @@ import { useMemo, useState } from 'react'
 import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker'
-import { differenceInCalendarWeeks, format, parse, parseISO } from 'date-fns'
-import { Bell, Check, ChevronLeft, Shuffle, Trash2, X } from 'lucide-react-native'
+import { format, parse } from 'date-fns'
+import { Bell, ChevronLeft, Shuffle, Trash2, X } from 'lucide-react-native'
 import { useHabits } from '../../application/habits/useHabits'
 import {
   HABIT_REGULARITY,
   HABIT_REMINDER_MODE,
-  computeStreaks,
   generateRandomTimes,
-  weekCompletionStatus,
   type HabitReminderConfig,
   type HabitReminderMode,
   type HabitRegularity,
 } from '../../domain/habits'
-import { DEFAULT_CATEGORIES } from '../../domain/settings/types'
+import { HABIT_CATEGORIES } from '../../domain/settings/types'
 import { useAppTheme } from '../theme/useAppTheme'
 import { resolveCategoryIcon } from '../theme/categoryIcons'
 import type { ThemeTokens } from '../theme/tokens'
@@ -34,24 +32,13 @@ const REGULARITY_OPTIONS: { value: HabitRegularity; label: string }[] = [
   { value: HABIT_REGULARITY.YEARLY, label: 'Anual' },
 ]
 
-const WEEKDAY_LABELS = ['L', 'M', 'M', 'J', 'V', 'S', 'D']
-
 const REMINDER_MODE_OPTIONS: { value: HabitReminderMode; label: string }[] = [
   { value: HABIT_REMINDER_MODE.INTERVAL, label: 'Intervalo fijo' },
   { value: HABIT_REMINDER_MODE.RANDOM, label: 'Horario random' },
 ]
 
-const daysLabel = (count: number): string => `${count} ${count === 1 ? 'día' : 'días'}`
-
-// "5.0/7" style weekly average — only a meaningful denominator for daily habits, so others just show the raw average.
-const weeklyAverageLabel = (totalCompletions: number, createdAt: string, regularity: HabitRegularity): string => {
-  const weeksSinceCreated = Math.max(1, differenceInCalendarWeeks(new Date(), parseISO(createdAt), { weekStartsOn: 1 }) + 1)
-  const average = totalCompletions / weeksSinceCreated
-  return regularity === HABIT_REGULARITY.DAILY ? `${average.toFixed(1)}/7 días` : `${average.toFixed(1)} por semana`
-}
-
 export const AddHabitSheet = ({ open, habitId, onClose }: AddHabitSheetProps) => {
-  const { habits, completionsByHabitId, createHabit, updateHabit, removeHabit } = useHabits()
+  const { habits, createHabit, updateHabit, removeHabit } = useHabits()
   const habit = habits.find((h) => h.id === habitId)
   const isEditing = Boolean(habitId)
   // Editing gets the full-screen form (same treatment as AddGoalSheet/ItemDetailModal) since
@@ -168,10 +155,6 @@ export const AddHabitSheet = ({ open, habitId, onClose }: AddHabitSheetProps) =>
     ])
   }
 
-  const completions = habit ? completionsByHabitId.get(habit.id) ?? [] : []
-  const streaks = habit ? computeStreaks(completions, habit.regularity) : { current: 0, best: 0 }
-  const weekStatus = habit?.regularity === HABIT_REGULARITY.DAILY ? weekCompletionStatus(completions) : undefined
-
   const renderFormFields = () => (
     <>
       <TextInput
@@ -205,7 +188,7 @@ export const AddHabitSheet = ({ open, habitId, onClose }: AddHabitSheetProps) =>
 
       <Text style={styles.fieldLabel}>Categoría</Text>
       <View style={styles.chipsRow}>
-        {DEFAULT_CATEGORIES.map((cat) => {
+        {HABIT_CATEGORIES.map((cat) => {
           const active = categoryId === cat.id
           const CategoryIcon = resolveCategoryIcon(cat.icon)
           return (
@@ -308,49 +291,6 @@ export const AddHabitSheet = ({ open, habitId, onClose }: AddHabitSheetProps) =>
         </View>
       )}
 
-      {isEditing && habit && (
-        <>
-          <View style={styles.optionsSeparator} />
-          <View style={styles.statsRow}>
-            <View style={styles.statBox}>
-              <Text style={styles.statLabel}>Racha actual</Text>
-              <Text style={styles.statValue}>{daysLabel(streaks.current)}</Text>
-            </View>
-            <View style={styles.statBox}>
-              <Text style={styles.statLabel}>Mejor racha</Text>
-              <Text style={styles.statValue}>{daysLabel(streaks.best)}</Text>
-            </View>
-          </View>
-
-          {weekStatus && (
-            <>
-              <Text style={styles.fieldLabel}>Esta semana</Text>
-              <View style={styles.weekRow}>
-                {weekStatus.map((done, index) => (
-                  <View key={index} style={styles.weekDay}>
-                    <Text style={styles.weekDayLabel}>{WEEKDAY_LABELS[index]}</Text>
-                    <View style={[styles.weekDot, done && { backgroundColor: colors.primary, borderColor: colors.primary }]}>
-                      {done && <Check size={12} color="#FFFFFF" />}
-                    </View>
-                  </View>
-                ))}
-              </View>
-            </>
-          )}
-
-          <Text style={styles.fieldLabel}>Estadísticas</Text>
-          <View style={styles.statsRow}>
-            <View style={styles.statBox}>
-              <Text style={styles.statLabel}>Completados</Text>
-              <Text style={styles.statValue}>{daysLabel(completions.length)}</Text>
-            </View>
-            <View style={styles.statBox}>
-              <Text style={styles.statLabel}>Promedio semanal</Text>
-              <Text style={styles.statValue}>{weeklyAverageLabel(completions.length, habit.createdAt, habit.regularity)}</Text>
-            </View>
-          </View>
-        </>
-      )}
     </>
   )
 
@@ -527,28 +467,6 @@ const createStyles = (colors: ThemeTokens) =>
     windowField: { flex: 1 },
     windowValue: { fontSize: 15, color: colors.primary, fontWeight: '600', marginTop: 2 },
     windowClearBtn: { padding: 6 },
-    statsRow: { flexDirection: 'row', gap: 12 },
-    statBox: {
-      flex: 1,
-      backgroundColor: colors.surfaceSecondary,
-      borderRadius: 14,
-      paddingVertical: 12,
-      paddingHorizontal: 14,
-    },
-    statLabel: { fontSize: 12, color: colors.textMuted },
-    statValue: { fontSize: 18, fontWeight: '800', color: colors.text, marginTop: 4 },
-    weekRow: { flexDirection: 'row', justifyContent: 'space-between' },
-    weekDay: { alignItems: 'center', gap: 6 },
-    weekDayLabel: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },
-    weekDot: {
-      width: 28,
-      height: 28,
-      borderRadius: 999,
-      borderWidth: 1.6,
-      borderColor: colors.borderStrong,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
     actionBar: { flexDirection: 'row', alignItems: 'center', marginTop: 14 },
     saveBtn: { fontSize: 15, fontWeight: '700', color: colors.primary, paddingVertical: 6, paddingHorizontal: 4 },
     saveBtnDisabled: { color: colors.textMuted },

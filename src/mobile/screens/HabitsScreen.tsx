@@ -3,9 +3,10 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 import { format } from 'date-fns'
 import { Flame } from 'lucide-react-native'
 import { HabitCard } from '../components/HabitCard'
+import { HabitStatsModal } from '../modals/HabitStatsModal'
 import { useHabits } from '../../application/habits/useHabits'
 import { computeStreaks, isCompletedForCurrentPeriod, weekCompletionStatus, type Habit } from '../../domain/habits'
-import { DEFAULT_CATEGORIES } from '../../domain/settings/types'
+import { HABIT_CATEGORIES } from '../../domain/settings/types'
 import { useAppTheme } from '../theme/useAppTheme'
 import { resolveCategoryIcon } from '../theme/categoryIcons'
 import type { ThemeTokens } from '../theme/tokens'
@@ -21,6 +22,7 @@ export const HabitsScreen = ({ onOpenHabitEditor }: HabitsScreenProps) => {
 
   const [search, setSearch] = useState('')
   const [activeCategory, setActiveCategory] = useState<'all' | string>('all')
+  const [statsHabitId, setStatsHabitId] = useState<string | undefined>(undefined)
 
   const filteredHabits = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -39,6 +41,16 @@ export const HabitsScreen = ({ onOpenHabitEditor }: HabitsScreenProps) => {
       Alert.alert('No se pudo actualizar', error instanceof Error ? error.message : 'Intentá de nuevo.')
     }
   }
+
+  const handleToggleDay = async (habitId: string, date: string, completed: boolean) => {
+    try {
+      await toggleCompletion({ habitId, date, completed })
+    } catch (error) {
+      Alert.alert('No se pudo actualizar', error instanceof Error ? error.message : 'Intentá de nuevo.')
+    }
+  }
+
+  const statsHabit = habits.find((habit) => habit.id === statsHabitId)
 
   if (habits.length === 0) {
     return (
@@ -66,7 +78,7 @@ export const HabitsScreen = ({ onOpenHabitEditor }: HabitsScreenProps) => {
           <Pressable onPress={() => setActiveCategory('all')} style={[styles.filterChip, activeCategory === 'all' && styles.filterChipActive]}>
             <Text style={[styles.filterChipText, activeCategory === 'all' && styles.filterChipTextActive]}>Todos</Text>
           </Pressable>
-          {DEFAULT_CATEGORIES.map((category) => {
+          {HABIT_CATEGORIES.map((category) => {
             const isCategoryActive = activeCategory === category.id
             const CategoryIcon = resolveCategoryIcon(category.icon)
             return (
@@ -103,13 +115,24 @@ export const HabitsScreen = ({ onOpenHabitEditor }: HabitsScreenProps) => {
                   streak={computeStreaks(completions, habit.regularity).current}
                   weekStatus={habit.regularity === 'daily' ? weekCompletionStatus(completions) : undefined}
                   onToggleToday={() => void handleToggleToday(habit)}
+                  onToggleDay={(date, done) => void handleToggleDay(habit.id, date, done)}
                   onOpen={() => onOpenHabitEditor(habit.id)}
+                  onOpenStats={() => setStatsHabitId(habit.id)}
                 />
               )
             })}
           </>
         )}
       </ScrollView>
+
+      {statsHabit && (
+        <HabitStatsModal
+          open={Boolean(statsHabitId)}
+          habit={statsHabit}
+          completions={completionsByHabitId.get(statsHabit.id) ?? []}
+          onClose={() => setStatsHabitId(undefined)}
+        />
+      )}
     </View>
   )
 }
