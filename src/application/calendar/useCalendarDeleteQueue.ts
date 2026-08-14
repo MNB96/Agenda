@@ -24,7 +24,7 @@ export const useCalendarDeleteQueue = (
               await calendarRepository.deleteEvent(token, calendarId, eventId)
             }
           } catch (error) {
-            if (isGoogleCalendarAuthError(error)) markUnauthorized()
+            if (isGoogleCalendarAuthError(error) && kind !== 'task') markUnauthorized()
             throw error
           }
         },

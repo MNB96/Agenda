@@ -33,6 +33,7 @@ export const ItemCard = ({ item, overdueLabel, overdueDeadlineLabel, subtasks = 
   const ChevronIcon = expanded ? ChevronUp : ChevronDown
   const showCategoryIcon = item.type === ITEM_TYPE.GOAL && item.status !== 'completed'
   const category = showCategoryIcon ? GOAL_CATEGORIES.find((cat) => cat.id === item.categoryId) : undefined
+  const completionDisabled = item.reminderOnly || !onToggle
 
   // La fecha ya la muestra el encabezado de sección; acá solo hora y fecha límite (otro dato).
   const dateLabel =
@@ -47,11 +48,17 @@ export const ItemCard = ({ item, overdueLabel, overdueDeadlineLabel, subtasks = 
     <Pressable style={[styles.card, item.important && styles.cardImportant]} onPress={() => onOpen?.(item)}>
       <View style={styles.row}>
         <Pressable
-          disabled={!onToggle}
-          onPress={() => void onToggle?.(item)}
+          disabled={completionDisabled}
+          onPress={() => {
+            if (item.reminderOnly) {
+              Alert.alert('Recordatorio', 'Las tareas recordatorio no necesitan marcarse como completadas.')
+              return
+            }
+            void onToggle?.(item)
+          }}
           style={[
             styles.checkbox,
-            { borderColor: indicatorColor },
+            { borderColor: item.reminderOnly ? colors.accent : indicatorColor },
             item.status === 'completed' ? [styles.checkboxDone, { backgroundColor: colors.success }] : undefined,
           ]}
         >
@@ -110,9 +117,10 @@ export const ItemCard = ({ item, overdueLabel, overdueDeadlineLabel, subtasks = 
           )}
         </View>
 
-        {(item.important || repeats || hasAlarmReminder || hasNotificationReminder || item.calendarLink) && (
+        {(item.important || item.reminderOnly || repeats || hasAlarmReminder || hasNotificationReminder || item.calendarLink) && (
           <View style={styles.indicatorStack}>
             {item.important && <Star size={16} color="#F38630" fill="#F38630" />}
+            {item.reminderOnly && <Bell size={16} color={colors.accent} />}
             {item.calendarLink && <CalendarCheck size={16} color="#4285F4" />}
             {repeats && <Repeat size={16} color={colors.textMuted} />}
             {hasAlarmReminder ? (

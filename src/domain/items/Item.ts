@@ -14,6 +14,7 @@ interface BaseItemProps {
   description?: string
   status: ItemStatus
   important?: boolean
+  reminderOnly?: boolean
   repeatRule?: RepeatRule
   repeatConfig?: RepeatConfig
   parentId?: string
@@ -45,6 +46,7 @@ abstract class BaseItem {
   readonly description?: string
   readonly status: ItemStatus
   readonly important?: boolean
+  readonly reminderOnly: boolean
   readonly repeatRule?: RepeatRule
   readonly repeatConfig?: RepeatConfig
   readonly parentId?: string
@@ -72,6 +74,7 @@ abstract class BaseItem {
     this.description = props.description
     this.status = props.status
     this.important = props.important
+    this.reminderOnly = props.reminderOnly ?? false
     this.repeatRule = props.repeatRule
     this.repeatConfig = props.repeatConfig
     this.parentId = props.parentId
@@ -260,6 +263,7 @@ const createItem = (input: NewItemInput): Item => {
   validateGoalRestrictions(type, input.repeatRule, repeatConfig, input.startDate, input.location, reminderConfig, input.categoryId)
   validateTimeRange(input.startDate, input.startTime, input.endDate, input.endTime)
   const nowIso = new Date().toISOString()
+  const reminderOnly = input.reminderOnly ?? false
   return buildItem({
     id: createId(),
     title: normalizeTitle(input.title),
@@ -267,6 +271,7 @@ const createItem = (input: NewItemInput): Item => {
     type,
     status: 'active',
     important: input.important,
+    reminderOnly,
     repeatRule: input.repeatRule,
     repeatConfig,
     parentId: input.parentId,
@@ -280,7 +285,7 @@ const createItem = (input: NewItemInput): Item => {
     reminderConfig,
     travelConfig: input.travelConfig ? TravelConfig.create(input.travelConfig) : undefined,
     academicConfig: input.academicConfig ? AcademicConfig.create(input.academicConfig) : undefined,
-    syncToCalendar: input.syncToCalendar ?? true,
+    syncToCalendar: reminderOnly ? false : input.syncToCalendar ?? true,
     createdAt: nowIso,
     updatedAt: nowIso,
   })
@@ -309,6 +314,7 @@ const updateItem = (current: Item, patch: ItemPatch): Item => {
     type: patch.type ?? current.type,
     title,
     description,
+    reminderOnly: patch.reminderOnly ?? current.reminderOnly,
     repeatConfig,
     reminderConfig,
     academicConfig,
@@ -322,7 +328,10 @@ const updateItem = (current: Item, patch: ItemPatch): Item => {
   validateSubtaskHasNoRecurrence(merged.parentId, merged.repeatConfig)
   validateGoalRestrictions(merged.type, merged.repeatRule, merged.repeatConfig, merged.startDate, merged.location, merged.reminderConfig, merged.categoryId)
   validateTimeRange(merged.startDate, merged.startTime, merged.endDate, merged.endTime)
-  return buildItem(merged)
+  return buildItem({
+    ...merged,
+    syncToCalendar: merged.reminderOnly ? false : merged.syncToCalendar ?? true,
+  })
 }
 
 // Doesn't run validateItemDates (old data). Returns a result instead of throwing or silently
@@ -357,11 +366,25 @@ const withProps = (current: Item, overrides: Partial<ItemProps>): Item => {
   return buildItem({ ...current, ...overrides, updatedAt: new Date().toISOString() })
 }
 
+export const getReminderOnlyDueMoment = (item: Item): Date | undefined => {
+  const dueDate = item.startDate ?? item.deadline
+  if (!dueDate) return undefined
+  const dueTime = item.startTime ?? '00:00'
+  return new Date(`${dueDate}T${dueTime}:00`)
+}
+
+export const isReminderOnlyDue = (item: Item, now: Date = new Date()): boolean => {
+  if (!item.reminderOnly || item.status !== 'active') return false
+  const dueMoment = getReminderOnlyDueMoment(item)
+  if (!dueMoment) return false
+  return now >= new Date(dueMoment.getTime() + 24 * 60 * 60 * 1000)
+}
+
 const completeItem = (current: Item, subtasks: Item[]): Item => {
   if (current.status !== 'active') {
     throw new Error('Solo se puede completar un item activo.')
   }
-  if (!canCompleteItem(current, subtasks)) {
+  if (!current.reminderOnly && !canCompleteItem(current, subtasks)) {
     throw new Error('Completá todas las subtareas primero.')
   }
   return withProps(current, { status: 'completed', completedAt: new Date().toISOString() })
@@ -401,6 +424,7 @@ export const Item = {
   hydrate: hydrateItem,
   canComplete: canCompleteItem,
   idsToRemoveWith: itemIdsToRemoveWith,
+  isReminderOnlyDue,
   complete: completeItem,
   reopen: reopenItem,
   linkCalendar: linkCalendarItem,

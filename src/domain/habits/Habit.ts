@@ -19,6 +19,7 @@ export interface Habit {
   readonly title: string
   readonly categoryId?: string
   readonly regularity: HabitRegularity
+  readonly timesPerDay: number
   readonly reminder?: HabitReminderConfig
   readonly notificationIds?: readonly string[]
   readonly createdAt: string
@@ -29,6 +30,7 @@ export interface NewHabitInput {
   title: string
   categoryId?: string
   regularity: HabitRegularity
+  timesPerDay?: number
   reminder?: HabitReminderConfig
 }
 
@@ -56,9 +58,18 @@ const validateCategory = (categoryId: string | undefined): void => {
   }
 }
 
+const normalizeTimesPerDay = (value: number | undefined): number => {
+  const normalized = value === undefined ? 1 : Number(value)
+  if (!Number.isFinite(normalized) || normalized <= 0) {
+    throw new Error('La cantidad de veces por día debe ser mayor a 0.')
+  }
+  return Math.trunc(normalized)
+}
+
 const createHabit = (input: NewHabitInput): Habit => {
   validateRegularity(input.regularity)
   validateCategory(input.categoryId)
+  const timesPerDay = normalizeTimesPerDay(input.timesPerDay)
   if (input.reminder) validateHabitReminder(input.reminder)
   const nowIso = new Date().toISOString()
   return {
@@ -66,6 +77,7 @@ const createHabit = (input: NewHabitInput): Habit => {
     title: normalizeTitle(input.title),
     categoryId: input.categoryId,
     regularity: input.regularity,
+    timesPerDay,
     reminder: input.reminder,
     createdAt: nowIso,
     updatedAt: nowIso,
@@ -78,9 +90,10 @@ const updateHabit = (current: Habit, patch: HabitPatch): Habit => {
   validateRegularity(regularity)
   const categoryId = 'categoryId' in patch ? patch.categoryId : current.categoryId
   validateCategory(categoryId)
+  const timesPerDay = 'timesPerDay' in patch ? normalizeTimesPerDay(patch.timesPerDay) : current.timesPerDay
   const reminder = 'reminder' in patch ? patch.reminder : current.reminder
   if (reminder) validateHabitReminder(reminder)
-  return { ...current, ...patch, title, regularity, reminder, updatedAt: new Date().toISOString() }
+  return { ...current, ...patch, title, regularity, timesPerDay, reminder, updatedAt: new Date().toISOString() }
 }
 
 export type HabitHydrationResult = { success: true; habit: Habit } | { success: false; error: Error }
@@ -90,7 +103,8 @@ const hydrateHabit = (props: Habit): HabitHydrationResult => {
   try {
     validateRegularity(props.regularity)
     normalizeTitle(props.title)
-    return { success: true, habit: props }
+    const timesPerDay = normalizeTimesPerDay(props.timesPerDay ?? 1)
+    return { success: true, habit: { ...props, timesPerDay } }
   } catch (error) {
     return { success: false, error: error instanceof Error ? error : new Error('Invalid persisted habit') }
   }

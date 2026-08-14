@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query'
 import { DefaultTheme, NavigationContainer, useNavigationContainerRef } from '@react-navigation/native'
 import { StatusBar, useColorScheme, View } from 'react-native'
+import * as Notifications from 'expo-notifications'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
+import { format } from 'date-fns'
 import { useSettings } from './src/application/settings/useSettings'
 import { MainTabs } from './src/mobile/navigation/MainTabs'
 import { QuickAddSheet } from './src/mobile/modals/QuickAddSheet'
@@ -15,12 +17,15 @@ import { useGoogleSessionLifecycleMobile } from './src/mobile/useGoogleSessionLi
 import { useAppTheme } from './src/mobile/theme/useAppTheme'
 import { FloatingAddButton } from './src/mobile/components/FloatingAddButton'
 import { requestNotificationPermissions } from './src/infrastructure/notifications/itemNotifications'
+import { HABIT_COMPLETION_ACTION_ID, registerHabitNotificationActions } from './src/infrastructure/notifications/habitNotifications'
 import { useCalendarDeleteQueue } from './src/application/calendar/useCalendarDeleteQueue'
 import { useCalendarSyncRecovery } from './src/application/calendar/useCalendarSyncRecovery'
 import { useAutoPurgeCompleted } from './src/application/items/useAutoPurgeCompleted'
 import { useAutoRegenerateOverdueRecurring } from './src/application/items/useAutoRegenerateOverdueRecurring'
+import { useAutoCompleteReminderOnly } from './src/application/items/useAutoCompleteReminderOnly'
 import { useMarkOverdueGoals } from './src/application/items/useMarkOverdueGoals'
 import { useGoogleAuthStore } from './src/state/googleAuthStore'
+import { habitRepository } from './src/app/container'
 
 export default function App() {
   const queryClient = useMemo(() => new QueryClient(), [])
@@ -92,6 +97,7 @@ const AppShellInner = ({
 }: AppShellInnerProps) => {
   const { colors, isDark } = useAppTheme()
   const navigationRef = useNavigationContainerRef()
+  const queryClient = useQueryClient()
   const [activeTab, setActiveTab] = useState('Tareas')
 
   useGoogleSessionLifecycleMobile()
@@ -101,11 +107,29 @@ const AppShellInner = ({
   useCalendarSyncRecovery(accessToken ?? null, markUnauthorized)
   useAutoPurgeCompleted()
   useAutoRegenerateOverdueRecurring()
+  useAutoCompleteReminderOnly()
   useMarkOverdueGoals()
 
   useEffect(() => {
-    requestNotificationPermissions()
-  }, [])
+    void requestNotificationPermissions()
+    void registerHabitNotificationActions()
+
+    const subscription = Notifications.addNotificationResponseReceivedListener(async (response) => {
+      const habitId = response.notification.request.content.data?.habitId
+      const actionId = response.actionIdentifier
+
+      if (typeof habitId !== 'string' || actionId !== HABIT_COMPLETION_ACTION_ID) return
+
+      try {
+        await habitRepository.addCompletion(habitId, format(new Date(), 'yyyy-MM-dd'))
+        await queryClient.invalidateQueries({ queryKey: ['habit-completions'] })
+      } catch {
+        // Falla silenciosa: si algo falla al marcar desde el push, el usuario puede repetir desde la app.
+      }
+    })
+
+    return () => subscription.remove()
+  }, [queryClient])
 
   const navTheme = useMemo(
     () => ({

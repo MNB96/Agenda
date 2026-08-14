@@ -4,6 +4,7 @@ import { GoogleSignin } from '@react-native-google-signin/google-signin'
 import { useEffect, useMemo } from 'react'
 import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { ChevronLeft } from 'lucide-react-native'
 import { useGoogleCalendars } from '../../application/calendar/useGoogleCalendar'
 import { useSettings } from '../../application/settings/useSettings'
 import { useDataExport } from '../../application/settings/useDataExport'
@@ -133,12 +134,16 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
   }
 
   return (
-    <Modal visible={open} animationType="slide" transparent onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={[styles.sheet, { paddingBottom: Math.max(insets.bottom + 16, 16) }]} onPress={e => e.stopPropagation?.()}>
-          <Text style={styles.title}>Ajustes</Text>
+    <Modal visible={open} animationType="slide" transparent={false} statusBarTranslucent onRequestClose={onClose}>
+      <View style={[styles.fullScreen, { backgroundColor: colors.background, paddingTop: insets.top }]}>
+        <View style={styles.header}>
+          <Pressable onPress={onClose} hitSlop={12} style={styles.headerBtn}>
+            <ChevronLeft size={24} color={colors.text} />
+          </Pressable>
+        </View>
 
-          <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator={false}>
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + 16, 16) }]} showsVerticalScrollIndicator={false}>
+          <Text style={styles.title}>Ajustes</Text>
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Tema</Text>
               <View style={styles.themeRow}>
@@ -299,35 +304,22 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
                 )
               })()}
             </View>
-          </ScrollView>
-
-          <Pressable style={styles.closeButton} onPress={onClose}>
-            <Text style={styles.closeButtonText}>Cerrar</Text>
-          </Pressable>
-        </Pressable>
-      </Pressable>
+        </ScrollView>
+      </View>
     </Modal>
   )
 }
 
 const createStyles = (colors: ThemeTokens) => StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: colors.overlayAccent,
-    justifyContent: 'flex-end',
+  fullScreen: { flex: 1 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
-  sheet: {
-    maxHeight: '88%',
-    backgroundColor: colors.surfaceElevated,
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    padding: 16,
-    borderTopWidth: 1,
-    borderColor: colors.border,
-  },
-  scrollArea: {
-    flexShrink: 1,
-  },
+  headerBtn: { padding: 8 },
+  content: { paddingHorizontal: 16 },
   title: {
     fontSize: 20,
     fontWeight: '700',
@@ -411,14 +403,4 @@ const createStyles = (colors: ThemeTokens) => StyleSheet.create({
     gap: 10,
     marginTop: 8,
   },
-  closeButton: {
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: 10,
-    paddingVertical: 11,
-    alignItems: 'center',
-    marginTop: 4,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  closeButtonText: { color: colors.text, fontWeight: '700' },
 })

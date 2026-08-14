@@ -12,6 +12,7 @@ export interface NewItemInput {
   description?: string
   type?: ItemType
   important?: boolean
+  reminderOnly?: boolean
   repeatRule?: RepeatRule
   repeatConfig?: RepeatConfigInput
   parentId?: string

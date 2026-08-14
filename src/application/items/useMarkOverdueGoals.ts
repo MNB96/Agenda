@@ -1,13 +1,12 @@
 import { useEffect, useRef } from 'react'
 import { itemRepository, taskRepository } from '../../app/container'
 import { isGoalPastDeadlineUnfulfilled, MISSED_GOAL_TITLE_SUFFIX } from '../../domain/items/services/goalDeadline'
-import { isGoogleCalendarAuthError } from '../../infrastructure/calendar/errors'
 import { useGoogleAuthStore } from '../../state/googleAuthStore'
 
 // Runs once per launch (once a token is available): tags the Calendar Task title of any Goal
 // that missed its deadline — local data stays untouched, only what's shown on Calendar changes.
 export const useMarkOverdueGoals = () => {
-  const { accessToken, markUnauthorized } = useGoogleAuthStore()
+  const { accessToken } = useGoogleAuthStore()
   const hasRun = useRef(false)
 
   useEffect(() => {
@@ -25,13 +24,10 @@ export const useMarkOverdueGoals = () => {
             notes: item.description,
             dueDate: item.deadline,
           })
-        } catch (error) {
-          if (isGoogleCalendarAuthError(error)) {
-            markUnauthorized()
-            break
-          }
+        } catch {
+          // Tasks-only failure (e.g. that API unavailable) — doesn't affect the Calendar session, just skip this goal.
         }
       }
     })()
-  }, [accessToken, markUnauthorized])
+  }, [accessToken])
 }

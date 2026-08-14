@@ -95,6 +95,7 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
   const [title, setTitle] = useState(item.title)
   const [description, setDescription] = useState(item.description ?? '')
   const [important, setImportant] = useState(item.important ?? false)
+  const [reminderOnly, setReminderOnly] = useState(item.reminderOnly ?? false)
   const [scheduledDate, setScheduledDate] = useState(item.startDate)
   const [scheduledTime, setScheduledTime] = useState(item.startTime)
   const [endTime, setEndTime] = useState(item.endTime)
@@ -145,6 +146,7 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
             title: title.trim(),
             description: description.trim() || undefined,
             important,
+            reminderOnly,
             startDate: scheduledDate,
             startTime: scheduledTime,
             endDate: scheduledTime && endTime ? scheduledDate : undefined,
@@ -188,7 +190,7 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
       }
     }
     onClose()
-  }, [item, title, description, important, scheduledDate, scheduledTime, endTime, deadline, syncToCalendar, travelConfig, repeatRule, repeatConfig, categoryId, location, reminders, studyTimeBefore, gradeText, licenseUsages, saveUsage, deleteUsage, updateItem, onClose])
+  }, [item, title, description, important, reminderOnly, scheduledDate, scheduledTime, endTime, deadline, syncToCalendar, travelConfig, repeatRule, repeatConfig, categoryId, location, reminders, studyTimeBefore, gradeText, licenseUsages, saveUsage, deleteUsage, updateItem, onClose])
 
   useEffect(() => {
     const handler = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -199,6 +201,10 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
   }, [handleClose])
 
   const handleToggleComplete = async () => {
+    if (item.reminderOnly) {
+      Alert.alert('Recordatorio', 'Las tareas recordatorio no necesitan marcarse como completadas.')
+      return
+    }
     await toggleCompleted(item)
     onClose()
   }
@@ -340,6 +346,13 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
                 size={22}
                 color={important ? '#F38630' : colors.textMuted}
                 fill={important ? '#F38630' : 'transparent'}
+              />
+            </Pressable>
+            <Pressable onPress={() => setReminderOnly(v => !v)} hitSlop={12} style={styles.headerBtn}>
+              <Bell
+                size={22}
+                color={reminderOnly ? colors.accent : colors.textMuted}
+                fill={reminderOnly ? colors.accent : 'transparent'}
               />
             </Pressable>
             <Pressable
@@ -720,6 +733,10 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
                 { opacity: pressed ? 0.85 : 1 },
               ]}
               onPress={() => {
+                if (item.reminderOnly) {
+                  Alert.alert('Recordatorio', 'Las tareas recordatorio no necesitan marcarse como completadas.')
+                  return
+                }
                 if (!canComplete && !isCompleted) {
                   Alert.alert('Subtareas pendientes', 'Completá todas las subtareas primero.')
                   return
@@ -728,7 +745,7 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
               }}
             >
               <Text style={[styles.completeBtnText, !canComplete && !isCompleted && { color: colors.textMuted }]}>
-                {isCompleted ? 'Marcar como no completada' : 'Marcar como completada'}
+                {item.reminderOnly ? 'Recordatorio' : isCompleted ? 'Marcar como no completada' : 'Marcar como completada'}
               </Text>
             </Pressable>
           </View>

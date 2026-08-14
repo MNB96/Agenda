@@ -55,10 +55,17 @@ export const computeStreaks = (
   return { current, best }
 }
 
+export const isCompletionCountMet = (count: number, targetCount: number): boolean => {
+  const safeCount = Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : 0
+  const safeTarget = Number.isFinite(targetCount) ? Math.max(1, Math.trunc(targetCount)) : 1
+  return safeCount >= safeTarget
+}
+
 export const isCompletedForCurrentPeriod = (
   completionDates: readonly string[],
   regularity: HabitRegularity,
   now: Date = new Date(),
+  targetCount = 1,
 ): boolean => {
   const nowOrdinal = periodOrdinal(now, regularity)
   return completionDates.some((date) => periodOrdinal(parseISO(date), regularity) === nowOrdinal)
@@ -67,11 +74,16 @@ export const isCompletedForCurrentPeriod = (
 export interface WeekDayStatus {
   date: string
   done: boolean
+  partial?: boolean
 }
 
 // Monday-to-Sunday completion status for a daily habit's current week — paired with each day's
 // date so callers can toggle a specific day, not just read it.
-export const weekCompletionStatus = (completionDates: readonly string[], now: Date = new Date()): WeekDayStatus[] => {
+export const weekCompletionStatus = (
+  completionDates: readonly string[],
+  now: Date = new Date(),
+  targetCount = 1,
+): WeekDayStatus[] => {
   const completedDays = new Set(completionDates.map((date) => date.slice(0, 10)))
   const monday = new Date(now)
   const offsetFromMonday = (monday.getDay() + 6) % 7
@@ -80,6 +92,6 @@ export const weekCompletionStatus = (completionDates: readonly string[], now: Da
     const day = new Date(monday)
     day.setDate(monday.getDate() + i)
     const date = format(day, 'yyyy-MM-dd')
-    return { date, done: completedDays.has(date) }
+    return { date, done: completedDays.has(date), partial: false }
   })
 }

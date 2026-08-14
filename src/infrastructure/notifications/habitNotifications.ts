@@ -3,6 +3,19 @@ import * as Notifications from 'expo-notifications'
 import type { Habit } from '../../domain/habits'
 import { resolveReminderTimes } from '../../domain/habits'
 
+export const HABIT_COMPLETION_ACTION_ID = 'mark_habit_complete'
+export const HABIT_COMPLETION_CATEGORY_ID = 'habit_completion'
+
+export const registerHabitNotificationActions = async (): Promise<void> => {
+  await Notifications.setNotificationCategoryAsync(HABIT_COMPLETION_CATEGORY_ID, [
+    {
+      identifier: HABIT_COMPLETION_ACTION_ID,
+      buttonTitle: 'Marcar como completado',
+      options: { opensAppToForeground: true },
+    },
+  ])
+}
+
 // DAILY triggers repeat natively forever — no per-day rescheduling needed, and they keep
 // firing even if the app is never reopened (unlike a "reroll every day" approach would).
 export const scheduleHabitReminders = async (habit: Habit): Promise<string[]> => {
@@ -19,6 +32,7 @@ export const scheduleHabitReminders = async (habit: Habit): Promise<string[]> =>
             body: '¡Es hora de tu hábito!',
             data: { habitId: habit.id },
             sound: true,
+            categoryIdentifier: HABIT_COMPLETION_CATEGORY_ID,
           },
           trigger: {
             type: Notifications.SchedulableTriggerInputTypes.DAILY,

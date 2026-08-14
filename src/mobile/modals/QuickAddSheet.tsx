@@ -195,6 +195,7 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
 
   const [text, setText] = useState('')
   const [important, setImportant] = useState(false)
+  const [reminderOnly, setReminderOnly] = useState(false)
   const [scheduledDate, setScheduledDate] = useState<string | undefined>()
   const [scheduledTime, setScheduledTime] = useState<string | undefined>()
   const [endTime, setEndTime] = useState<string | undefined>()
@@ -285,6 +286,7 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
 
       setText('')
       setImportant(false)
+      setReminderOnly(false)
       setScheduledDate(undefined)
       setScheduledTime(undefined)
       setEndTime(undefined)
@@ -396,6 +398,7 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
     const payload = {
       title,
       important,
+      reminderOnly,
       startDate: effectiveDate,
       startTime: effectiveTime,
       endDate: effectiveTime && endTime ? effectiveDate : undefined,
@@ -809,6 +812,14 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
               active={important}
               activeColor="#F38630"
               onPress={() => setImportant((v) => !v)}
+              colors={colors}
+            />
+            <ActionIcon
+              icon={Bell}
+              label="Recordatorio"
+              active={reminderOnly}
+              activeColor={colors.accent}
+              onPress={() => setReminderOnly((v) => !v)}
               colors={colors}
             />
           </View>

@@ -17,8 +17,23 @@ export const useAutoRegenerateOverdueRecurring = () => {
       for (const item of active) {
         const result = catchUpOverdueOccurrence(item)
         if (result.status === 'unchanged') continue
+
+        if (result.status === 'advanced') {
+          const currentDate = item.startDate ?? item.deadline
+          const nextDate = result.input.startDate ?? result.input.deadline
+          // A daily/recurring task should stay visible until the next occurrence is truly a new day.
+          // Only then we retire the stale occurrence, preventing the old item from vanishing before the replacement exists.
+          if (nextDate && currentDate && nextDate <= currentDate) continue
+          try {
+            await createItem(result.input)
+            await removeItem(item)
+          } catch {
+            // Stays overdue, retried on the next launch.
+          }
+          continue
+        }
+
         try {
-          if (result.status === 'advanced') await createItem(result.input)
           await removeItem(item)
         } catch {
           // Stays overdue, retried on the next launch.

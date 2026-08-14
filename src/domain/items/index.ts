@@ -1,5 +1,5 @@
 // Public surface of the items bounded context — code outside this folder imports only from here.
-export { Item, ITEM_TYPE, GOAL_CATEGORY_IDS } from './Item'
+export { Item, ITEM_TYPE, GOAL_CATEGORY_IDS, isReminderOnlyDue } from './Item'
 export type { ItemType, ItemProps, HydrationResult } from './Item'
 
 export type { RepeatRule, ItemStatus, ItemCategory } from './Item.types'

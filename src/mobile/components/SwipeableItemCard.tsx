@@ -38,7 +38,7 @@ export const SwipeableItemCard = ({
 
   const handleSwipeOpen = (direction: 'left' | 'right') => {
     if (direction === 'right') {
-      if (item.status === 'completed') return
+      if (item.status === 'completed' || item.reminderOnly) return
       void (async () => {
         try {
           await onToggle(item)
@@ -66,7 +66,7 @@ export const SwipeableItemCard = ({
       rightThreshold={80}
       leftThreshold={80}
       renderRightActions={
-        item.status === 'completed'
+        item.status === 'completed' || item.reminderOnly
           ? undefined
           : () => (
               <View style={styles.completeAction}>

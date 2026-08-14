@@ -4,11 +4,46 @@ import type { Item } from '../../../domain/items'
 import { ITEM_COLUMNS, ITEM_PLACEHOLDERS, toItemRowParams } from './itemRow'
 
 const OLD_ITEMS_KEY = '@agenda/items'
+const LEGACY_CACHE_CLEANUP_FLAG_KEY = 'agenda:legacy-cache-cleanup-v1'
 const MIGRATION_FLAG_KEY = 'agenda:sqlite-items-migration-v1'
 const FIELD_RENAME_MIGRATION_FLAG_KEY = 'agenda:calendar-link-field-rename-v1'
 const TYPE_UNIFICATION_MIGRATION_FLAG_KEY = 'agenda:item-type-unification-v1'
+const HABIT_TIMES_PER_DAY_MIGRATION_FLAG_KEY = 'agenda:habit-times-per-day-v1'
+const HABIT_COMPLETION_COUNTS_MIGRATION_FLAG_KEY = 'agenda:habit-completion-counts-v1'
+const HABIT_OCCURRENCES_MIGRATION_FLAG_KEY = 'agenda:habit-occurrences-v1'
+
+const LEGACY_CACHE_KEYS = [
+  OLD_ITEMS_KEY,
+  '@agenda/calendar_delete_queue',
+  MIGRATION_FLAG_KEY,
+  FIELD_RENAME_MIGRATION_FLAG_KEY,
+  TYPE_UNIFICATION_MIGRATION_FLAG_KEY,
+  HABIT_TIMES_PER_DAY_MIGRATION_FLAG_KEY,
+  HABIT_COMPLETION_COUNTS_MIGRATION_FLAG_KEY,
+  HABIT_OCCURRENCES_MIGRATION_FLAG_KEY,
+  'agenda:notification-channels-v3-alarm-stream',
+] as const
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null
+
+const clearLegacyInstallCaches = async (): Promise<void> => {
+  const alreadyCleaned = await AsyncStorage.getItem(LEGACY_CACHE_CLEANUP_FLAG_KEY)
+  if (alreadyCleaned) return
+
+  const keys = await AsyncStorage.getAllKeys()
+  const staleKeys = keys.filter((key) => {
+    if (LEGACY_CACHE_KEYS.includes(key as (typeof LEGACY_CACHE_KEYS)[number])) return true
+    if (key.startsWith('agenda:holidays-v2-')) return true
+    if (key.startsWith('agenda:notification-channels-')) return true
+    return false
+  })
+
+  if (staleKeys.length > 0) {
+    await AsyncStorage.multiRemove(staleKeys)
+  }
+
+  await AsyncStorage.setItem(LEGACY_CACHE_CLEANUP_FLAG_KEY, '1')
+}
 
 // One-time move from the old single-blob AsyncStorage key into SQLite. Runs inside getDb()'s
 // init chain, not via SQLiteItemRepository, to avoid deadlocking on the same in-flight promise.
@@ -105,12 +140,63 @@ const migrateLegacyItemTypes = async (db: SQLite.SQLiteDatabase): Promise<void> 
   await AsyncStorage.setItem(TYPE_UNIFICATION_MIGRATION_FLAG_KEY, '1')
 }
 
+const migrateHabitTimesPerDay = async (db: SQLite.SQLiteDatabase): Promise<void> => {
+  const alreadyMigrated = await AsyncStorage.getItem(HABIT_TIMES_PER_DAY_MIGRATION_FLAG_KEY)
+  if (alreadyMigrated) return
+
+  const columns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(habits)')
+  const hasTimesPerDayColumn = columns.some((column) => column.name === 'timesPerDay')
+  if (!hasTimesPerDayColumn) {
+    await db.runAsync('ALTER TABLE habits ADD COLUMN timesPerDay INTEGER NOT NULL DEFAULT 1')
+  }
+
+  await db.runAsync('UPDATE habits SET timesPerDay = 1 WHERE timesPerDay IS NULL')
+  await AsyncStorage.setItem(HABIT_TIMES_PER_DAY_MIGRATION_FLAG_KEY, '1')
+}
+
+const migrateHabitCompletionCounts = async (db: SQLite.SQLiteDatabase): Promise<void> => {
+  const alreadyMigrated = await AsyncStorage.getItem(HABIT_COMPLETION_COUNTS_MIGRATION_FLAG_KEY)
+  if (alreadyMigrated) return
+
+  const columns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(habit_completions)')
+  const hasCountColumn = columns.some((column) => column.name === 'count')
+  if (!hasCountColumn) {
+    await db.runAsync('ALTER TABLE habit_completions ADD COLUMN count INTEGER NOT NULL DEFAULT 1')
+  }
+
+  await db.runAsync('UPDATE habit_completions SET count = 1 WHERE count IS NULL OR count <= 0')
+  await AsyncStorage.setItem(HABIT_COMPLETION_COUNTS_MIGRATION_FLAG_KEY, '1')
+}
+
+const migrateHabitOccurrences = async (db: SQLite.SQLiteDatabase): Promise<void> => {
+  const alreadyMigrated = await AsyncStorage.getItem(HABIT_OCCURRENCES_MIGRATION_FLAG_KEY)
+  if (alreadyMigrated) return
+
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS habit_occurrences (
+      id TEXT PRIMARY KEY NOT NULL,
+      habitId TEXT NOT NULL,
+      occurredAt TEXT NOT NULL,
+      source TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL,
+      FOREIGN KEY (habitId) REFERENCES habits(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_habit_occurrences_habitId ON habit_occurrences(habitId);
+    CREATE INDEX IF NOT EXISTS idx_habit_occurrences_habitId_occurredAt ON habit_occurrences(habitId, occurredAt);
+  `)
+
+  await AsyncStorage.setItem(HABIT_OCCURRENCES_MIGRATION_FLAG_KEY, '1')
+}
+
 export const getDb = (): Promise<SQLite.SQLiteDatabase> => {
   if (!dbPromise) {
     dbPromise = SQLite.openDatabaseAsync('agenda.db').then(async (db) => {
+      await clearLegacyInstallCaches()
       await db.execAsync('PRAGMA journal_mode = WAL;')
       // NORMAL + WAL: mucho menos fsync que FULL, riesgo aceptable de perder solo el último commit.
       await db.execAsync('PRAGMA synchronous = NORMAL;')
+      await db.execAsync('PRAGMA foreign_keys = ON;')
       await db.execAsync(`
         CREATE TABLE IF NOT EXISTS items (
           id TEXT PRIMARY KEY NOT NULL,
@@ -136,6 +222,7 @@ export const getDb = (): Promise<SQLite.SQLiteDatabase> => {
           title TEXT NOT NULL,
           categoryId TEXT,
           regularity TEXT NOT NULL,
+          timesPerDay INTEGER NOT NULL DEFAULT 1,
           reminder TEXT,
           notificationIds TEXT,
           createdAt TEXT NOT NULL,
@@ -144,13 +231,28 @@ export const getDb = (): Promise<SQLite.SQLiteDatabase> => {
         CREATE TABLE IF NOT EXISTS habit_completions (
           habitId TEXT NOT NULL,
           date TEXT NOT NULL,
+          count INTEGER NOT NULL DEFAULT 1,
           PRIMARY KEY (habitId, date)
         );
         CREATE INDEX IF NOT EXISTS idx_habit_completions_habitId ON habit_completions(habitId);
+        CREATE TABLE IF NOT EXISTS habit_occurrences (
+          id TEXT PRIMARY KEY NOT NULL,
+          habitId TEXT NOT NULL,
+          occurredAt TEXT NOT NULL,
+          source TEXT NOT NULL,
+          createdAt TEXT NOT NULL,
+          updatedAt TEXT NOT NULL,
+          FOREIGN KEY (habitId) REFERENCES habits(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_habit_occurrences_habitId ON habit_occurrences(habitId);
+        CREATE INDEX IF NOT EXISTS idx_habit_occurrences_habitId_occurredAt ON habit_occurrences(habitId, occurredAt);
       `)
       await migrateFromAsyncStorage(db)
       await migrateCalendarLinkFieldNames(db)
       await migrateLegacyItemTypes(db)
+      await migrateHabitTimesPerDay(db)
+      await migrateHabitCompletionCounts(db)
+      await migrateHabitOccurrences(db)
       return db
     })
   }

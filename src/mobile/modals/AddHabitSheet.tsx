@@ -3,7 +3,7 @@ import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, St
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker'
 import { format, parse } from 'date-fns'
-import { Bell, ChevronLeft, Shuffle, Trash2, X } from 'lucide-react-native'
+import { ChevronLeft, Clock3, Shuffle, Trash2, X } from 'lucide-react-native'
 import { useHabits } from '../../application/habits/useHabits'
 import {
   HABIT_REGULARITY,
@@ -51,11 +51,12 @@ export const AddHabitSheet = ({ open, habitId, onClose }: AddHabitSheetProps) =>
   const [title, setTitle] = useState('')
   const [regularity, setRegularity] = useState<HabitRegularity>(HABIT_REGULARITY.DAILY)
   const [categoryId, setCategoryId] = useState<string | undefined>()
+  const [habitTimesPerDay, setHabitTimesPerDay] = useState('1')
 
   const [reminderEnabled, setReminderEnabled] = useState(false)
   const [reminderMode, setReminderMode] = useState<HabitReminderMode>(HABIT_REMINDER_MODE.INTERVAL)
   const [intervalHours, setIntervalHours] = useState('3')
-  const [timesPerDay, setTimesPerDay] = useState('3')
+  const [reminderTimesPerDay, setReminderTimesPerDay] = useState('3')
   const [windowStart, setWindowStart] = useState<string | undefined>()
   const [windowEnd, setWindowEnd] = useState<string | undefined>()
   const [randomTimes, setRandomTimes] = useState<string[]>([])
@@ -72,10 +73,11 @@ export const AddHabitSheet = ({ open, habitId, onClose }: AddHabitSheetProps) =>
       setTitle('')
       setRegularity(HABIT_REGULARITY.DAILY)
       setCategoryId(undefined)
+      setHabitTimesPerDay('1')
       setReminderEnabled(false)
       setReminderMode(HABIT_REMINDER_MODE.INTERVAL)
       setIntervalHours('3')
-      setTimesPerDay('3')
+      setReminderTimesPerDay('3')
       setWindowStart(undefined)
       setWindowEnd(undefined)
       setRandomTimes([])
@@ -89,11 +91,12 @@ export const AddHabitSheet = ({ open, habitId, onClose }: AddHabitSheetProps) =>
     setTitle(habit.title)
     setRegularity(habit.regularity)
     setCategoryId(habit.categoryId)
+    setHabitTimesPerDay(String(habit.timesPerDay ?? 1))
     const reminder = habit.reminder
     setReminderEnabled(Boolean(reminder))
     setReminderMode(reminder?.mode ?? HABIT_REMINDER_MODE.INTERVAL)
     setIntervalHours(reminder?.intervalHours !== undefined ? String(reminder.intervalHours) : '3')
-    setTimesPerDay(reminder?.timesPerDay !== undefined ? String(reminder.timesPerDay) : '3')
+    setReminderTimesPerDay(reminder?.timesPerDay !== undefined ? String(reminder.timesPerDay) : '3')
     setWindowStart(reminder?.windowStart)
     setWindowEnd(reminder?.windowEnd)
     setRandomTimes(reminder?.randomTimes ? [...reminder.randomTimes] : [])
@@ -101,8 +104,16 @@ export const AddHabitSheet = ({ open, habitId, onClose }: AddHabitSheetProps) =>
 
   const canSave = title.trim().length > 0
 
+  const normalizedHabitTimesPerDay = Math.max(1, Number(habitTimesPerDay) || 1)
+  const normalizedReminderTimesPerDay = Math.max(1, Number(reminderTimesPerDay) || 1)
+
+  const adjustHabitCount = (delta: number) => {
+    const nextValue = Math.max(1, normalizedHabitTimesPerDay + delta)
+    setHabitTimesPerDay(String(nextValue))
+  }
+
   const handleReroll = () => {
-    setRandomTimes(generateRandomTimes({ timesPerDay: Number(timesPerDay) || 1, windowStart, windowEnd }))
+    setRandomTimes(generateRandomTimes({ timesPerDay: normalizedReminderTimesPerDay, windowStart, windowEnd }))
   }
 
   // If the user enabled random mode but never tapped "sortear", roll once right at save time
@@ -114,15 +125,15 @@ export const AddHabitSheet = ({ open, habitId, onClose }: AddHabitSheetProps) =>
     }
     const finalRandomTimes = randomTimes.length > 0
       ? randomTimes
-      : generateRandomTimes({ timesPerDay: Number(timesPerDay) || 1, windowStart, windowEnd })
-    return { mode: HABIT_REMINDER_MODE.RANDOM, timesPerDay: Number(timesPerDay) || 1, windowStart, windowEnd, randomTimes: finalRandomTimes }
+      : generateRandomTimes({ timesPerDay: normalizedReminderTimesPerDay, windowStart, windowEnd })
+    return { mode: HABIT_REMINDER_MODE.RANDOM, timesPerDay: normalizedReminderTimesPerDay, windowStart, windowEnd, randomTimes: finalRandomTimes }
   }
 
   // Only reachable from the compact create sheet — editing saves via handleClose instead.
   const handleSave = async () => {
     if (!canSave) return
     try {
-      await createHabit({ title: title.trim(), regularity, categoryId, reminder: buildReminderPayload() })
+      await createHabit({ title: title.trim(), regularity, categoryId, timesPerDay: normalizedHabitTimesPerDay, reminder: buildReminderPayload() })
     } catch (error) {
       Alert.alert('No se pudo guardar', error instanceof Error ? error.message : 'Revisá los datos ingresados.')
       return
@@ -134,7 +145,7 @@ export const AddHabitSheet = ({ open, habitId, onClose }: AddHabitSheetProps) =>
   const handleClose = async () => {
     if (isEditing && habitId && canSave) {
       try {
-        await updateHabit({ id: habitId, patch: { title: title.trim(), regularity, categoryId, reminder: buildReminderPayload() } })
+        await updateHabit({ id: habitId, patch: { title: title.trim(), regularity, categoryId, timesPerDay: normalizedHabitTimesPerDay, reminder: buildReminderPayload() } })
       } catch (error) {
         Alert.alert('No se pudo guardar', error instanceof Error ? error.message : 'Revisá los datos ingresados.')
         return
@@ -186,6 +197,35 @@ export const AddHabitSheet = ({ open, habitId, onClose }: AddHabitSheetProps) =>
         })}
       </View>
 
+      <Text style={styles.fieldLabel}>Veces por día</Text>
+      <View style={styles.counterCard}>
+        <View style={styles.counterHeaderRow}>
+          <Text style={styles.counterHeaderText}>Hoy</Text>
+          <Text style={styles.counterMetaText}>{normalizedHabitTimesPerDay} {normalizedHabitTimesPerDay === 1 ? 'vez' : 'veces'} / día</Text>
+        </View>
+
+        <View style={styles.counterRow}>
+          <Pressable
+            onPress={() => adjustHabitCount(-1)}
+            disabled={normalizedHabitTimesPerDay <= 1}
+            style={[styles.counterButton, normalizedHabitTimesPerDay <= 1 && styles.counterButtonDisabled]}
+          >
+            <Text style={[styles.counterButtonText, normalizedHabitTimesPerDay <= 1 && styles.counterButtonTextDisabled]}>−</Text>
+          </Pressable>
+
+          <Text style={styles.counterValue}>{normalizedHabitTimesPerDay}</Text>
+
+          <Pressable onPress={() => adjustHabitCount(1)} style={styles.counterButton}>
+            <Text style={styles.counterButtonText}>＋</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.counterBarTrack}>
+          <View style={[styles.counterBarFill, { width: `${Math.min(100, (normalizedHabitTimesPerDay / 8) * 100)}%` }]} />
+        </View>
+      </View>
+      <Text style={styles.metaNote}>La meta es cuántas veces lo haces; los recordatorios solo te ayudan a cumplirla.</Text>
+
       <Text style={styles.fieldLabel}>Categoría</Text>
       <View style={styles.chipsRow}>
         {HABIT_CATEGORIES.map((cat) => {
@@ -211,11 +251,12 @@ export const AddHabitSheet = ({ open, habitId, onClose }: AddHabitSheetProps) =>
       <View style={styles.optionsSeparator} />
 
       <Pressable style={styles.reminderToggleRow} onPress={() => setReminderEnabled((v) => !v)}>
-        <Bell size={16} color={reminderEnabled ? colors.primary : colors.textMuted} />
+        <Clock3 size={16} color={reminderEnabled ? colors.primary : colors.textMuted} />
         <Text style={styles.fieldLabelInline}>Recordatorios</Text>
         <View style={{ flex: 1 }} />
         <Switch value={reminderEnabled} onValueChange={setReminderEnabled} />
       </Pressable>
+      <Text style={styles.metaNote}>Los avisos ayudan a cumplir la meta, pero no reemplazan la ejecución real ni el conteo diario.</Text>
 
       {reminderEnabled && (
         <View style={styles.reminderPanel}>
@@ -248,10 +289,10 @@ export const AddHabitSheet = ({ open, habitId, onClose }: AddHabitSheetProps) =>
           ) : (
             <>
               <View style={styles.reminderFieldRow}>
-                <Text style={styles.reminderFieldLabel}>Veces por día</Text>
+                <Text style={styles.reminderFieldLabel}>Recordatorios por día</Text>
                 <TextInput
-                  value={timesPerDay}
-                  onChangeText={setTimesPerDay}
+                  value={reminderTimesPerDay}
+                  onChangeText={setReminderTimesPerDay}
                   keyboardType="number-pad"
                   style={styles.numberInput}
                   selectionColor={colors.primary}
@@ -317,18 +358,25 @@ export const AddHabitSheet = ({ open, habitId, onClose }: AddHabitSheetProps) =>
             <>
               <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: colors.overlayAccent }]} onPress={onClose} />
               <View style={styles.sheetAnchor} pointerEvents="box-none">
-                <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom + 8, 16) }]} onStartShouldSetResponder={() => true}>
+                <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom + 8, 16) }]}>
                   <View style={styles.dragHandle} />
-                  {renderFormFields()}
-                  <View style={styles.actionBar}>
-                    <Pressable
-                      onPress={() => void handleSave()}
-                      disabled={!canSave}
-                      style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1, marginLeft: 'auto' })}
-                    >
-                      <Text style={[styles.saveBtn, !canSave && styles.saveBtnDisabled]}>Guardar</Text>
-                    </Pressable>
-                  </View>
+                  <ScrollView
+                    style={styles.sheetScroll}
+                    contentContainerStyle={styles.sheetContent}
+                    keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator={false}
+                  >
+                    {renderFormFields()}
+                    <View style={styles.actionBar}>
+                      <Pressable
+                        onPress={() => void handleSave()}
+                        disabled={!canSave}
+                        style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1, marginLeft: 'auto' })}
+                      >
+                        <Text style={[styles.saveBtn, !canSave && styles.saveBtnDisabled]}>Guardar</Text>
+                      </Pressable>
+                    </View>
+                  </ScrollView>
                 </View>
               </View>
             </>
@@ -380,7 +428,10 @@ const createStyles = (colors: ThemeTokens) =>
       borderColor: colors.border,
       paddingHorizontal: 20,
       paddingTop: 10,
+      maxHeight: '86%',
     },
+    sheetScroll: { flexGrow: 1 },
+    sheetContent: { paddingBottom: 8 },
     dragHandle: {
       width: 36,
       height: 4,
@@ -441,6 +492,87 @@ const createStyles = (colors: ThemeTokens) =>
       paddingVertical: 6,
       paddingHorizontal: 10,
       textAlign: 'center',
+    },
+    counterCard: {
+      backgroundColor: colors.surfaceSecondary,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      marginTop: 2,
+    },
+    counterHeaderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 10,
+    },
+    counterHeaderText: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: colors.textMuted,
+      textTransform: 'uppercase',
+      letterSpacing: 0.4,
+    },
+    counterMetaText: {
+      fontSize: 12,
+      color: colors.textSecondary,
+      fontWeight: '600',
+    },
+    counterRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12,
+    },
+    counterButton: {
+      width: 42,
+      height: 42,
+      borderRadius: 21,
+      backgroundColor: colors.primary + '18',
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: colors.primary + '44',
+    },
+    counterButtonDisabled: {
+      opacity: 0.45,
+    },
+    counterButtonText: {
+      fontSize: 28,
+      lineHeight: 28,
+      color: colors.primary,
+      fontWeight: '600',
+    },
+    counterButtonTextDisabled: {
+      color: colors.textMuted,
+    },
+    counterValue: {
+      flex: 1,
+      textAlign: 'center',
+      fontSize: 36,
+      fontWeight: '800',
+      color: colors.text,
+      lineHeight: 42,
+    },
+    metaNote: {
+      fontSize: 12,
+      color: colors.textMuted,
+      marginTop: 8,
+      lineHeight: 18,
+    },
+    counterBarTrack: {
+      height: 6,
+      borderRadius: 999,
+      backgroundColor: colors.border,
+      overflow: 'hidden',
+      marginTop: 12,
+    },
+    counterBarFill: {
+      height: 6,
+      borderRadius: 999,
+      backgroundColor: colors.primary,
     },
     rerollBtn: {
       flexDirection: 'row',

@@ -29,6 +29,7 @@ export const HabitStatsModal = ({ open, habit, completions, onClose }: HabitStat
   const insets = useSafeAreaInsets()
 
   const streaks = computeStreaks(completions, habit.regularity)
+  const targetLabel = `${habit.timesPerDay} ${habit.timesPerDay === 1 ? 'vez' : 'veces'} al día`
 
   return (
     <Modal visible={open} animationType="slide" transparent statusBarTranslucent onRequestClose={onClose}>
@@ -41,6 +42,11 @@ export const HabitStatsModal = ({ open, habit, completions, onClose }: HabitStat
             <Pressable onPress={onClose} hitSlop={12}>
               <X size={20} color={colors.textMuted} />
             </Pressable>
+          </View>
+
+          <View style={styles.metaBox}>
+            <Text style={styles.metaLabel}>Meta diaria</Text>
+            <Text style={styles.metaValue}>{targetLabel}</Text>
           </View>
 
           <View style={styles.statsRow}>
@@ -95,6 +101,16 @@ const createStyles = (colors: ThemeTokens) =>
     },
     header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
     title: { fontSize: 18, fontWeight: '800', color: colors.text },
+    metaBox: {
+      backgroundColor: colors.primarySoft,
+      borderRadius: 14,
+      paddingVertical: 12,
+      paddingHorizontal: 14,
+      marginTop: 10,
+      marginBottom: 4,
+    },
+    metaLabel: { fontSize: 12, color: colors.textMuted, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6 },
+    metaValue: { fontSize: 18, fontWeight: '800', color: colors.primary, marginTop: 4 },
     fieldLabel: {
       fontSize: 12,
       fontWeight: '700',

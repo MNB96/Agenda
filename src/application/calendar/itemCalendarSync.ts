@@ -77,7 +77,9 @@ export const syncItemToCalendar = async (item: Item, ctx: SyncContext): Promise<
       const created = await calendarRepository.createEvent(ctx.accessToken, ctx.calendarId, eventPayloadFor(item, dateTimes!))
       return Item.linkCalendar(item, { calendarId: ctx.calendarId, eventId: created.eventId, origin: 'app', kind: 'event' })
     } catch (error) {
-      if (isGoogleCalendarAuthError(error)) {
+      // A Tasks-only auth error (e.g. that API not enabled on the project) shouldn't disconnect
+      // the whole Google session — Calendar sync can keep working fine regardless.
+      if (isGoogleCalendarAuthError(error) && targetKind !== 'task') {
         ctx.markUnauthorized()
       }
       // Sin marcar esto (auth u otro error), el item quedaba con el calendarLink viejo sin
@@ -90,7 +92,7 @@ export const syncItemToCalendar = async (item: Item, ctx: SyncContext): Promise<
     try {
       await deleteLinkedResource(ctx.accessToken, currentLink)
     } catch (error) {
-      if (isGoogleCalendarAuthError(error)) {
+      if (isGoogleCalendarAuthError(error) && currentLink.kind !== 'task') {
         ctx.markUnauthorized()
       } else {
         await enqueueDelete(currentLink.kind, currentLink.calendarId, currentLink.eventId, item.title)
@@ -112,7 +114,7 @@ export const removeCalendarEventForItem = async (
   try {
     await deleteLinkedResource(ctx.accessToken, link)
   } catch (deleteError) {
-    if (isGoogleCalendarAuthError(deleteError)) {
+    if (isGoogleCalendarAuthError(deleteError) && link.kind !== 'task') {
       ctx.markUnauthorized()
       return
     }
