@@ -24,6 +24,7 @@ export interface Habit {
   readonly notificationIds?: readonly string[]
   readonly createdAt: string
   readonly updatedAt: string
+  readonly regularityChangedAt?: string
 }
 
 export interface NewHabitInput {
@@ -93,7 +94,10 @@ const updateHabit = (current: Habit, patch: HabitPatch): Habit => {
   const timesPerDay = 'timesPerDay' in patch ? normalizeTimesPerDay(patch.timesPerDay) : current.timesPerDay
   const reminder = 'reminder' in patch ? patch.reminder : current.reminder
   if (reminder) validateHabitReminder(reminder)
-  return { ...current, ...patch, title, regularity, timesPerDay, reminder, updatedAt: new Date().toISOString() }
+  const regularityChangedAt = patch.regularity && patch.regularity !== current.regularity
+    ? new Date().toISOString()
+    : current.regularityChangedAt
+  return { ...current, ...patch, title, regularity, timesPerDay, reminder, updatedAt: new Date().toISOString(), regularityChangedAt }
 }
 
 export type HabitHydrationResult = { success: true; habit: Habit } | { success: false; error: Error }

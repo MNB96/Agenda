@@ -18,9 +18,7 @@ export interface HabitRepository {
   addCompletion(habitId: string, date: string): Promise<void>
   removeCompletion(habitId: string, date: string): Promise<void>
   setCompletionCount(habitId: string, date: string, count: number): Promise<void>
-  listOccurrences(habitId?: string): Promise<HabitOccurrence[]>
   listOccurrencesBetween(startIso: string, endIso: string): Promise<HabitOccurrence[]>
   addOccurrence(habitId: string, occurredAt: string, source: HabitOccurrence['source']): Promise<HabitOccurrence>
   removeOccurrence(id: string): Promise<void>
-  updateOccurrenceTime(id: string, occurredAt: string): Promise<HabitOccurrence>
 }

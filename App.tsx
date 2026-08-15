@@ -5,7 +5,6 @@ import { StatusBar, useColorScheme, View } from 'react-native'
 import * as Notifications from 'expo-notifications'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
-import { format } from 'date-fns'
 import { useSettings } from './src/application/settings/useSettings'
 import { MainTabs } from './src/mobile/navigation/MainTabs'
 import { QuickAddSheet } from './src/mobile/modals/QuickAddSheet'
@@ -26,6 +25,7 @@ import { useAutoCompleteReminderOnly } from './src/application/items/useAutoComp
 import { useMarkOverdueGoals } from './src/application/items/useMarkOverdueGoals'
 import { useGoogleAuthStore } from './src/state/googleAuthStore'
 import { habitRepository } from './src/app/container'
+import { HABIT_OCCURRENCE_SOURCE } from './src/domain/habits'
 
 export default function App() {
   const queryClient = useMemo(() => new QueryClient(), [])
@@ -121,8 +121,9 @@ const AppShellInner = ({
       if (typeof habitId !== 'string' || actionId !== HABIT_COMPLETION_ACTION_ID) return
 
       try {
-        await habitRepository.addCompletion(habitId, format(new Date(), 'yyyy-MM-dd'))
+        await habitRepository.addOccurrence(habitId, new Date().toISOString(), HABIT_OCCURRENCE_SOURCE.NOTIFICATION)
         await queryClient.invalidateQueries({ queryKey: ['habit-completions'] })
+        await queryClient.invalidateQueries({ queryKey: ['habit-occurrences-today'] })
       } catch {
         // Falla silenciosa: si algo falla al marcar desde el push, el usuario puede repetir desde la app.
       }

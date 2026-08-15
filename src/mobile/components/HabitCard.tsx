@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { format } from 'date-fns'
-import { BarChart3, ChevronDown, ChevronUp, Flame } from 'lucide-react-native'
+import { BarChart3, Check, ChevronDown, ChevronUp, Edit2, Flame } from 'lucide-react-native'
 import type { Habit, WeekDayStatus } from '../../domain/habits'
 import { HABIT_CATEGORIES } from '../../domain/settings/types'
 import { CategoryGlyph } from '../theme/CategoryGlyph'
@@ -9,19 +9,14 @@ import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
 import { ProgressRing } from './ProgressRing'
 
-const REGULARITY_LABEL: Record<Habit['regularity'], string> = {
-  daily: 'Todos los días',
-  weekly: 'Cada semana',
-  monthly: 'Cada mes',
-  yearly: 'Cada año',
-}
-
 const WEEKDAY_LABELS = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
+const WEEKDAY_FULL_LABELS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 
 interface HabitCardProps {
   habit: Habit
   todayCount: number
-  completedToday: boolean
+  /** For non-daily habits: total completions in the current period (week/month/year). */
+  periodSummary?: { count: number; label: string }
   streak: number
   /** Only present for daily habits — this week's Monday-to-Sunday breakdown. */
   weekStatus?: WeekDayStatus[]
@@ -33,7 +28,7 @@ interface HabitCardProps {
   onOpenStats: () => void
 }
 
-export const HabitCard = ({ habit, todayCount, completedToday, streak, weekStatus, todayOccurrences = [], onToggleToday, onToggleDay, onDeleteOccurrence, onOpen, onOpenStats }: HabitCardProps) => {
+export const HabitCard = ({ habit, todayCount, periodSummary, streak, weekStatus, todayOccurrences = [], onToggleToday, onToggleDay, onDeleteOccurrence, onOpen, onOpenStats }: HabitCardProps) => {
   const { colors } = useAppTheme()
   const styles = useMemo(() => createStyles(colors), [colors])
   const [expanded, setExpanded] = useState(false)
@@ -43,6 +38,13 @@ export const HabitCard = ({ habit, todayCount, completedToday, streak, weekStatu
   const category = HABIT_CATEGORIES.find((cat) => cat.id === habit.categoryId)
   const accentColor = category?.color ?? colors.primary
   const isMultiDay = habit.timesPerDay > 1
+
+  // For display: use period count for non-daily habits, today count for daily
+  const displayCount = periodSummary ? periodSummary.count : todayCount
+  const isDoneForPeriod = displayCount >= habit.timesPerDay
+  // Leading icon and quick-add button reflect period completion (consistent with progress bar)
+  const isTodayDone = !isMultiDay && isDoneForPeriod
+  const hasTodayEntry = !isMultiDay && todayCount > 0
 
   const handleToggleExpanded = () => {
     setExpanded((previous) => {
@@ -55,9 +57,10 @@ export const HabitCard = ({ habit, todayCount, completedToday, streak, weekStatu
     })
   }
 
-  const progressPercent = Math.min((todayCount / Math.max(habit.timesPerDay, 1)) * 100, 100)
+  const progressPercent = Math.min((displayCount / Math.max(habit.timesPerDay, 1)) * 100, 100)
   const doneThisWeek = weekStatus?.filter((day) => day.done).length ?? 0
   const showRing = Boolean(weekStatus) && !expanded && !isMultiDay
+  const todayStr = format(new Date(), 'yyyy-MM-dd')
   const orderedOccurrences = useMemo(
     () => [...todayOccurrences].sort((a, b) => new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime()),
     [todayOccurrences],
@@ -65,7 +68,7 @@ export const HabitCard = ({ habit, todayCount, completedToday, streak, weekStatu
   const displayOccurrences = isEditingOccurrences ? orderedOccurrences : showAllOccurrences ? orderedOccurrences : orderedOccurrences.slice(0, 4)
   const hiddenOccurrencesCount = Math.max(0, orderedOccurrences.length - displayOccurrences.length)
 
-  const renderOccurrenceChip = (occurrence: { id: string; occurredAt: string }, index: number) => {
+  const renderOccurrenceChip = (occurrence: { id: string; occurredAt: string }) => {
     const time = format(new Date(occurrence.occurredAt), 'HH:mm')
     return isEditingOccurrences ? (
       <Pressable
@@ -73,7 +76,7 @@ export const HabitCard = ({ habit, todayCount, completedToday, streak, weekStatu
         accessibilityRole="button"
         accessibilityLabel={`Eliminar registro de las ${time}`}
         onPress={(event) => {
-          event.stopPropagation?.()
+          event.stopPropagation()
           onDeleteOccurrence(occurrence.id)
         }}
         style={styles.occurrenceChipEdit}
@@ -95,13 +98,25 @@ export const HabitCard = ({ habit, todayCount, completedToday, streak, weekStatu
           onPress={onToggleToday}
           style={styles.leading}
           accessibilityRole="button"
-          accessibilityLabel={isMultiDay ? `Registrar una vez ${habit.title}` : `Marcar ${habit.title} como completado`}
+          accessibilityLabel={
+            isMultiDay
+              ? `Registrar una vez ${habit.title}`
+              : hasTodayEntry
+              ? `Desmarcar ${habit.title}`
+              : `Marcar ${habit.title} como completado`
+          }
         >
           {showRing ? (
-            <ProgressRing size={44} progress={doneThisWeek / 7} color={accentColor} label={`${doneThisWeek}/7`} />
+            <ProgressRing size={44} progress={doneThisWeek / 7} color={accentColor} label={isTodayDone ? '✓' : `${doneThisWeek}/7`} />
           ) : (
-            <View style={[styles.iconCircle, { backgroundColor: isMultiDay ? accentColor + '18' : accentColor + '22' }]}> 
-              {isMultiDay ? <Text style={[styles.plusIcon, { color: accentColor }]}>＋</Text> : <CategoryGlyph iconName={category?.icon} size={20} color={accentColor} />}
+            <View style={[styles.iconCircle, { backgroundColor: isMultiDay ? accentColor + '18' : accentColor + '22' }]}>
+              {isMultiDay ? (
+                <Text style={[styles.plusIcon, { color: accentColor }]}>＋</Text>
+              ) : isTodayDone ? (
+                <Check size={20} color={accentColor} strokeWidth={3} />
+              ) : (
+                <CategoryGlyph iconName={category?.icon} size={20} color={accentColor} />
+              )}
             </View>
           )}
         </Pressable>
@@ -109,7 +124,7 @@ export const HabitCard = ({ habit, todayCount, completedToday, streak, weekStatu
         <Pressable onPress={onOpen} style={styles.content} accessibilityRole="button" accessibilityLabel={`Abrir ${habit.title}`}>
           <View style={styles.titleRow}>
             <Text style={styles.title} numberOfLines={1}>{habit.title}</Text>
-            <Text style={styles.todayValue}>{todayCount}/{habit.timesPerDay}</Text>
+            <Text style={[styles.todayValue, displayCount > habit.timesPerDay && { color: colors.accent }]}>{displayCount}/{habit.timesPerDay}</Text>
           </View>
           {category && (
             <View style={styles.categoryRow}>
@@ -123,8 +138,12 @@ export const HabitCard = ({ habit, todayCount, completedToday, streak, weekStatu
                 <View style={[styles.progressBarFill, { width: `${progressPercent}%`, backgroundColor: accentColor }]} />
               </View>
               <View style={styles.progressMetaRow}>
-                <Text style={styles.progressCaption}>{todayCount} de {habit.timesPerDay} veces hoy</Text>
-                {todayCount >= habit.timesPerDay && <Text style={styles.metaCaption}>Meta cumplida</Text>}
+                <Text style={styles.progressCaption}>
+                  {periodSummary
+                    ? `${displayCount} de ${habit.timesPerDay} veces ${periodSummary.label}`
+                    : `${todayCount} de ${habit.timesPerDay} veces hoy`}
+                </Text>
+                {isDoneForPeriod && <Text style={styles.metaCaption}>Meta cumplida</Text>}
               </View>
             </>
           ) : weekStatus ? (
@@ -133,22 +152,36 @@ export const HabitCard = ({ habit, todayCount, completedToday, streak, weekStatu
                 <View style={[styles.progressBarFill, { width: `${Math.min((todayCount / Math.max(habit.timesPerDay, 1)) * 100, 100)}%`, backgroundColor: accentColor }]} />
               </View>
               <View style={styles.progressMetaRow}>
-                <Text style={styles.progressCaption}>{todayCount} de {habit.timesPerDay} veces hoy</Text>
+                <Text style={styles.progressCaption}>{todayCount} de {habit.timesPerDay} {habit.timesPerDay === 1 ? 'vez' : 'veces'} hoy</Text>
               </View>
             </>
-          ) : (
-            <Text style={styles.progressCaption}>{REGULARITY_LABEL[habit.regularity]} · Meta: {habit.timesPerDay} {habit.timesPerDay === 1 ? 'vez/día' : 'veces/día'}</Text>
-          )}
+          ) : periodSummary ? (
+            <>
+              <View style={styles.progressBarTrack}>
+                <View style={[styles.progressBarFill, { width: `${progressPercent}%`, backgroundColor: accentColor }]} />
+              </View>
+              <View style={styles.progressMetaRow}>
+                <Text style={styles.progressCaption}>
+                  {displayCount} de {habit.timesPerDay} {habit.timesPerDay === 1 ? 'vez' : 'veces'} {periodSummary.label}
+                </Text>
+                {isDoneForPeriod && <Text style={styles.metaCaption}>Meta cumplida</Text>}
+              </View>
+            </>
+          ) : null}
         </Pressable>
 
         <View style={styles.trailing}>
-          <View style={styles.streakBadge}>
-            <Flame size={13} color={colors.accent} />
-            <Text style={styles.streakText}>{streak}</Text>
-          </View>
+          {streak > 0 && (
+            <View style={styles.streakBadge}>
+              <Flame size={13} color={colors.accent} />
+              <Text style={styles.streakText}>{streak}</Text>
+            </View>
+          )}
           <Pressable
             onPress={handleToggleExpanded}
             hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={expanded ? `Contraer ${habit.title}` : `Expandir ${habit.title}`}
           >
             {expanded ? <ChevronUp size={18} color={colors.textMuted} /> : <ChevronDown size={18} color={colors.textMuted} />}
           </Pressable>
@@ -206,8 +239,15 @@ export const HabitCard = ({ habit, todayCount, completedToday, streak, weekStatu
                 {weekStatus.map((day, index) => {
                   const isPartial = day.partial && !day.done
                   const isDone = day.done
+                  const isFuture = day.date > todayStr
                   return (
-                    <View key={day.date} style={styles.weekDay}>
+                    <Pressable
+                      key={day.date}
+                      onPress={() => onToggleDay(day.date, day.done)}
+                      style={[styles.weekDay, isFuture && { opacity: 0.35 }]}
+                      accessibilityRole="button"
+                      accessibilityLabel={isFuture ? `${WEEKDAY_FULL_LABELS[index]} (fecha futura)` : `${isDone ? 'Desmarcar' : 'Marcar'} ${WEEKDAY_FULL_LABELS[index]}`}
+                    >
                       <Text style={styles.weekDayLabel}>{WEEKDAY_LABELS[index]}</Text>
                       <View
                         style={[
@@ -216,7 +256,7 @@ export const HabitCard = ({ habit, todayCount, completedToday, streak, weekStatu
                           isPartial && { backgroundColor: accentColor + '33', borderColor: accentColor },
                         ]}
                       />
-                    </View>
+                    </Pressable>
                   )
                 })}
               </View>
@@ -226,46 +266,79 @@ export const HabitCard = ({ habit, todayCount, completedToday, streak, weekStatu
             </View>
           )}
 
+          {periodSummary && (
+            <View style={styles.expandedSection}>
+              <Text style={styles.sectionTitle}>{periodSummary.label.charAt(0).toUpperCase() + periodSummary.label.slice(1)}</Text>
+              <View style={styles.periodProgressTrack}>
+                <View style={[styles.periodProgressFill, { width: `${Math.min(100, (periodSummary.count / Math.max(habit.timesPerDay, 1)) * 100)}%`, backgroundColor: accentColor }]} />
+              </View>
+              <Text style={styles.weekSummaryText}>
+                {periodSummary.count} de {habit.timesPerDay} {habit.timesPerDay === 1 ? 'vez' : 'veces'} {periodSummary.label}
+                {isDoneForPeriod ? '  ✓' : ''}
+              </Text>
+            </View>
+          )}
+
           <View style={styles.daySummaryRow}>
             <Text style={styles.daySummaryText}>
-              {isMultiDay ? `${todayCount} de ${habit.timesPerDay} veces hoy` : `Hoy: ${todayCount}/${habit.timesPerDay}`}
-              {todayCount >= Math.max(1, habit.timesPerDay) && isMultiDay ? '  ✓' : ''}
+              {isMultiDay && periodSummary
+                ? `${periodSummary.count} de ${habit.timesPerDay} veces ${periodSummary.label}${isDoneForPeriod ? '  ✓' : ''}`
+                : isMultiDay
+                ? `${todayCount} de ${habit.timesPerDay} veces hoy${todayCount >= Math.max(1, habit.timesPerDay) ? '  ✓' : ''}`
+                : isTodayDone && !hasTodayEntry
+                ? `Meta${periodSummary ? ` de ${periodSummary.label}` : ''} cumplida  ✓`
+                : `Hoy: ${todayCount}/${habit.timesPerDay}`}
             </Text>
-            {isMultiDay ? (
-              <Pressable
-                style={styles.quickAddButton}
-                onPress={(event) => {
-                  event.stopPropagation()
-                  onToggleToday()
-                }}
-                accessibilityLabel={`Registrar una vez ${habit.title}`}
-              >
+            <Pressable
+              style={[
+                styles.quickAddButton,
+                !isMultiDay && hasTodayEntry && isTodayDone && { backgroundColor: accentColor },
+                !isMultiDay && !hasTodayEntry && isTodayDone && { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: accentColor },
+              ]}
+              onPress={(event) => {
+                event.stopPropagation()
+                onToggleToday()
+              }}
+              accessibilityLabel={
+                isMultiDay
+                  ? `Registrar una vez ${habit.title}`
+                  : hasTodayEntry
+                  ? `Desmarcar ${habit.title}`
+                  : isDoneForPeriod
+                  ? `Registrar ${habit.title} de nuevo`
+                  : `Marcar ${habit.title} como completado`
+              }
+            >
+              {hasTodayEntry && isTodayDone ? (
+                <Check size={20} color="#FFFFFF" strokeWidth={3} />
+              ) : isTodayDone ? (
+                <Text style={[styles.quickAddButtonText, { color: accentColor }]}>＋</Text>
+              ) : (
                 <Text style={styles.quickAddButtonText}>＋</Text>
-              </Pressable>
-            ) : (
-              <Pressable
-                style={styles.quickAddButton}
-                onPress={(event) => {
-                  event.stopPropagation()
-                  onToggleToday()
-                }}
-                accessibilityLabel={`Marcar ${habit.title} como completado`}
-              >
-                <Text style={styles.quickAddButtonText}>＋</Text>
-              </Pressable>
-            )}
+              )}
+            </Pressable>
           </View>
 
-          <Pressable
-            onPress={(event) => {
-              event.stopPropagation()
-              onOpenStats()
-            }}
-            style={styles.statsLinkRow}
-          >
-            <BarChart3 size={15} color={colors.primary} />
-            <Text style={styles.statsLinkText}>Ver estadísticas</Text>
-          </Pressable>
+          <View style={styles.accordionActions}>
+            <Pressable
+              onPress={(event) => { event.stopPropagation(); onOpenStats() }}
+              style={styles.statsLinkRow}
+              accessibilityRole="button"
+              accessibilityLabel={`Ver estadísticas de ${habit.title}`}
+            >
+              <BarChart3 size={15} color={colors.primary} />
+              <Text style={styles.statsLinkText}>Ver estadísticas</Text>
+            </Pressable>
+            <Pressable
+              onPress={(event) => { event.stopPropagation(); onOpen() }}
+              style={styles.statsLinkRow}
+              accessibilityRole="button"
+              accessibilityLabel={`Editar ${habit.title}`}
+            >
+              <Edit2 size={15} color={colors.primary} />
+              <Text style={styles.statsLinkText}>Editar hábito</Text>
+            </Pressable>
+          </View>
         </View>
       )}
     </View>
@@ -318,6 +391,14 @@ const createStyles = (colors: ThemeTokens) =>
     weekDay: { alignItems: 'center', gap: 6 },
     weekDayLabel: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },
     weekDot: { width: 24, height: 24, borderRadius: 999, borderWidth: 1.6, borderColor: colors.borderStrong },
+    periodProgressTrack: {
+      height: 8,
+      borderRadius: 999,
+      backgroundColor: colors.border,
+      overflow: 'hidden',
+      marginTop: 8,
+    },
+    periodProgressFill: { height: 8, borderRadius: 999 },
     sectionHeaderRow: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -377,6 +458,7 @@ const createStyles = (colors: ThemeTokens) =>
     },
     quickAddButtonText: { color: '#FFFFFF', fontSize: 24, fontWeight: '700', lineHeight: 24 },
     weekSummaryText: { fontSize: 12, color: colors.textMuted, marginTop: 8 },
+    accordionActions: { flexDirection: 'row', gap: 20, paddingTop: 4 },
     statsLinkRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4, paddingTop: 12 },
     statsLinkText: { fontSize: 14, color: colors.primary, fontWeight: '600' },
     plusIcon: { fontSize: 22, fontWeight: '800' },

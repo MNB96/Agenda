@@ -37,8 +37,22 @@ const REMINDER_MODE_OPTIONS: { value: HabitReminderMode; label: string }[] = [
   { value: HABIT_REMINDER_MODE.RANDOM, label: 'Horario random' },
 ]
 
+const TIMES_LABEL: Record<HabitRegularity, string> = {
+  daily: 'Veces por día',
+  weekly: 'Veces por semana',
+  monthly: 'Veces por mes',
+  yearly: 'Veces por año',
+}
+
+const PERIOD_UNIT: Record<HabitRegularity, string> = {
+  daily: 'día',
+  weekly: 'semana',
+  monthly: 'mes',
+  yearly: 'año',
+}
+
 export const AddHabitSheet = ({ open, habitId, onClose }: AddHabitSheetProps) => {
-  const { habits, createHabit, updateHabit, removeHabit } = useHabits()
+  const { habits, createHabit, updateHabit, removeHabit, completionsByHabitId } = useHabits()
   const habit = habits.find((h) => h.id === habitId)
   const isEditing = Boolean(habitId)
   // Editing gets the full-screen form (same treatment as AddGoalSheet/ItemDetailModal) since
@@ -62,6 +76,7 @@ export const AddHabitSheet = ({ open, habitId, onClose }: AddHabitSheetProps) =>
   const [randomTimes, setRandomTimes] = useState<string[]>([])
   const [showStartPicker, setShowStartPicker] = useState(false)
   const [showEndPicker, setShowEndPicker] = useState(false)
+  const [intervalError, setIntervalError] = useState<string | undefined>()
 
   // Same "adjust state during render" pattern AddGoalSheet uses: create mode resets to blank
   // as soon as the sheet opens; edit mode prefills once the fetched habit actually arrives.
@@ -81,6 +96,9 @@ export const AddHabitSheet = ({ open, habitId, onClose }: AddHabitSheetProps) =>
       setWindowStart(undefined)
       setWindowEnd(undefined)
       setRandomTimes([])
+      setIntervalError(undefined)
+      setShowStartPicker(false)
+      setShowEndPicker(false)
       setSyncedHabitId(undefined)
     } else if (!open) {
       setSyncedHabitId(undefined)
@@ -102,10 +120,28 @@ export const AddHabitSheet = ({ open, habitId, onClose }: AddHabitSheetProps) =>
     setRandomTimes(reminder?.randomTimes ? [...reminder.randomTimes] : [])
   }
 
-  const canSave = title.trim().length > 0
+  const canSave = title.trim().length > 0 && !(reminderEnabled && intervalError)
 
   const normalizedHabitTimesPerDay = Math.max(1, Number(habitTimesPerDay) || 1)
   const normalizedReminderTimesPerDay = Math.max(1, Number(reminderTimesPerDay) || 1)
+
+  const hasChanges = !habit || (
+    title.trim() !== habit.title ||
+    regularity !== habit.regularity ||
+    categoryId !== habit.categoryId ||
+    normalizedHabitTimesPerDay !== habit.timesPerDay ||
+    reminderEnabled !== Boolean(habit.reminder) ||
+    (reminderEnabled && habit.reminder && (
+      reminderMode !== habit.reminder.mode ||
+      (reminderMode === HABIT_REMINDER_MODE.INTERVAL && Number(intervalHours) !== habit.reminder.intervalHours) ||
+      (reminderMode === HABIT_REMINDER_MODE.RANDOM && (
+        Number(reminderTimesPerDay) !== habit.reminder.timesPerDay ||
+        JSON.stringify([...randomTimes].sort()) !== JSON.stringify([...(habit.reminder.randomTimes ?? [])].sort())
+      )) ||
+      windowStart !== habit.reminder.windowStart ||
+      windowEnd !== habit.reminder.windowEnd
+    ))
+  )
 
   const adjustHabitCount = (delta: number) => {
     const nextValue = Math.max(1, normalizedHabitTimesPerDay + delta)
@@ -121,7 +157,9 @@ export const AddHabitSheet = ({ open, habitId, onClose }: AddHabitSheetProps) =>
   const buildReminderPayload = (): HabitReminderConfig | undefined => {
     if (!reminderEnabled) return undefined
     if (reminderMode === HABIT_REMINDER_MODE.INTERVAL) {
-      return { mode: HABIT_REMINDER_MODE.INTERVAL, intervalHours: Number(intervalHours) || 1, windowStart, windowEnd }
+      const hours = Number(intervalHours)
+      if (!hours || hours <= 0) throw new Error('Ingresá un intervalo de horas mayor a 0.')
+      return { mode: HABIT_REMINDER_MODE.INTERVAL, intervalHours: hours, windowStart, windowEnd }
     }
     const finalRandomTimes = randomTimes.length > 0
       ? randomTimes
@@ -143,12 +181,55 @@ export const AddHabitSheet = ({ open, habitId, onClose }: AddHabitSheetProps) =>
 
   // Editing has no explicit Guardar — like task/goal editing, the back button saves and closes.
   const handleClose = async () => {
-    if (isEditing && habitId && canSave) {
-      try {
-        await updateHabit({ id: habitId, patch: { title: title.trim(), regularity, categoryId, timesPerDay: normalizedHabitTimesPerDay, reminder: buildReminderPayload() } })
-      } catch (error) {
-        Alert.alert('No se pudo guardar', error instanceof Error ? error.message : 'Revisá los datos ingresados.')
+    if (isEditing && habitId) {
+      if (!canSave) {
+        const alertTitle = !title.trim() ? 'Título vacío' : 'Error en recordatorios'
+        const alertMessage = !title.trim()
+          ? 'El hábito necesita un nombre. ¿Cerrar sin guardar?'
+          : 'El intervalo de recordatorio no es válido. ¿Cerrar sin guardar?'
+        Alert.alert(
+          alertTitle,
+          alertMessage,
+          [
+            { text: 'Cancelar', style: 'cancel' },
+            { text: 'Cerrar sin guardar', style: 'destructive', onPress: onClose },
+          ],
+        )
         return
+      }
+      if (hasChanges) {
+        const regularityChanged = habit && regularity !== habit.regularity
+        const hasHistory = regularityChanged && (completionsByHabitId.get(habitId)?.length ?? 0) > 0
+
+        if (hasHistory) {
+          Alert.alert(
+            'Cambiar regularidad',
+            'Los registros anteriores quedarán como historial. La racha y las estadísticas se calcularán desde este cambio.',
+            [
+              { text: 'Cancelar', style: 'cancel' },
+              {
+                text: 'Cambiar',
+                onPress: async () => {
+                  try {
+                    await updateHabit({ id: habitId, patch: { title: title.trim(), regularity, categoryId, timesPerDay: normalizedHabitTimesPerDay, reminder: buildReminderPayload() } })
+                  } catch (error) {
+                    Alert.alert('No se pudo guardar', error instanceof Error ? error.message : 'Revisá los datos ingresados.')
+                    return
+                  }
+                  onClose()
+                },
+              },
+            ],
+          )
+          return
+        }
+
+        try {
+          await updateHabit({ id: habitId, patch: { title: title.trim(), regularity, categoryId, timesPerDay: normalizedHabitTimesPerDay, reminder: buildReminderPayload() } })
+        } catch (error) {
+          Alert.alert('No se pudo guardar', error instanceof Error ? error.message : 'Revisá los datos ingresados.')
+          return
+        }
       }
     }
     onClose()
@@ -156,7 +237,7 @@ export const AddHabitSheet = ({ open, habitId, onClose }: AddHabitSheetProps) =>
 
   const handleDelete = () => {
     if (!habit) return
-    Alert.alert('Eliminar hábito', '¿Eliminar este hábito?', [
+    Alert.alert('Eliminar hábito', `¿Eliminar "${habit.title}"?`, [
       { text: 'Cancelar', style: 'cancel' },
       {
         text: 'Eliminar',
@@ -197,11 +278,11 @@ export const AddHabitSheet = ({ open, habitId, onClose }: AddHabitSheetProps) =>
         })}
       </View>
 
-      <Text style={styles.fieldLabel}>Veces por día</Text>
+      <Text style={styles.fieldLabel}>{TIMES_LABEL[regularity]}</Text>
       <View style={styles.counterCard}>
         <View style={styles.counterHeaderRow}>
-          <Text style={styles.counterHeaderText}>Hoy</Text>
-          <Text style={styles.counterMetaText}>{normalizedHabitTimesPerDay} {normalizedHabitTimesPerDay === 1 ? 'vez' : 'veces'} / día</Text>
+          <Text style={styles.counterHeaderText}>Meta</Text>
+          <Text style={styles.counterMetaText}>{normalizedHabitTimesPerDay} {normalizedHabitTimesPerDay === 1 ? 'vez' : 'veces'} / {PERIOD_UNIT[regularity]}</Text>
         </View>
 
         <View style={styles.counterRow}>
@@ -221,8 +302,9 @@ export const AddHabitSheet = ({ open, habitId, onClose }: AddHabitSheetProps) =>
         </View>
 
         <View style={styles.counterBarTrack}>
-          <View style={[styles.counterBarFill, { width: `${Math.min(100, (normalizedHabitTimesPerDay / 8) * 100)}%` }]} />
+          <View style={[styles.counterBarFill, { width: `${Math.min(100, (normalizedHabitTimesPerDay / 20) * 100)}%` }]} />
         </View>
+        <Text style={styles.counterBarHint}>{normalizedHabitTimesPerDay > 20 ? `${normalizedHabitTimesPerDay} veces` : ''}</Text>
       </View>
       <Text style={styles.metaNote}>La meta es cuántas veces lo haces; los recordatorios solo te ayudan a cumplirla.</Text>
 
@@ -266,7 +348,13 @@ export const AddHabitSheet = ({ open, habitId, onClose }: AddHabitSheetProps) =>
               return (
                 <Pressable
                   key={option.value}
-                  onPress={() => setReminderMode(option.value)}
+                  onPress={() => {
+                    setReminderMode(option.value)
+                    setIntervalError(undefined)
+                    if (option.value === HABIT_REMINDER_MODE.RANDOM && randomTimes.length === 0) {
+                      setRandomTimes(generateRandomTimes({ timesPerDay: normalizedReminderTimesPerDay, windowStart, windowEnd }))
+                    }
+                  }}
                   style={[styles.chip, active && { backgroundColor: colors.primary, borderColor: colors.primary }]}
                 >
                   <Text style={[styles.chipText, active && { color: '#FFFFFF', fontWeight: '700' }]}>{option.label}</Text>
@@ -276,23 +364,30 @@ export const AddHabitSheet = ({ open, habitId, onClose }: AddHabitSheetProps) =>
           </View>
 
           {reminderMode === HABIT_REMINDER_MODE.INTERVAL ? (
-            <View style={styles.reminderFieldRow}>
-              <Text style={styles.reminderFieldLabel}>Cada cuántas horas</Text>
-              <TextInput
-                value={intervalHours}
-                onChangeText={setIntervalHours}
-                keyboardType="number-pad"
-                style={styles.numberInput}
-                selectionColor={colors.primary}
-              />
-            </View>
+            <>
+              <View style={styles.reminderFieldRow}>
+                <Text style={styles.reminderFieldLabel}>Cada cuántas horas</Text>
+                <TextInput
+                  value={intervalHours}
+                  onChangeText={(text) => {
+                    setIntervalHours(text)
+                    const n = Number(text)
+                    setIntervalError(!text.trim() || !Number.isFinite(n) || n <= 0 ? 'Ingresá un valor mayor a 0' : undefined)
+                  }}
+                  keyboardType="number-pad"
+                  style={styles.numberInput}
+                  selectionColor={colors.primary}
+                />
+              </View>
+              {intervalError && <Text style={styles.fieldError}>{intervalError}</Text>}
+            </>
           ) : (
             <>
               <View style={styles.reminderFieldRow}>
                 <Text style={styles.reminderFieldLabel}>Recordatorios por día</Text>
                 <TextInput
                   value={reminderTimesPerDay}
-                  onChangeText={setReminderTimesPerDay}
+                  onChangeText={(text) => { setReminderTimesPerDay(text); setRandomTimes([]) }}
                   keyboardType="number-pad"
                   style={styles.numberInput}
                   selectionColor={colors.primary}
@@ -324,7 +419,7 @@ export const AddHabitSheet = ({ open, habitId, onClose }: AddHabitSheetProps) =>
               <Text style={styles.windowValue}>{windowEnd ?? 'Todo el día'}</Text>
             </Pressable>
             {(windowStart || windowEnd) && (
-              <Pressable onPress={() => { setWindowStart(undefined); setWindowEnd(undefined) }} hitSlop={8} style={styles.windowClearBtn}>
+              <Pressable onPress={() => { setWindowStart(undefined); setWindowEnd(undefined); setRandomTimes([]) }} hitSlop={8} style={styles.windowClearBtn}>
                 <X size={16} color={colors.textMuted} />
               </Pressable>
             )}
@@ -345,12 +440,13 @@ export const AddHabitSheet = ({ open, habitId, onClose }: AddHabitSheetProps) =>
                 <Pressable onPress={() => void handleClose()} hitSlop={12} style={styles.headerBtn}>
                   <ChevronLeft size={24} color={colors.text} />
                 </Pressable>
+                <Text style={styles.fullScreenTitle}>Editar hábito</Text>
                 <View style={{ flex: 1 }} />
                 <Pressable onPress={handleDelete} hitSlop={12} style={styles.headerBtn}>
                   <Trash2 size={20} color={colors.textMuted} />
                 </Pressable>
               </View>
-              <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.fullScreenContent} keyboardShouldPersistTaps="handled">
+              <ScrollView style={{ flex: 1 }} contentContainerStyle={[styles.fullScreenContent, { paddingBottom: Math.max(insets.bottom + 24, 24) }]} keyboardShouldPersistTaps="handled">
                 {renderFormFields()}
               </ScrollView>
             </View>
@@ -368,6 +464,13 @@ export const AddHabitSheet = ({ open, habitId, onClose }: AddHabitSheetProps) =>
                   >
                     {renderFormFields()}
                     <View style={styles.actionBar}>
+                      {!canSave && (
+                        <Text style={styles.saveHint} numberOfLines={2}>
+                          {!title.trim()
+                            ? 'Ingresá un nombre para continuar'
+                            : 'Corregí el intervalo de recordatorios'}
+                        </Text>
+                      )}
                       <Pressable
                         onPress={() => void handleSave()}
                         disabled={!canSave}
@@ -395,6 +498,7 @@ export const AddHabitSheet = ({ open, habitId, onClose }: AddHabitSheetProps) =>
             if (Platform.OS !== 'ios') setShowStartPicker(false)
             if (event.type === 'dismissed' || !date) return
             setWindowStart(format(date, 'HH:mm'))
+            setRandomTimes([])
           }}
         />
       )}
@@ -408,6 +512,7 @@ export const AddHabitSheet = ({ open, habitId, onClose }: AddHabitSheetProps) =>
             if (Platform.OS !== 'ios') setShowEndPicker(false)
             if (event.type === 'dismissed' || !date) return
             setWindowEnd(format(date, 'HH:mm'))
+            setRandomTimes([])
           }}
         />
       )}
@@ -448,7 +553,8 @@ const createStyles = (colors: ThemeTokens) =>
       paddingVertical: 8,
     },
     headerBtn: { padding: 8 },
-    fullScreenContent: { paddingHorizontal: 20, paddingTop: 6, paddingBottom: 24 },
+    fullScreenTitle: { fontSize: 16, fontWeight: '700', color: colors.text, marginLeft: 4 },
+    fullScreenContent: { paddingHorizontal: 20, paddingTop: 6 },
     mainInput: {
       fontSize: 18,
       color: colors.text,
@@ -574,6 +680,7 @@ const createStyles = (colors: ThemeTokens) =>
       borderRadius: 999,
       backgroundColor: colors.primary,
     },
+    counterBarHint: { fontSize: 11, color: colors.textMuted, marginTop: 2, textAlign: 'right' },
     rerollBtn: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -602,4 +709,6 @@ const createStyles = (colors: ThemeTokens) =>
     actionBar: { flexDirection: 'row', alignItems: 'center', marginTop: 14 },
     saveBtn: { fontSize: 15, fontWeight: '700', color: colors.primary, paddingVertical: 6, paddingHorizontal: 4 },
     saveBtnDisabled: { color: colors.textMuted },
+    fieldError: { fontSize: 12, color: '#E53E3E', marginTop: 4 },
+    saveHint: { fontSize: 12, color: colors.textMuted, flex: 1, paddingRight: 8 },
   })

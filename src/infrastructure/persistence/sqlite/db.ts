@@ -11,6 +11,7 @@ const TYPE_UNIFICATION_MIGRATION_FLAG_KEY = 'agenda:item-type-unification-v1'
 const HABIT_TIMES_PER_DAY_MIGRATION_FLAG_KEY = 'agenda:habit-times-per-day-v1'
 const HABIT_COMPLETION_COUNTS_MIGRATION_FLAG_KEY = 'agenda:habit-completion-counts-v1'
 const HABIT_OCCURRENCES_MIGRATION_FLAG_KEY = 'agenda:habit-occurrences-v1'
+const HABIT_REGULARITY_CHANGED_AT_MIGRATION_FLAG_KEY = 'agenda:habit-regularity-changed-at-v1'
 
 const LEGACY_CACHE_KEYS = [
   OLD_ITEMS_KEY,
@@ -168,6 +169,19 @@ const migrateHabitCompletionCounts = async (db: SQLite.SQLiteDatabase): Promise<
   await AsyncStorage.setItem(HABIT_COMPLETION_COUNTS_MIGRATION_FLAG_KEY, '1')
 }
 
+const migrateHabitRegularityChangedAt = async (db: SQLite.SQLiteDatabase): Promise<void> => {
+  const alreadyMigrated = await AsyncStorage.getItem(HABIT_REGULARITY_CHANGED_AT_MIGRATION_FLAG_KEY)
+  if (alreadyMigrated) return
+
+  const columns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(habits)')
+  const hasColumn = columns.some((column) => column.name === 'regularityChangedAt')
+  if (!hasColumn) {
+    await db.runAsync('ALTER TABLE habits ADD COLUMN regularityChangedAt TEXT')
+  }
+
+  await AsyncStorage.setItem(HABIT_REGULARITY_CHANGED_AT_MIGRATION_FLAG_KEY, '1')
+}
+
 const migrateHabitOccurrences = async (db: SQLite.SQLiteDatabase): Promise<void> => {
   const alreadyMigrated = await AsyncStorage.getItem(HABIT_OCCURRENCES_MIGRATION_FLAG_KEY)
   if (alreadyMigrated) return
@@ -253,6 +267,7 @@ export const getDb = (): Promise<SQLite.SQLiteDatabase> => {
       await migrateHabitTimesPerDay(db)
       await migrateHabitCompletionCounts(db)
       await migrateHabitOccurrences(db)
+      await migrateHabitRegularityChangedAt(db)
       return db
     })
   }

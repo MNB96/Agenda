@@ -68,7 +68,8 @@ export const isCompletedForCurrentPeriod = (
   targetCount = 1,
 ): boolean => {
   const nowOrdinal = periodOrdinal(now, regularity)
-  return completionDates.some((date) => periodOrdinal(parseISO(date), regularity) === nowOrdinal)
+  const countInPeriod = completionDates.filter((date) => periodOrdinal(parseISO(date), regularity) === nowOrdinal).length
+  return isCompletionCountMet(countInPeriod, targetCount)
 }
 
 export interface WeekDayStatus {
@@ -82,7 +83,6 @@ export interface WeekDayStatus {
 export const weekCompletionStatus = (
   completionDates: readonly string[],
   now: Date = new Date(),
-  targetCount = 1,
 ): WeekDayStatus[] => {
   const completedDays = new Set(completionDates.map((date) => date.slice(0, 10)))
   const monday = new Date(now)

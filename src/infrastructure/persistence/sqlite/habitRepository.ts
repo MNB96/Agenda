@@ -19,6 +19,7 @@ interface HabitRow {
   notificationIds: string | null
   createdAt: string
   updatedAt: string
+  regularityChangedAt: string | null
 }
 
 interface HabitOccurrenceRow {
@@ -76,6 +77,7 @@ const hydrateRow = (row: HabitRow): Habit | undefined => {
     notificationIds: parseJsonSafe<string[]>(row.notificationIds),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    regularityChangedAt: row.regularityChangedAt ?? undefined,
   })
   if (!result.success) {
     console.warn(`No se pudo hidratar el hábito ${row.id}: ${result.error.message}`)
@@ -100,7 +102,7 @@ export class SQLiteHabitRepository implements HabitRepository {
   async save(habit: Habit): Promise<Habit> {
     const db = await getDb()
     await db.runAsync(
-      'INSERT OR REPLACE INTO habits (id, title, categoryId, regularity, timesPerDay, reminder, notificationIds, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT OR REPLACE INTO habits (id, title, categoryId, regularity, timesPerDay, reminder, notificationIds, createdAt, updatedAt, regularityChangedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
         habit.id,
         habit.title,
@@ -111,6 +113,7 @@ export class SQLiteHabitRepository implements HabitRepository {
         habit.notificationIds ? JSON.stringify(habit.notificationIds) : null,
         habit.createdAt,
         habit.updatedAt,
+        habit.regularityChangedAt ?? null,
       ],
     )
     return habit
@@ -128,14 +131,6 @@ export class SQLiteHabitRepository implements HabitRepository {
   async listCompletions(): Promise<HabitCompletion[]> {
     const db = await getDb()
     return db.getAllAsync<HabitCompletion>('SELECT habitId, date, count FROM habit_completions')
-  }
-
-  async listOccurrences(habitId?: string): Promise<HabitOccurrence[]> {
-    const db = await getDb()
-    if (habitId) {
-      return db.getAllAsync<HabitOccurrenceRow>('SELECT id, habitId, occurredAt, source, createdAt, updatedAt FROM habit_occurrences WHERE habitId = ? ORDER BY occurredAt DESC, createdAt DESC', [habitId])
-    }
-    return db.getAllAsync<HabitOccurrenceRow>('SELECT id, habitId, occurredAt, source, createdAt, updatedAt FROM habit_occurrences ORDER BY occurredAt DESC, createdAt DESC')
   }
 
   async listOccurrencesBetween(startIso: string, endIso: string): Promise<HabitOccurrence[]> {
@@ -173,34 +168,6 @@ export class SQLiteHabitRepository implements HabitRepository {
       const date = toCalendarDate(row.occurredAt)
       await reconcileSummaryCount(db, row.habitId, date, -1)
     })
-  }
-
-  async updateOccurrenceTime(id: string, occurredAt: string): Promise<HabitOccurrence> {
-    const db = await getDb()
-
-    const current = await db.getFirstAsync<HabitOccurrenceRow>('SELECT id, habitId, occurredAt, source, createdAt, updatedAt FROM habit_occurrences WHERE id = ?', [id])
-    if (!current) {
-      throw new Error('No se encontró la ocurrencia que se quiere actualizar.')
-    }
-
-    const previousDate = toCalendarDate(current.occurredAt)
-    const nextDate = toCalendarDate(occurredAt)
-    const updated: HabitOccurrence = {
-      ...current,
-      occurredAt,
-      updatedAt: new Date().toISOString(),
-    }
-
-    await db.withTransactionAsync(async () => {
-      await db.runAsync('UPDATE habit_occurrences SET occurredAt = ?, updatedAt = ? WHERE id = ?', [occurredAt, updated.updatedAt, id])
-
-      if (previousDate !== nextDate) {
-        await reconcileSummaryCount(db, current.habitId, previousDate, -1)
-        await reconcileSummaryCount(db, current.habitId, nextDate, 1)
-      }
-    })
-
-    return updated
   }
 
   async addCompletion(habitId: string, date: string): Promise<void> {
