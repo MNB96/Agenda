@@ -7,6 +7,19 @@ const CHANNEL_MIGRATION_KEY = 'agenda:notification-channels-v3-alarm-stream'
 
 export const NOTIFICATION_PACKAGE = 'com.agenda.personal'
 
+export const ITEM_COMPLETION_CATEGORY_ID = 'item_completion'
+export const ITEM_COMPLETION_ACTION_ID = 'mark_item_complete'
+
+export const registerItemNotificationActions = async (): Promise<void> => {
+  await Notifications.setNotificationCategoryAsync(ITEM_COMPLETION_CATEGORY_ID, [
+    {
+      identifier: ITEM_COMPLETION_ACTION_ID,
+      buttonTitle: 'Completar',
+      options: { opensAppToForeground: false },
+    },
+  ])
+}
+
 export const openExactAlarmSettings = async (): Promise<void> => {
   if (Platform.OS !== 'android') return
   try {
@@ -187,6 +200,7 @@ const scheduleDeadlineNotifications = async (item: Item): Promise<string[]> => {
               sound: true,
               color: '#FF3B30',
               priority: Notifications.AndroidNotificationPriority.HIGH,
+              categoryIdentifier: ITEM_COMPLETION_CATEGORY_ID,
             },
             trigger: {
               type: Notifications.SchedulableTriggerInputTypes.DATE,
@@ -222,6 +236,7 @@ export const scheduleItemNotifications = async (item: Item): Promise<string[]> =
           body: item.description ?? undefined,
           data: { itemId: item.id },
           sound: true,
+          categoryIdentifier: ITEM_COMPLETION_CATEGORY_ID,
         },
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.DATE,
@@ -246,9 +261,8 @@ export const scheduleItemNotifications = async (item: Item): Promise<string[]> =
             body: formatReminderBody(r),
             data: { itemId: item.id },
             sound: true,
-            // "Persistente": no se puede descartar deslizando, para recordatorios que no
-            // se pueden pasar por alto (ej. tomar una medicación).
             sticky: r.persistent ?? false,
+            categoryIdentifier: ITEM_COMPLETION_CATEGORY_ID,
           },
           trigger: {
             type: Notifications.SchedulableTriggerInputTypes.DATE,

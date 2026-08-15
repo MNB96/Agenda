@@ -18,12 +18,14 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
   AlignLeft,
+  AlarmClock,
   Bell,
   ChevronLeft,
   CircleCheck,
   Clock,
   CornerDownRight,
   MapPin,
+  Minus,
   MoreVertical,
   Plus,
   Repeat,
@@ -121,7 +123,9 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
 
   const [reminders, setReminders] = useState<ReminderConfigInput[]>(item.reminderConfig ? [...item.reminderConfig] : [])
   const [expandReminders, setExpandReminders] = useState(false)
-  const [selectedAlarmType, setSelectedAlarmType] = useState<'notification' | 'alarm'>('notification')
+  const [selectedAlarmType, setSelectedAlarmType] = useState<'notification' | 'alarm'>(
+    item.reminderConfig?.some(r => r.alarmType === 'alarm') ? 'alarm' : 'notification',
+  )
   const [selectedPersistent, setSelectedPersistent] = useState(false)
   const [travelTimeLoading, setTravelTimeLoading] = useState(false)
   const [travelTimeResult, setTravelTimeResult] = useState<string | null>(null)
@@ -136,77 +140,91 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
   const [expandDate, setExpandDate] = useState(false)
   const [showTimePicker, setShowTimePicker] = useState(false)
   const [showDeadlinePicker, setShowDeadlinePicker] = useState(false)
+  const [reminderSetupOpen, setReminderSetupOpen] = useState(false)
+  const [reminderSetupTime, setReminderSetupTime] = useState('09:00')
+  const [reminderSetupInterval, setReminderSetupInterval] = useState(5)
+  const [reminderSetupUnit, setReminderSetupUnit] = useState<'hours' | 'days'>('hours')
+  const [reminderSetupUntil, setReminderSetupUntil] = useState<string | undefined>()
+  const [reminderSetupShowTimePicker, setReminderSetupShowTimePicker] = useState(false)
+  const [reminderSetupShowUntilPicker, setReminderSetupShowUntilPicker] = useState(false)
 
   const handleClose = useCallback(async () => {
-    if (title.trim()) {
-      try {
-        await updateItem({
-          id: item.id,
-          patch: {
-            title: title.trim(),
-            description: description.trim() || undefined,
-            important,
-            reminderOnly,
-            startDate: scheduledDate,
-            startTime: scheduledTime,
-            endDate: scheduledTime && endTime ? scheduledDate : undefined,
-            endTime: scheduledTime ? endTime : undefined,
-            deadline,
-            syncToCalendar,
-            repeatRule: repeatRule !== 'none' ? repeatRule : undefined,
-            repeatConfig: repeatRule !== 'none' ? repeatConfig : undefined,
-            categoryId,
-            location: location || undefined,
-            reminderConfig: reminders.length > 0 ? reminders : undefined,
-            travelConfig,
-            academicConfig: (() => {
-              const ac = { ...(item.academicConfig ?? {}) }
-              if (studyTimeBefore !== undefined) ac.studyTimeBefore = studyTimeBefore
-              else delete ac.studyTimeBefore
-              const grade = gradeText.trim() ? parseInt(gradeText.trim(), 10) : undefined
-              if (grade !== undefined && !isNaN(grade)) ac.grade = grade
-              else delete ac.grade
-              return Object.keys(ac).length > 0 ? ac : undefined
-            })(),
-          },
-        })
-      } catch (error) {
-        Alert.alert('No se pudo guardar', error instanceof Error ? error.message : 'Revisá los datos ingresados.')
-        return
-      }
+    if (!title.trim()) {
+      Alert.alert(
+        'Título vacío',
+        '¿Cerrar sin guardar los cambios?',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Cerrar', style: 'destructive', onPress: onClose },
+        ],
+      )
+      return
+    }
+    try {
+      await updateItem({
+        id: item.id,
+        patch: {
+          title: title.trim(),
+          description: description.trim() || undefined,
+          important,
+          reminderOnly,
+          startDate: scheduledDate,
+          startTime: scheduledTime,
+          endDate: scheduledTime && endTime ? scheduledDate : undefined,
+          endTime: scheduledTime ? endTime : undefined,
+          deadline,
+          syncToCalendar,
+          repeatRule: repeatRule !== 'none' ? repeatRule : undefined,
+          repeatConfig: repeatRule !== 'none' ? repeatConfig : undefined,
+          categoryId,
+          location: location || undefined,
+          reminderConfig: reminders.length > 0 ? reminders : undefined,
+          travelConfig,
+          academicConfig: (() => {
+            const ac = { ...(item.academicConfig ?? {}) }
+            if (studyTimeBefore !== undefined) ac.studyTimeBefore = studyTimeBefore
+            else delete ac.studyTimeBefore
+            const grade = gradeText.trim() ? parseInt(gradeText.trim(), 10) : undefined
+            if (grade !== undefined && !isNaN(grade)) ac.grade = grade
+            else delete ac.grade
+            return Object.keys(ac).length > 0 ? ac : undefined
+          })(),
+        },
+      })
+    } catch (error) {
+      Alert.alert('No se pudo guardar', error instanceof Error ? error.message : 'Revisá los datos ingresados.')
+      return
+    }
 
-      const existingUsage = (licenseUsages ?? []).find(usage => usage.itemId === item.id)
-      const days = studyTimeBefore === 'half' ? 0.5 : studyTimeBefore === 'full' ? 1 : undefined
-      if (days !== undefined) {
-        await saveUsage({
-          id: existingUsage?.id ?? createId(),
-          itemId: item.id,
-          date: scheduledDate ?? deadline ?? new Date().toISOString().slice(0, 10),
-          days,
-          note: title.trim(),
-        })
-      } else if (existingUsage) {
-        await deleteUsage(existingUsage.id)
-      }
+    const existingUsage = (licenseUsages ?? []).find(usage => usage.itemId === item.id)
+    const days = studyTimeBefore === 'half' ? 0.5 : studyTimeBefore === 'full' ? 1 : undefined
+    if (days !== undefined) {
+      await saveUsage({
+        id: existingUsage?.id ?? createId(),
+        itemId: item.id,
+        date: scheduledDate ?? deadline ?? new Date().toISOString().slice(0, 10),
+        days,
+        note: title.trim(),
+      })
+    } else if (existingUsage) {
+      await deleteUsage(existingUsage.id)
     }
     onClose()
   }, [item, title, description, important, reminderOnly, scheduledDate, scheduledTime, endTime, deadline, syncToCalendar, travelConfig, repeatRule, repeatConfig, categoryId, location, reminders, studyTimeBefore, gradeText, licenseUsages, saveUsage, deleteUsage, updateItem, onClose])
 
   useEffect(() => {
     const handler = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (reminderSetupShowUntilPicker) { setReminderSetupShowUntilPicker(false); return true }
+      if (reminderSetupOpen) { setReminderSetupOpen(false); return true }
       void handleClose()
       return true
     })
     return () => handler.remove()
-  }, [handleClose])
+  }, [handleClose, reminderSetupOpen, reminderSetupShowUntilPicker])
 
   const handleToggleComplete = async () => {
-    if (item.reminderOnly) {
-      Alert.alert('Recordatorio', 'Las tareas recordatorio no necesitan marcarse como completadas.')
-      return
-    }
     await toggleCompleted(item)
-    onClose()
+    await handleClose()
   }
 
   const handleDelete = () => {
@@ -230,10 +248,6 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
 
   const removeSubtask = async (subtask: Item) => {
     await removeItem(subtask)
-  }
-
-  const openRepeatPanel = () => {
-    setShowRepeatPanel(true)
   }
 
   const handleRepeatDone = (rule: RepeatRule, config: RepeatConfigInput) => {
@@ -330,7 +344,11 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
         animationType="slide"
         transparent={false}
         statusBarTranslucent
-        onRequestClose={() => void handleClose()}
+        onRequestClose={() => {
+          if (reminderSetupShowUntilPicker) { setReminderSetupShowUntilPicker(false); return }
+          if (reminderSetupOpen) { setReminderSetupOpen(false); return }
+          void handleClose()
+        }}
       >
         <KeyboardAvoidingView
           style={[styles.container, { paddingTop: insets.top }]}
@@ -348,8 +366,31 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
                 fill={important ? '#F38630' : 'transparent'}
               />
             </Pressable>
-            <Pressable onPress={() => setReminderOnly(v => !v)} hitSlop={12} style={styles.headerBtn}>
-              <Bell
+            <Pressable
+              onPress={() => {
+                if (reminderOnly) {
+                  setReminderOnly(false)
+                } else {
+                  if (scheduledTime) {
+                    setReminderSetupTime(scheduledTime)
+                  } else {
+                    const now = new Date()
+                    const nextHour = new Date(now)
+                    nextHour.setHours(now.getHours() + 1, 0, 0, 0)
+                    setReminderSetupTime(format(nextHour, 'HH:mm'))
+                  }
+                  if ((repeatRule === 'hourly' || repeatRule === 'daily') && repeatConfig) {
+                    setReminderSetupUnit(repeatRule === 'hourly' ? 'hours' : 'days')
+                    setReminderSetupInterval(repeatConfig.interval ?? 5)
+                    if (repeatConfig.endDate) setReminderSetupUntil(repeatConfig.endDate)
+                  }
+                  setReminderSetupOpen(true)
+                }
+              }}
+              hitSlop={12}
+              style={styles.headerBtn}
+            >
+              <AlarmClock
                 size={22}
                 color={reminderOnly ? colors.accent : colors.textMuted}
                 fill={reminderOnly ? colors.accent : 'transparent'}
@@ -634,7 +675,7 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
 
             <View style={styles.rowDivider} />
 
-            <Pressable style={styles.detailRow} onPress={openRepeatPanel}>
+            <Pressable style={styles.detailRow} onPress={() => setShowRepeatPanel(true)}>
               <Repeat size={20} color={repeatRule !== 'none' ? colors.primary : colors.textMuted} style={styles.rowIcon} />
               <Text style={repeatRule !== 'none' ? [styles.detailRowPlaceholder, { color: colors.primary }] : styles.detailRowPlaceholder}>
                 {repeatLabel ?? 'No repetir'}
@@ -749,6 +790,160 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
               </Text>
             </Pressable>
           </View>
+
+          {reminderSetupOpen && (
+            <>
+              <Pressable
+                style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 10 }]}
+                onPress={() => setReminderSetupOpen(false)}
+              />
+              <View
+                style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24, zIndex: 11 }]}
+                pointerEvents="box-none"
+              >
+                <View style={styles.reminderSetupCard} onStartShouldSetResponder={() => true}>
+                  <View style={styles.reminderSetupHeader}>
+                    <Text style={styles.reminderSetupTitle}>Modo recordatorio</Text>
+                    <Pressable onPress={() => setReminderSetupOpen(false)} hitSlop={12}>
+                      <X size={20} color={colors.textMuted} />
+                    </Pressable>
+                  </View>
+
+                  <Pressable
+                    style={styles.reminderSetupRow}
+                    onPress={() => setReminderSetupShowTimePicker(true)}
+                  >
+                    <Text style={styles.reminderSetupLabel}>Hora de inicio</Text>
+                    <Text style={[styles.reminderSetupValue, { color: colors.primary }]}>{reminderSetupTime}</Text>
+                  </Pressable>
+
+                  <View style={[styles.reminderSetupRow, { borderBottomWidth: 0 }]}>
+                    <Text style={styles.reminderSetupLabel}>Repetir cada</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                      <Pressable
+                        onPress={() => setReminderSetupInterval((v) => Math.max(1, v - 1))}
+                        hitSlop={10}
+                        style={styles.reminderStepBtn}
+                      >
+                        <Minus size={16} color={colors.primary} />
+                      </Pressable>
+                      <Text style={[styles.reminderSetupValue, { minWidth: 24, textAlign: 'center' }]}>{reminderSetupInterval}</Text>
+                      <Pressable
+                        onPress={() => setReminderSetupInterval((v) => v + 1)}
+                        hitSlop={10}
+                        style={styles.reminderStepBtn}
+                      >
+                        <Plus size={16} color={colors.primary} />
+                      </Pressable>
+                      <View style={{ flexDirection: 'row', gap: 6, marginLeft: 4 }}>
+                        {(['hours', 'days'] as const).map((u) => (
+                          <Pressable
+                            key={u}
+                            onPress={() => setReminderSetupUnit(u)}
+                            style={[
+                              styles.reminderUnitChip,
+                              reminderSetupUnit === u && { backgroundColor: colors.accent, borderColor: colors.accent },
+                            ]}
+                          >
+                            <Text style={[styles.reminderUnitChipText, reminderSetupUnit === u && { color: '#fff' }]}>
+                              {u === 'hours' ? 'horas' : 'días'}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    </View>
+                  </View>
+
+                  <Pressable
+                    style={styles.reminderSetupRow}
+                    onPress={() => setReminderSetupShowUntilPicker(true)}
+                  >
+                    <Text style={styles.reminderSetupLabel}>Hasta (opcional)</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      {reminderSetupUntil ? (
+                        <>
+                          <Text style={[styles.reminderSetupValue, { color: colors.primary }]}>
+                            {format(new Date(reminderSetupUntil + 'T00:00:00'), 'd MMM', { locale: es })}
+                          </Text>
+                          <Pressable onPress={(e) => { e.stopPropagation?.(); setReminderSetupUntil(undefined) }} hitSlop={8}>
+                            <X size={13} color={colors.textMuted} />
+                          </Pressable>
+                        </>
+                      ) : (
+                        <Text style={{ fontSize: 14, color: colors.textMuted }}>—</Text>
+                      )}
+                    </View>
+                  </Pressable>
+
+                  <View style={styles.reminderSetupFooter}>
+                    <Pressable
+                      onPress={() => setReminderSetupOpen(false)}
+                      style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1, padding: 8 })}
+                    >
+                      <Text style={{ fontSize: 15, color: colors.textSecondary }}>Cancelar</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => {
+                        const now = new Date()
+                        const [h, m] = reminderSetupTime.split(':').map(Number)
+                        const todayStr = format(now, 'yyyy-MM-dd')
+                        const todayAt = new Date(now)
+                        todayAt.setHours(h, m, 0, 0)
+                        if (!scheduledDate) {
+                          const startDate = todayAt > now ? todayStr : format(new Date(now.getTime() + 86_400_000), 'yyyy-MM-dd')
+                          setScheduledDate(startDate)
+                        }
+                        setScheduledTime(reminderSetupTime)
+                        setRepeatRule(reminderSetupUnit === 'hours' ? 'hourly' : 'daily')
+                        setRepeatConfig({
+                          unit: reminderSetupUnit === 'hours' ? 'hour' : 'day',
+                          interval: reminderSetupInterval,
+                          end: reminderSetupUntil ? 'on_date' : 'never',
+                          endDate: reminderSetupUntil,
+                        })
+                        setReminderOnly(true)
+                        setReminderSetupOpen(false)
+                      }}
+                      style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1, padding: 8 })}
+                    >
+                      <Text style={{ fontSize: 15, color: colors.primary, fontWeight: '700' }}>Listo</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+
+              {reminderSetupShowUntilPicker && (
+                <>
+                  <Pressable
+                    style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.55)', zIndex: 12 }]}
+                    onPress={() => setReminderSetupShowUntilPicker(false)}
+                  />
+                  <View
+                    style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24, zIndex: 13 }]}
+                    pointerEvents="box-none"
+                  >
+                    <View style={styles.reminderSetupCard} onStartShouldSetResponder={() => true}>
+                      <View style={styles.reminderSetupHeader}>
+                        <Text style={styles.reminderSetupTitle}>Hasta</Text>
+                        <Pressable onPress={() => setReminderSetupShowUntilPicker(false)} hitSlop={12}>
+                          <X size={20} color={colors.textMuted} />
+                        </Pressable>
+                      </View>
+                      <MonthCalendar
+                        selectedDate={reminderSetupUntil}
+                        onSelectDate={(d) => {
+                          setReminderSetupUntil(d)
+                          setReminderSetupShowUntilPicker(false)
+                        }}
+                        colors={colors}
+                        accentColor={colors.accent}
+                      />
+                    </View>
+                  </View>
+                </>
+              )}
+            </>
+          )}
         </KeyboardAvoidingView>
       </Modal>
 
@@ -765,6 +960,19 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
       />
 
       {/* Native pickers outside Modal to avoid Android nested dialog issue */}
+      {reminderSetupShowTimePicker && (
+        <DateTimePicker
+          value={parse(reminderSetupTime, 'HH:mm', new Date())}
+          mode="time"
+          is24Hour
+          display={Platform.OS === 'ios' ? 'spinner' : 'clock'}
+          onChange={(event, date) => {
+            if (Platform.OS !== 'ios') setReminderSetupShowTimePicker(false)
+            if (event.type === 'dismissed' || !date) return
+            setReminderSetupTime(format(date, 'HH:mm'))
+          }}
+        />
+      )}
       {showTimePicker && (
         <DateTimePicker
           value={scheduledTime ? parse(scheduledTime, 'HH:mm', new Date()) : new Date()}
@@ -1079,5 +1287,78 @@ const createStyles = (colors: ThemeTokens) =>
     gradeResultText: {
       fontSize: 13,
       fontWeight: '600',
+    },
+    reminderSetupCard: {
+      width: '100%',
+      maxWidth: 340,
+      backgroundColor: colors.surfaceElevated,
+      borderRadius: 20,
+      padding: 20,
+      borderWidth: 1,
+      borderColor: colors.border,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.18,
+      shadowRadius: 24,
+      elevation: 12,
+    },
+    reminderSetupHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 16,
+    },
+    reminderSetupTitle: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: colors.text,
+    },
+    reminderSetupRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: 13,
+      borderBottomWidth: 1,
+      borderColor: colors.border,
+    },
+    reminderSetupLabel: {
+      fontSize: 15,
+      color: colors.text,
+    },
+    reminderSetupValue: {
+      fontSize: 15,
+      fontWeight: '600',
+      color: colors.text,
+    },
+    reminderStepBtn: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: colors.primary + '55',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    reminderUnitChip: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 999,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      backgroundColor: colors.surface,
+    },
+    reminderUnitChipText: {
+      fontSize: 13,
+      color: colors.textSecondary,
+      fontWeight: '500',
+    },
+    reminderSetupFooter: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      gap: 24,
+      paddingTop: 12,
+      borderTopWidth: 1,
+      borderColor: colors.border,
+      marginTop: 4,
     },
   })

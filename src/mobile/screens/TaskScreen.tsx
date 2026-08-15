@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, Alert, FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { differenceInCalendarDays, differenceInHours, format, isToday, startOfDay } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -15,13 +15,14 @@ import {
   type GoogleEntry,
   type HolidayEntry,
 } from '../../application/task/useTaskEntries'
+import type { Item } from '../../domain/items'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
 import { resolveCategoryIcon } from '../theme/categoryIcons'
 
 const sectionLabel: Record<TaskSectionKey, string> = {
   overdue: 'Vencidas',
-  next: 'Proximo',
+  next: 'Próximo',
   important: 'Importante',
   later: 'Sin fecha',
   completed: 'Completadas',
@@ -87,7 +88,7 @@ interface TaskScreenProps {
 }
 
 export const TaskScreen = ({ onOpenItemEditor }: TaskScreenProps) => {
-  const { toggleCompleted, removeItem } = useItems()
+  const { toggleCompleted, removeItem, importGoogleCalendarEvent } = useItems()
   const { data: settings } = useSettings()
   const { colors, isDark } = useAppTheme()
   const styles = useMemo(() => createStyles(colors), [colors])
@@ -106,10 +107,36 @@ export const TaskScreen = ({ onOpenItemEditor }: TaskScreenProps) => {
     isInitialLoading,
   } = useTaskEntries()
 
+  const [undoItem, setUndoItem] = useState<Item | null>(null)
+  const undoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const handleToggle = async (item: Item) => {
+    try {
+      await toggleCompleted(item)
+      if (item.status !== 'completed') {
+        if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current)
+        setUndoItem(item)
+        undoTimeoutRef.current = setTimeout(() => setUndoItem(null), 4000)
+      }
+    } catch (error) {
+      Alert.alert('No se pudo completar', error instanceof Error ? error.message : 'Intentá de nuevo.')
+    }
+  }
+
+  const handleUndo = async () => {
+    if (!undoItem) return
+    if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current)
+    setUndoItem(null)
+    const current = localItemsById.get(undoItem.id)
+    if (current?.status === 'completed') {
+      try { await toggleCompleted(current) } catch {}
+    }
+  }
+
   return (
     <View style={styles.container}>
       <TextInput
-        placeholder="Buscar por titulo, categoria o ubicacion"
+        placeholder="Buscar por título, categoría o ubicación"
         placeholderTextColor={colors.textMuted}
         value={search}
         onChangeText={setSearch}
@@ -130,7 +157,7 @@ export const TaskScreen = ({ onOpenItemEditor }: TaskScreenProps) => {
               activeCategory === 'all' && styles.filterChipTextActive,
             ]}
           >
-            Todo
+            Todas
           </Text>
         </Pressable>
         {DEFAULT_CATEGORIES.map((category) => {
@@ -190,6 +217,13 @@ export const TaskScreen = ({ onOpenItemEditor }: TaskScreenProps) => {
         keyExtractor={([bucket], index) => `section-${bucket}-${index}`}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
+        ListHeaderComponent={
+          sections.length > 0 ? (
+            <View style={styles.swipeHintRow}>
+              <Text style={styles.swipeHintText}>← borrar · completar →</Text>
+            </View>
+          ) : undefined
+        }
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <View style={styles.emptyIconWrap}>
@@ -250,13 +284,7 @@ export const TaskScreen = ({ onOpenItemEditor }: TaskScreenProps) => {
                     overdueDeadlineLabel={overdueDeadlineLabel}
                     overdueLabel={overdueLabel}
                     subtasks={subtasksByParent.get(localItem.id)}
-                    onToggle={async (item) => {
-                      try {
-                        await toggleCompleted(item)
-                      } catch (error) {
-                        Alert.alert('No se pudo completar', error instanceof Error ? error.message : 'Intentá de nuevo.')
-                      }
-                    }}
+                    onToggle={handleToggle}
                     onToggleSubtask={async (sub) => { await toggleCompleted(sub) }}
                     onOpen={() => onOpenItemEditor(localItem.id)}
                     onDelete={async (item) => {
@@ -286,14 +314,38 @@ export const TaskScreen = ({ onOpenItemEditor }: TaskScreenProps) => {
               }
 
               return (
-                <View key={entry.id} style={styles.googleInlineRow}>
+                <Pressable
+                  key={entry.id}
+                  style={({ pressed }) => [styles.googleInlineRow, { opacity: pressed ? 0.7 : 1 }]}
+                  onPress={() => {
+                    Alert.alert(
+                      entry.title,
+                      '¿Importar como tarea?',
+                      [
+                        { text: 'Cancelar', style: 'cancel' },
+                        {
+                          text: 'Importar',
+                          onPress: () => void importGoogleCalendarEvent({
+                            title: entry.title,
+                            startDate: entry.dateKey,
+                            startTime: entry.startTime,
+                            description: entry.description,
+                            location: entry.secondary,
+                            calendarId: entry.calendarId,
+                            rawEventId: entry.rawEventId,
+                          }),
+                        },
+                      ],
+                    )
+                  }}
+                >
                   <View style={[styles.googleDot, { backgroundColor: entry.color }]} />
                   <View style={styles.googleInlineContent}>
                     <Text style={styles.googleCardTitle}>{entry.title}</Text>
                     <Text style={styles.googleCardMeta}>{entry.subtitle}</Text>
                     {entry.secondary ? <Text style={styles.googleCardMeta}>{entry.secondary}</Text> : null}
                   </View>
-                </View>
+                </Pressable>
               )
             })}
             {bucket === 'completed' && hasMoreCompleted ? (
@@ -313,6 +365,13 @@ export const TaskScreen = ({ onOpenItemEditor }: TaskScreenProps) => {
           )
         }}
       />
+      )}
+
+      {undoItem && (
+        <Pressable style={styles.undoToast} onPress={() => void handleUndo()}>
+          <Text style={styles.undoToastText}>Tarea completada</Text>
+          <Text style={styles.undoToastAction}>Deshacer</Text>
+        </Pressable>
       )}
     </View>
   )
@@ -428,6 +487,44 @@ const createStyles = (colors: ThemeTokens) =>
     loadMoreText: {
       color: colors.primary,
       fontSize: 14,
+      fontWeight: '700',
+    },
+    swipeHintRow: {
+      paddingTop: 2,
+      paddingBottom: 10,
+      alignItems: 'center',
+    },
+    swipeHintText: {
+      fontSize: 11,
+      color: colors.textMuted,
+      letterSpacing: 0.3,
+    },
+    undoToast: {
+      position: 'absolute',
+      bottom: 96,
+      left: 16,
+      right: 16,
+      backgroundColor: colors.text,
+      borderRadius: 12,
+      paddingVertical: 14,
+      paddingHorizontal: 16,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      elevation: 8,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.25,
+      shadowRadius: 8,
+    },
+    undoToastText: {
+      fontSize: 14,
+      color: colors.background,
+      fontWeight: '500',
+    },
+    undoToastAction: {
+      fontSize: 14,
+      color: colors.accent,
       fontWeight: '700',
     },
   })

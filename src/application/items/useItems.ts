@@ -229,6 +229,40 @@ export const useItems = () => {
     },
   })
 
+  const importGoogleEventMutation = useMutation({
+    mutationFn: async (input: {
+      title: string
+      startDate: string
+      startTime?: string
+      description?: string
+      location?: string
+      calendarId: string
+      rawEventId: string
+    }) => {
+      let item = Item.create({
+        title: input.title,
+        startDate: input.startDate,
+        startTime: input.startTime,
+        description: input.description,
+        location: input.location,
+        syncToCalendar: false,
+      })
+      item = Item.linkCalendar(item, {
+        calendarId: input.calendarId,
+        eventId: input.rawEventId,
+        origin: 'external',
+        kind: 'event',
+      })
+      const notificationIds = await scheduleItemNotifications(item)
+      item = Item.linkNotifications(item, notificationIds)
+      return itemRepository.save(item)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ITEMS_KEY })
+      invalidateItemDetailQueries(queryClient)
+    },
+  })
+
   // Usado por useCalendarSyncRecovery: solo persiste items ya sincronizados, sin repetir el sync.
   const applySyncedItemsMutation = useMutation({
     mutationFn: async (items: Item[]) => {
@@ -254,6 +288,7 @@ export const useItems = () => {
     toggleCompleted: completeMutation.mutateAsync,
     purgeCompleted: purgeCompletedMutation.mutateAsync,
     applySyncedItems: applySyncedItemsMutation.mutateAsync,
+    importGoogleCalendarEvent: importGoogleEventMutation.mutateAsync,
     loadMoreCompleted,
     isSaving:
       createMutation.isPending ||

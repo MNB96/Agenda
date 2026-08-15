@@ -18,12 +18,14 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
   AlignLeft,
+  AlarmClock,
   Bell,
   Clock,
   CornerDownRight,
   Flag,
   ListChecks,
   MapPin,
+  Minus,
   Plus,
   Repeat,
   Star,
@@ -190,6 +192,7 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
   const insets = useSafeAreaInsets()
   const titleRef = useRef<TextInput>(null)
   const descRef = useRef<TextInput>(null)
+  const locationInputRef = useRef<TextInput>(null)
 
   const [panel, setPanel] = useState<Panel>('main')
 
@@ -227,6 +230,9 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
   const [nlDateDismissed, setNlDateDismissed] = useState(false)
   const [nlTimeDismissed, setNlTimeDismissed] = useState(false)
   const [nlCategoryDismissed, setNlCategoryDismissed] = useState(false)
+  const [nlDeadlineDismissed, setNlDeadlineDismissed] = useState(false)
+  const [directDeadlineOpen, setDirectDeadlineOpen] = useState(false)
+  const [directDeadlineKey, setDirectDeadlineKey] = useState(0)
   const [studyTimeBefore, setStudyTimeBefore] = useState<'half' | 'full' | undefined>()
 
   const [tempDate, setTempDate] = useState<string | undefined>()
@@ -251,6 +257,13 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
   const [showNativeTime, setShowNativeTime] = useState(false)
   const [deadlinePickerOpen, setDeadlinePickerOpen] = useState(false)
   const [expandReminder, setExpandReminder] = useState(false)
+  const [reminderSetupOpen, setReminderSetupOpen] = useState(false)
+  const [reminderSetupTime, setReminderSetupTime] = useState('09:00')
+  const [reminderSetupInterval, setReminderSetupInterval] = useState(5)
+  const [reminderSetupUnit, setReminderSetupUnit] = useState<'hours' | 'days'>('hours')
+  const [reminderSetupUntil, setReminderSetupUntil] = useState<string | undefined>()
+  const [reminderSetupShowTimePicker, setReminderSetupShowTimePicker] = useState(false)
+  const [reminderSetupShowUntilPicker, setReminderSetupShowUntilPicker] = useState(false)
 
   // Promoted to repeatRule/repeatConfig only when the outer date panel commits.
   const [tempRepeatConfig, setTempRepeatConfig] = useState<RepeatConfigInput | undefined>()
@@ -263,7 +276,7 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
   // Explicit takes priority over NL-inferred.
   const effectiveDate = scheduledDate ?? (nlDateDismissed ? undefined : parsed?.inferred.startDate)
   const effectiveTime = scheduledTime ?? (nlTimeDismissed ? undefined : parsed?.inferred.startTime)
-  const effectiveDeadline = deadline ?? parsed?.inferred.deadline
+  const effectiveDeadline = deadline ?? (nlDeadlineDismissed ? undefined : parsed?.inferred.deadline)
 
   const showNlDate = !scheduledDate && !nlDateDismissed && Boolean(parsed?.inferred.startDate)
   const showNlTime = !scheduledTime && !nlTimeDismissed && Boolean(parsed?.inferred.startTime)
@@ -308,6 +321,15 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
       setNlDateDismissed(false)
       setNlTimeDismissed(false)
       setNlCategoryDismissed(false)
+      setNlDeadlineDismissed(false)
+      setDirectDeadlineOpen(false)
+      setReminderSetupOpen(false)
+      setReminderSetupTime('09:00')
+      setReminderSetupInterval(5)
+      setReminderSetupUnit('hours')
+      setReminderSetupUntil(undefined)
+      setReminderSetupShowTimePicker(false)
+      setReminderSetupShowUntilPicker(false)
       setStudyTimeBefore(undefined)
       setLocation(undefined)
       resetLocationAutocomplete('')
@@ -319,13 +341,16 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
     if (!open) return
     const handler = BackHandler.addEventListener('hardwareBackPress', () => {
       if (deadlinePickerOpen) { setDeadlinePickerOpen(false); return true }
+      if (reminderSetupShowUntilPicker) { setReminderSetupShowUntilPicker(false); return true }
+      if (reminderSetupOpen) { setReminderSetupOpen(false); return true }
+      if (directDeadlineOpen) { setDirectDeadlineOpen(false); return true }
       if (panel === 'repeat') { setPanel('date'); return true }
       if (panel !== 'main') { setPanel('main'); return true }
       onClose()
       return true
     })
     return () => handler.remove()
-  }, [open, panel, onClose, deadlinePickerOpen])
+  }, [open, panel, onClose, deadlinePickerOpen, directDeadlineOpen, reminderSetupOpen, reminderSetupShowUntilPicker])
 
   const openDatePanel = useCallback(() => {
     Keyboard.dismiss()
@@ -342,10 +367,6 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
     setDateCalendarKey((k) => k + 1)
     setPanel('date')
   }, [effectiveDate, effectiveTime, effectiveDeadline, repeatRule, repeatConfig, reminders, endTime])
-
-  const openRepeatPanel = useCallback(() => {
-    setPanel('repeat')
-  }, [])
 
   const handleRepeatDone = useCallback((rule: RepeatRule, config: RepeatConfigInput) => {
     setTempRepeat(rule)
@@ -505,6 +526,9 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
 
   const handleBackdropPress = () => {
     if (deadlinePickerOpen) { setDeadlinePickerOpen(false); return }
+    if (reminderSetupShowUntilPicker) { setReminderSetupShowUntilPicker(false); return }
+    if (reminderSetupOpen) { setReminderSetupOpen(false); return }
+    if (directDeadlineOpen) { setDirectDeadlineOpen(false); return }
     if (panel === 'repeat') { setPanel('date'); return }
     if (panel === 'date') {
       setPanel('main')
@@ -635,6 +659,7 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
             <View style={styles.locationInputRow}>
               <MapPin size={15} color={location ? colors.primary : colors.textMuted} />
               <TextInput
+                ref={locationInputRef}
                 value={locationQuery}
                 onChangeText={(text) => {
                   setLocationQuery(text)
@@ -732,6 +757,23 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
           </View>
         )}
 
+        {effectiveDeadline && !effectiveDate && (
+          <Pressable style={[styles.dateBadge, { backgroundColor: colors.accent + '18' }]} onPress={() => { setDirectDeadlineKey((k) => k + 1); setDirectDeadlineOpen(true) }}>
+            <Flag size={12} color={colors.accent} />
+            <Text style={[styles.dateBadgeText, { color: colors.accent }]} numberOfLines={1}>límite {fmtShort(effectiveDeadline)}</Text>
+            <Pressable
+              hitSlop={8}
+              onPress={(e) => {
+                e.stopPropagation?.()
+                setDeadline(undefined)
+                setNlDeadlineDismissed(true)
+              }}
+            >
+              <X size={11} color={colors.textMuted} />
+            </Pressable>
+          </Pressable>
+        )}
+
         {dateBadge && !showNlDate && !showNlTime && (
           <Pressable style={styles.dateBadge} onPress={openDatePanel}>
             <Clock size={12} color={colors.primary} />
@@ -743,6 +785,9 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
                 setScheduledDate(undefined)
                 setScheduledTime(undefined)
                 setDeadline(undefined)
+                setRepeatRule('none')
+                setRepeatConfig(undefined)
+                setNlDeadlineDismissed(true)
               }}
             >
               <X size={11} color={colors.textMuted} />
@@ -775,6 +820,18 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
               colors={colors}
             />
             <ActionIcon
+              icon={Flag}
+              label="Fecha límite"
+              active={Boolean(effectiveDeadline)}
+              activeColor={colors.accent}
+              onPress={() => {
+                Keyboard.dismiss()
+                setDirectDeadlineKey((k) => k + 1)
+                setDirectDeadlineOpen(true)
+              }}
+              colors={colors}
+            />
+            <ActionIcon
               icon={ListChecks}
               label="Subtareas"
               active={showSubtasksInput || pendingSubtasks.length > 0}
@@ -801,7 +858,7 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
                   Keyboard.dismiss()
                 } else {
                   setShowLocationInput(true)
-                  setTimeout(() => Keyboard.dismiss(), 50)
+                  setTimeout(() => locationInputRef.current?.focus(), 50)
                 }
               }}
               colors={colors}
@@ -815,11 +872,21 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
               colors={colors}
             />
             <ActionIcon
-              icon={Bell}
-              label="Recordatorio"
+              icon={AlarmClock}
+              label="Recordatorio recurrente"
               active={reminderOnly}
               activeColor={colors.accent}
-              onPress={() => setReminderOnly((v) => !v)}
+              onPress={() => {
+                if (reminderOnly) {
+                  setReminderOnly(false)
+                } else {
+                  const now = new Date()
+                  const nextHour = new Date(now)
+                  nextHour.setHours(now.getHours() + 1, 0, 0, 0)
+                  setReminderSetupTime(format(nextHour, 'HH:mm'))
+                  setReminderSetupOpen(true)
+                }
+              }}
               colors={colors}
             />
           </View>
@@ -882,6 +949,197 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
     </>
   )
 
+  const renderReminderSetupPanel = () => (
+    <>
+      <Pressable
+        style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.35)' }]}
+        onPress={() => setReminderSetupOpen(false)}
+      />
+      <View style={styles.deadlineOverlay} pointerEvents="box-none">
+        <View style={styles.deadlineCard} onStartShouldSetResponder={() => true}>
+          <View style={styles.deadlineCardHeader}>
+            <Text style={styles.deadlineCardTitle}>Modo recordatorio</Text>
+            <Pressable onPress={() => setReminderSetupOpen(false)} hitSlop={12}>
+              <X size={20} color={colors.textMuted} />
+            </Pressable>
+          </View>
+
+          <Pressable
+            style={styles.reminderSetupRow}
+            onPress={() => setReminderSetupShowTimePicker(true)}
+          >
+            <Text style={styles.reminderSetupLabel}>Hora de inicio</Text>
+            <Text style={[styles.reminderSetupValue, { color: colors.primary }]}>{reminderSetupTime}</Text>
+          </Pressable>
+
+          <View style={[styles.reminderSetupRow, { borderBottomWidth: 0 }]}>
+            <Text style={styles.reminderSetupLabel}>Repetir cada</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <Pressable
+                onPress={() => setReminderSetupInterval((v) => Math.max(1, v - 1))}
+                hitSlop={10}
+                style={styles.reminderStepBtn}
+              >
+                <Minus size={16} color={colors.primary} />
+              </Pressable>
+              <Text style={[styles.reminderSetupValue, { minWidth: 24, textAlign: 'center' }]}>{reminderSetupInterval}</Text>
+              <Pressable
+                onPress={() => setReminderSetupInterval((v) => v + 1)}
+                hitSlop={10}
+                style={styles.reminderStepBtn}
+              >
+                <Plus size={16} color={colors.primary} />
+              </Pressable>
+              <View style={{ flexDirection: 'row', gap: 6, marginLeft: 4 }}>
+                {(['hours', 'days'] as const).map((u) => (
+                  <Pressable
+                    key={u}
+                    onPress={() => setReminderSetupUnit(u)}
+                    style={[
+                      styles.reminderUnitChip,
+                      reminderSetupUnit === u && { backgroundColor: colors.accent, borderColor: colors.accent },
+                    ]}
+                  >
+                    <Text style={[styles.reminderUnitChipText, reminderSetupUnit === u && { color: '#fff' }]}>
+                      {u === 'hours' ? 'horas' : 'días'}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          </View>
+
+          <Pressable
+            style={styles.reminderSetupRow}
+            onPress={() => setReminderSetupShowUntilPicker(true)}
+          >
+            <Text style={styles.reminderSetupLabel}>Hasta (opcional)</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              {reminderSetupUntil ? (
+                <>
+                  <Text style={[styles.reminderSetupValue, { color: colors.primary }]}>{fmtShort(reminderSetupUntil)}</Text>
+                  <Pressable
+                    onPress={(e) => { e.stopPropagation?.(); setReminderSetupUntil(undefined) }}
+                    hitSlop={8}
+                  >
+                    <X size={13} color={colors.textMuted} />
+                  </Pressable>
+                </>
+              ) : (
+                <Text style={{ fontSize: 14, color: colors.textMuted }}>—</Text>
+              )}
+            </View>
+          </Pressable>
+
+          <View style={styles.datePanelFooter}>
+            <Pressable
+              onPress={() => setReminderSetupOpen(false)}
+              style={({ pressed }) => [styles.footerBtn, { opacity: pressed ? 0.7 : 1 }]}
+            >
+              <Text style={[styles.footerBtnText, { color: colors.textSecondary }]}>Cancelar</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                const now = new Date()
+                const [h, m] = reminderSetupTime.split(':').map(Number)
+                const todayStr = format(now, 'yyyy-MM-dd')
+                const todayAt = new Date(now)
+                todayAt.setHours(h, m, 0, 0)
+                const startDate = todayAt > now ? todayStr : format(new Date(now.getTime() + 86_400_000), 'yyyy-MM-dd')
+                setScheduledDate(startDate)
+                setScheduledTime(reminderSetupTime)
+                setNlDateDismissed(true)
+                setNlTimeDismissed(true)
+                setRepeatRule(reminderSetupUnit === 'hours' ? 'hourly' : 'daily')
+                setRepeatConfig({
+                  unit: reminderSetupUnit === 'hours' ? 'hour' : 'day',
+                  interval: reminderSetupInterval,
+                  end: reminderSetupUntil ? 'on_date' : 'never',
+                  endDate: reminderSetupUntil,
+                })
+                setReminderOnly(true)
+                setReminderSetupOpen(false)
+              }}
+              style={({ pressed }) => [styles.footerBtn, { opacity: pressed ? 0.7 : 1 }]}
+            >
+              <Text style={[styles.footerBtnText, { color: colors.primary, fontWeight: '700' }]}>Listo</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+
+      {reminderSetupShowUntilPicker && (
+        <>
+          <Pressable
+            style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.45)' }]}
+            onPress={() => setReminderSetupShowUntilPicker(false)}
+          />
+          <View style={styles.deadlineOverlay} pointerEvents="box-none">
+            <View style={styles.deadlineCard} onStartShouldSetResponder={() => true}>
+              <View style={styles.deadlineCardHeader}>
+                <Text style={styles.deadlineCardTitle}>Hasta</Text>
+                <Pressable onPress={() => setReminderSetupShowUntilPicker(false)} hitSlop={12}>
+                  <X size={20} color={colors.textMuted} />
+                </Pressable>
+              </View>
+              <MonthCalendar
+                selectedDate={reminderSetupUntil}
+                onSelectDate={(d) => {
+                  setReminderSetupUntil(d)
+                  setReminderSetupShowUntilPicker(false)
+                }}
+                colors={colors}
+                accentColor={colors.accent}
+              />
+            </View>
+          </View>
+        </>
+      )}
+    </>
+  )
+
+  const renderDirectDeadlinePicker = () => (
+    <>
+      <Pressable
+        style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.35)' }]}
+        onPress={() => setDirectDeadlineOpen(false)}
+      />
+      <View style={styles.deadlineOverlay} pointerEvents="box-none">
+        <View style={styles.deadlineCard} onStartShouldSetResponder={() => true}>
+          <View style={styles.deadlineCardHeader}>
+            <Text style={styles.deadlineCardTitle}>Fecha límite</Text>
+            <Pressable onPress={() => setDirectDeadlineOpen(false)} hitSlop={12}>
+              <X size={20} color={colors.textMuted} />
+            </Pressable>
+          </View>
+          <MonthCalendar
+            key={directDeadlineKey}
+            selectedDate={effectiveDeadline}
+            onSelectDate={(d) => {
+              setDeadline(d)
+              setNlDeadlineDismissed(true)
+              setDirectDeadlineOpen(false)
+            }}
+            colors={colors}
+            accentColor={colors.accent}
+          />
+          {effectiveDeadline && (
+            <Pressable
+              onPress={() => {
+                setDeadline(undefined)
+                setNlDeadlineDismissed(true)
+                setDirectDeadlineOpen(false)
+              }}
+              style={styles.deadlineRemoveRow}
+            >
+              <Text style={styles.deadlineRemoveText}>Quitar fecha límite</Text>
+            </Pressable>
+          )}
+        </View>
+      </View>
+    </>
+  )
+
   const renderDatePanel = () => (
       <View
         style={[styles.sheet, styles.datePanelSheet, { paddingBottom: Math.max(insets.bottom + 8, 16) }]}
@@ -934,7 +1192,7 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
           <OptionRow
             label="Repetir"
             value={repeatLabel}
-            onPress={openRepeatPanel}
+            onPress={() => setPanel('repeat')}
             onClear={tempRepeat !== 'none' ? () => { setTempRepeat('none'); setTempRepeatConfig(undefined) } : undefined}
             icon={Repeat}
             colors={colors}
@@ -1029,6 +1287,9 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
       statusBarTranslucent
       onRequestClose={() => {
         if (deadlinePickerOpen) { setDeadlinePickerOpen(false); return }
+        if (reminderSetupShowUntilPicker) { setReminderSetupShowUntilPicker(false); return }
+        if (reminderSetupOpen) { setReminderSetupOpen(false); return }
+        if (directDeadlineOpen) { setDirectDeadlineOpen(false); return }
         if (panel === 'repeat') { setPanel('date'); return }
         if (panel !== 'main') { setPanel('main'); return }
         onClose()
@@ -1048,6 +1309,8 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
         </View>
 
         {panel === 'date' && deadlinePickerOpen && renderDeadlinePicker()}
+        {panel === 'main' && directDeadlineOpen && renderDirectDeadlinePicker()}
+        {panel === 'main' && reminderSetupOpen && renderReminderSetupPanel()}
       </KeyboardAvoidingView>
     </Modal>
 
@@ -1071,6 +1334,19 @@ export const QuickAddSheet = ({ open, onClose }: QuickAddSheetProps) => {
         is24Hour
         display={Platform.OS === 'ios' ? 'spinner' : 'clock'}
         onChange={handleNativeTimeChange}
+      />
+    )}
+    {open && reminderSetupShowTimePicker && (
+      <DateTimePicker
+        value={parse(reminderSetupTime, 'HH:mm', new Date())}
+        mode="time"
+        is24Hour
+        display={Platform.OS === 'ios' ? 'spinner' : 'clock'}
+        onChange={(event, date) => {
+          if (Platform.OS !== 'ios') setReminderSetupShowTimePicker(false)
+          if (event.type === 'dismissed' || !date) return
+          setReminderSetupTime(format(date, 'HH:mm'))
+        }}
       />
     )}
     {open && showNativeEndTime && (
@@ -1381,5 +1657,44 @@ const createStyles = (colors: ThemeTokens) =>
       fontSize: 13,
       color: colors.text,
       lineHeight: 18,
+    },
+    reminderSetupRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: 13,
+      borderBottomWidth: 1,
+      borderColor: colors.border,
+    },
+    reminderSetupLabel: {
+      fontSize: 15,
+      color: colors.text,
+    },
+    reminderSetupValue: {
+      fontSize: 15,
+      fontWeight: '600',
+      color: colors.text,
+    },
+    reminderStepBtn: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: colors.primary + '55',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    reminderUnitChip: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 999,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      backgroundColor: colors.surface,
+    },
+    reminderUnitChipText: {
+      fontSize: 13,
+      color: colors.textSecondary,
+      fontWeight: '500',
     },
   })

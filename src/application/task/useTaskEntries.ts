@@ -32,6 +32,11 @@ export interface GoogleEntry {
   color: string
   dateKey: string
   timestamp: number
+  calendarId: string
+  rawEventId: string
+  allDay: boolean
+  startTime?: string
+  description?: string
 }
 
 export interface HolidayEntry {
@@ -98,7 +103,7 @@ const googleEventColor = (section: UpcomingSection, colors: ThemeTokens): string
 // fecha real porque relativo deja de ser útil de un vistazo.
 const formatUpcomingWhen = (date: Date, dayDiff: number): string => {
   if (dayDiff === 0) return 'Hoy'
-  if (dayDiff === 1) return 'Manana'
+  if (dayDiff === 1) return 'Mañana'
   return format(date, 'd MMM', { locale: es })
 }
 
@@ -134,6 +139,11 @@ const mapGoogleEventToEntry = (event: CalendarEvent, colors: ThemeTokens): Googl
     color: googleEventColor(section, colors),
     dateKey: format(start, 'yyyy-MM-dd'),
     timestamp: start.getTime(),
+    calendarId: event.calendarId,
+    rawEventId: event.id,
+    allDay: event.allDay ?? false,
+    startTime: event.allDay ? undefined : format(start, 'HH:mm'),
+    description: event.description,
   }
 }
 

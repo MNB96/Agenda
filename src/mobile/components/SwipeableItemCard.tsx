@@ -38,7 +38,6 @@ export const SwipeableItemCard = ({
 
   const handleSwipeOpen = (direction: 'left' | 'right') => {
     if (direction === 'right') {
-      if (item.status === 'completed' || item.reminderOnly) return
       void (async () => {
         try {
           await onToggle(item)

@@ -15,8 +15,8 @@ import { SettingsModal } from './src/mobile/modals/SettingsModal'
 import { useGoogleSessionLifecycleMobile } from './src/mobile/useGoogleSessionLifecycleMobile'
 import { useAppTheme } from './src/mobile/theme/useAppTheme'
 import { FloatingAddButton } from './src/mobile/components/FloatingAddButton'
-import { requestNotificationPermissions } from './src/infrastructure/notifications/itemNotifications'
-import { HABIT_COMPLETION_ACTION_ID, registerHabitNotificationActions } from './src/infrastructure/notifications/habitNotifications'
+import { requestNotificationPermissions, ITEM_COMPLETION_ACTION_ID, registerItemNotificationActions, cancelItemNotifications } from './src/infrastructure/notifications/itemNotifications'
+import { registerHabitNotificationActions } from './src/infrastructure/notifications/habitNotifications'
 import { useCalendarDeleteQueue } from './src/application/calendar/useCalendarDeleteQueue'
 import { useCalendarSyncRecovery } from './src/application/calendar/useCalendarSyncRecovery'
 import { useAutoPurgeCompleted } from './src/application/items/useAutoPurgeCompleted'
@@ -24,8 +24,8 @@ import { useAutoRegenerateOverdueRecurring } from './src/application/items/useAu
 import { useAutoCompleteReminderOnly } from './src/application/items/useAutoCompleteReminderOnly'
 import { useMarkOverdueGoals } from './src/application/items/useMarkOverdueGoals'
 import { useGoogleAuthStore } from './src/state/googleAuthStore'
-import { habitRepository } from './src/app/container'
-import { HABIT_OCCURRENCE_SOURCE } from './src/domain/habits'
+import { itemRepository } from './src/app/container'
+import { Item } from './src/domain/items'
 
 export default function App() {
   const queryClient = useMemo(() => new QueryClient(), [])
@@ -113,24 +113,35 @@ const AppShellInner = ({
   useEffect(() => {
     void requestNotificationPermissions()
     void registerHabitNotificationActions()
+    void registerItemNotificationActions()
 
     const subscription = Notifications.addNotificationResponseReceivedListener(async (response) => {
-      const habitId = response.notification.request.content.data?.habitId
       const actionId = response.actionIdentifier
+      const itemId = response.notification.request.content.data?.itemId as string | undefined
 
-      if (typeof habitId !== 'string' || actionId !== HABIT_COMPLETION_ACTION_ID) return
+      // Abrir la tarea al tocar el cuerpo de la notificación.
+      if (actionId === Notifications.DEFAULT_ACTION_IDENTIFIER && itemId) {
+        setEditingItemId(itemId)
+        return
+      }
 
-      try {
-        await habitRepository.addOccurrence(habitId, new Date().toISOString(), HABIT_OCCURRENCE_SOURCE.NOTIFICATION)
-        await queryClient.invalidateQueries({ queryKey: ['habit-completions'] })
-        await queryClient.invalidateQueries({ queryKey: ['habit-occurrences-today'] })
-      } catch {
-        // Falla silenciosa: si algo falla al marcar desde el push, el usuario puede repetir desde la app.
+      // Completar tarea desde la bandeja sin abrir la app.
+      if (actionId === ITEM_COMPLETION_ACTION_ID && itemId) {
+        try {
+          const item = await itemRepository.getById(itemId)
+          if (!item || item.status === 'completed' || item.reminderOnly) return
+          const subtasks = await itemRepository.getByParentIds([item.id])
+          const completed = Item.complete(item, subtasks)
+          await cancelItemNotifications(item)
+          const linked = Item.linkNotifications(completed, [])
+          await itemRepository.save(linked)
+          void queryClient.invalidateQueries({ queryKey: ['items'] })
+        } catch {}
       }
     })
 
     return () => subscription.remove()
-  }, [queryClient])
+  }, [queryClient, setEditingItemId])
 
   const navTheme = useMemo(
     () => ({
