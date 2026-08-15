@@ -98,12 +98,17 @@ export const useItems = () => {
     mutationFn: async (input: { id: string; patch: ItemPatch }) => {
       const current = await itemRepository.getById(input.id)
       if (!current) {
-        throw new Error('No se encontro el item para actualizar.')
+        throw new Error('No se encontró el item para actualizar.')
       }
 
       // Cambiar el deadline de una meta la pospone: el Task viejo queda en Calendar como
       // rastro histórico ([Pospuesto]) y la fila local se reemplaza por una nueva.
-      const isPostponingGoal = current.type === ITEM_TYPE.GOAL && 'deadline' in input.patch && input.patch.deadline !== current.deadline
+      const isPostponingGoal =
+        current.type === ITEM_TYPE.GOAL
+        && Boolean(current.deadline)
+        && 'deadline' in input.patch
+        && Boolean(input.patch.deadline)
+        && input.patch.deadline !== current.deadline
       if (isPostponingGoal) {
         const next = Item.update(current, input.patch)
         if (accessToken && current.calendarLink) {
@@ -118,6 +123,7 @@ export const useItems = () => {
           }
         }
         await cancelItemNotifications(current)
+        const existingSubgoals = await itemRepository.getByParentIds([current.id])
         await removeItemAndSubtasks(current)
         const created = await createMutation.mutateAsync({
           title: next.title,
@@ -125,7 +131,12 @@ export const useItems = () => {
           type: ITEM_TYPE.GOAL,
           deadline: next.deadline,
           syncToCalendar: next.syncToCalendar,
+          important: next.important,
+          categoryId: next.categoryId,
         })
+        for (const sub of existingSubgoals) {
+          await itemRepository.save(Item.create({ title: sub.title, parentId: created.id, type: ITEM_TYPE.GOAL }))
+        }
         queryClient.invalidateQueries({ queryKey: ITEMS_KEY })
         return created
       }

@@ -235,7 +235,7 @@ const validateGoalRestrictions = (
     throw new Error('Una meta no puede tener recordatorios.')
   }
   if (categoryId && !(GOAL_CATEGORY_IDS as readonly string[]).includes(categoryId)) {
-    throw new Error('Una meta solo puede tener categoría Personal o Facultad.')
+    throw new Error('Una meta solo puede tener categoría Personal, Facultad o Trabajo.')
   }
 }
 

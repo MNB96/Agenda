@@ -120,6 +120,48 @@ const formatReminderBody = (reminder: ReminderConfig): string => {
   return `En ${hours}h ${minutes}min`
 }
 
+// Metas: aviso 7 días antes, 1 día antes, el día mismo y el día siguiente (vencida).
+const scheduleGoalDeadlineNotifications = async (item: Item): Promise<string[]> => {
+  if (!item.deadline) return []
+  const deadlineAt = new Date(`${item.deadline}T09:00:00`)
+  const weekBeforeAt = new Date(deadlineAt.getTime() - 7 * 24 * 60 * 60 * 1000)
+  const dayBeforeAt = new Date(deadlineAt.getTime() - 24 * 60 * 60 * 1000)
+  const overdueAt = new Date(deadlineAt.getTime() + 24 * 60 * 60 * 1000)
+
+  const results = await Promise.all(
+    [
+      { date: weekBeforeAt, body: '📅 Faltan 7 días' },
+      { date: dayBeforeAt, body: '⚠️ Vence mañana' },
+      { date: deadlineAt, body: '⚠️ Vence hoy' },
+      { date: overdueAt, body: '🔴 Meta vencida' },
+    ]
+      .filter(({ date }) => date > new Date())
+      .map(async ({ date, body }): Promise<string | null> => {
+        try {
+          return await Notifications.scheduleNotificationAsync({
+            content: {
+              title: item.title,
+              body,
+              data: { itemId: item.id },
+              sound: true,
+              color: '#FF3B30',
+              priority: Notifications.AndroidNotificationPriority.HIGH,
+            },
+            trigger: {
+              type: Notifications.SchedulableTriggerInputTypes.DATE,
+              date,
+              ...(Platform.OS === 'android' ? { channelId: 'recordatorios' } : {}),
+            },
+          })
+        } catch {
+          return null
+        }
+      }),
+  )
+
+  return results.filter((id): id is string => id !== null)
+}
+
 // Toda tarea con deadline recibe aviso automático: día antes, mismo día, y vencida al día siguiente.
 const scheduleDeadlineNotifications = async (item: Item): Promise<string[]> => {
   if (!item.deadline) return []
@@ -162,6 +204,8 @@ const scheduleDeadlineNotifications = async (item: Item): Promise<string[]> => {
 }
 
 export const scheduleItemNotifications = async (item: Item): Promise<string[]> => {
+  if (item.type === 'goal') return scheduleGoalDeadlineNotifications(item)
+
   const deadlineIds = await scheduleDeadlineNotifications(item)
   const reminders = item.reminderConfig
 

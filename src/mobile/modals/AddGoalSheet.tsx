@@ -162,14 +162,21 @@ export const AddGoalSheet = ({ open, goalId, onClose }: AddGoalSheetProps) => {
     setPendingSubgoals((prev) => prev.filter((_, i) => i !== index))
   }
 
-  const removeSubgoal = async (subgoal: Item) => {
-    await removeItem(subgoal)
-  }
-
   // Editing has no explicit Guardar — like task editing, the back button saves and closes.
   const handleClose = async () => {
     if (deadlinePickerOpen) { setDeadlinePickerOpen(false); return }
-    if (isEditing && goalId && canSave) {
+    if (isEditing && goalId) {
+      if (!canSave) {
+        Alert.alert(
+          'Título vacío',
+          '¿Cerrar sin guardar los cambios?',
+          [
+            { text: 'Cancelar', style: 'cancel' },
+            { text: 'Cerrar sin guardar', style: 'destructive', onPress: onClose },
+          ],
+        )
+        return
+      }
       try {
         await updateItem({
           id: goalId,
@@ -210,8 +217,9 @@ export const AddGoalSheet = ({ open, goalId, onClose }: AddGoalSheetProps) => {
       Alert.alert('Submetas pendientes', 'Completá todas las submetas primero.')
       return
     }
+    const wasCompleted = isCompleted
     await toggleCompleted(item)
-    onClose()
+    if (!wasCompleted) onClose()
   }
 
   const renderFormFields = () => (
@@ -281,7 +289,7 @@ export const AddGoalSheet = ({ open, goalId, onClose }: AddGoalSheetProps) => {
                 style={[styles.subgoalCheck, sub.status === 'completed' && { backgroundColor: colors.success, borderColor: colors.success }]}
               />
               <Text style={[styles.subgoalTitle, sub.status === 'completed' && styles.subgoalTitleDone]}>{sub.title}</Text>
-              <Pressable onPress={() => void removeSubgoal(sub)} hitSlop={8}>
+              <Pressable onPress={() => void removeItem(sub)} hitSlop={8}>
                 <XCircle size={18} color={colors.textMuted} />
               </Pressable>
             </View>
@@ -368,7 +376,7 @@ export const AddGoalSheet = ({ open, goalId, onClose }: AddGoalSheetProps) => {
 
   return (
     <>
-      <Modal visible={open} animationType="slide" transparent={!fullScreen} statusBarTranslucent onRequestClose={() => void (fullScreen ? handleClose() : onClose())}>
+      <Modal visible={open} animationType="slide" transparent={!fullScreen} statusBarTranslucent onRequestClose={() => { if (deadlinePickerOpen) { setDeadlinePickerOpen(false); return } void (fullScreen ? handleClose() : onClose()) }}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           {fullScreen ? (
             <View style={[styles.fullScreen, { backgroundColor: colors.surface, paddingTop: insets.top }]}>

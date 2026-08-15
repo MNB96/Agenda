@@ -35,14 +35,28 @@ export const ItemCard = ({ item, overdueLabel, overdueDeadlineLabel, subtasks = 
   const category = showCategoryIcon ? GOAL_CATEGORIES.find((cat) => cat.id === item.categoryId) : undefined
   const completionDisabled = item.reminderOnly || !onToggle
 
+  // Para metas activas: contador dinámico en lugar de la etiqueta estática "Fecha límite".
+  const goalCountdown =
+    item.type === ITEM_TYPE.GOAL && item.deadline && item.status !== 'completed' && !overdueDeadlineLabel
+      ? (() => {
+          const days = differenceInCalendarDays(startOfDay(parseISO(item.deadline)), startOfDay(new Date()))
+          if (days <= 0) return 'Vence hoy'
+          if (days === 1) return 'Vence mañana'
+          return `Faltan ${days} días`
+        })()
+      : undefined
+
   // La fecha ya la muestra el encabezado de sección; acá solo hora y fecha límite (otro dato).
+  // Para metas se usa goalCountdown en su lugar.
   const dateLabel =
-    [
-      item.startTime,
-      item.deadline ? `Fecha límite: ${format(parseISO(item.deadline), 'd MMM', { locale: es })}` : undefined,
-    ]
-      .filter((part): part is string => Boolean(part))
-      .join(' - ') || undefined
+    item.type !== ITEM_TYPE.GOAL
+      ? [
+          item.startTime,
+          item.deadline ? `Fecha límite: ${format(parseISO(item.deadline), 'd MMM', { locale: es })}` : undefined,
+        ]
+          .filter((part): part is string => Boolean(part))
+          .join(' - ') || undefined
+      : undefined
 
   return (
     <Pressable style={[styles.card, item.important && styles.cardImportant]} onPress={() => onOpen?.(item)}>
@@ -72,6 +86,9 @@ export const ItemCard = ({ item, overdueLabel, overdueDeadlineLabel, subtasks = 
           ) : null}
           {overdueLabel ? (
             <Text style={styles.overdueLabel}>{overdueLabel}</Text>
+          ) : null}
+          {goalCountdown ? (
+            <Text style={[styles.meta, { color: indicatorColor, fontWeight: '600' }]}>{goalCountdown}</Text>
           ) : null}
           {dateLabel ? (
             <Text style={styles.meta}>{dateLabel}</Text>
