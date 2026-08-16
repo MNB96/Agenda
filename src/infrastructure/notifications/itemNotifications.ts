@@ -5,7 +5,7 @@ import type { Item, ReminderConfig } from '../../domain/items'
 
 const CHANNEL_MIGRATION_KEY = 'agenda:notification-channels-v3-alarm-stream'
 
-export const NOTIFICATION_PACKAGE = 'com.agenda.personal'
+const NOTIFICATION_PACKAGE = 'com.agenda.personal'
 
 export const ITEM_COMPLETION_CATEGORY_ID = 'item_completion'
 export const ITEM_COMPLETION_ACTION_ID = 'mark_item_complete'
@@ -15,7 +15,7 @@ export const registerItemNotificationActions = async (): Promise<void> => {
     {
       identifier: ITEM_COMPLETION_ACTION_ID,
       buttonTitle: 'Completar',
-      options: { opensAppToForeground: false },
+      options: { opensAppToForeground: true },
     },
   ])
 }
@@ -315,10 +315,7 @@ export const notifyCalendarDeleteFailed = async (taskTitle: string): Promise<voi
         body: `"${taskTitle}" no se pudo borrar de Google Calendar`,
         sound: true,
       },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.DATE,
-        date: new Date(Date.now() + 3000),
-      },
+      trigger: null,
     })
   } catch {}
 }

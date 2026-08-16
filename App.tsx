@@ -138,14 +138,16 @@ const AppShellInner = ({
         // Descartar la notificación primero; si la completar falla igual desaparece de la bandeja.
         void Notifications.dismissNotificationAsync(notifId).catch(() => {})
 
-        const item = await itemRepository.getById(itemId)
-        if (!item || item.status === 'completed' || item.reminderOnly) return
-        const subtasks = await itemRepository.getByParentIds([item.id])
-        const completed = Item.complete(item, subtasks)
-        await cancelItemNotifications(item)
-        const linked = Item.linkNotifications(completed, [])
-        await itemRepository.save(linked)
-        queryClient.invalidateQueries({ queryKey: ['items'] })
+        try {
+          const item = await itemRepository.getById(itemId)
+          if (!item || item.status === 'completed' || item.reminderOnly) return
+          const subtasks = await itemRepository.getByParentIds([item.id])
+          const completed = Item.complete(item, subtasks)
+          await cancelItemNotifications(item)
+          const linked = Item.linkNotifications(completed, [])
+          await itemRepository.save(linked)
+          queryClient.invalidateQueries({ queryKey: ['items'] })
+        } catch {}
       }
     }
 

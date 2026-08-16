@@ -8,7 +8,7 @@ const BACKOFF_MS = [5 * 60_000, 15 * 60_000, 60 * 60_000, 6 * 60 * 60_000, 24 * 
 // Lanzado por el caller para sacar una entrada de la cola sin quemar reintentos
 // (ej: error de auth donde reintentar no tiene sentido).
 export class PermanentCalendarDeleteError extends Error {
-  constructor() {
+  constructor(readonly notify = true) {
     super('Permanent delete failure — do not retry')
     this.name = 'PermanentCalendarDeleteError'
   }
@@ -27,7 +27,7 @@ const isNetworkError = (error: unknown): boolean => {
   )
 }
 
-export interface PendingCalendarDelete {
+interface PendingCalendarDelete {
   id: string
   kind: 'event' | 'task'
   calendarId: string
@@ -97,7 +97,7 @@ export async function processQueue(
       if (error instanceof PermanentCalendarDeleteError) {
         // Auth u otro error irrecuperable: sacar de la cola sin quemar reintentos.
         updated.splice(idx, 1)
-        await onExhausted(entry.itemTitle)
+        if (error.notify) await onExhausted(entry.itemTitle)
         continue
       }
 
@@ -111,7 +111,7 @@ export async function processQueue(
         updated.splice(idx, 1)
         await onExhausted(entry.itemTitle)
       } else {
-        next.nextRetryAt = new Date(Date.now() + BACKOFF_MS[next.attemptCount]).toISOString()
+        next.nextRetryAt = new Date(Date.now() + (BACKOFF_MS[next.attemptCount] ?? BACKOFF_MS[BACKOFF_MS.length - 1])).toISOString()
         updated[idx] = next
       }
     }

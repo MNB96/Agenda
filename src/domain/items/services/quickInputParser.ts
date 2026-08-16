@@ -94,8 +94,10 @@ const parseDatePiece = (raw: string, now: Date): Date | undefined => {
     return endOfYear(now)
   }
 
-  if (text.includes('septiembre')) {
-    return new Date(now.getFullYear(), 8, 1)
+  const monthOnlyEntry = Object.entries(months).find(([name]) => text.includes(name))
+  if (monthOnlyEntry) {
+    const [, monthNumber] = monthOnlyEntry
+    return new Date(now.getFullYear(), monthNumber - 1, 1)
   }
 
   if (text.includes('mes que viene')) {

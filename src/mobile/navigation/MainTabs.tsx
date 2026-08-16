@@ -1,6 +1,7 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import { Flame, GraduationCap, ListTodo, Settings, Target } from 'lucide-react-native'
-import { Pressable, StyleSheet } from 'react-native'
+import { useEffect, useState } from 'react'
+import { AppState, Pressable, StyleSheet } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -24,6 +25,20 @@ interface MainTabsProps {
 export const MainTabs = ({ onOpenSettings, onOpenItemEditor, onOpenGoalEditor, onOpenHabitEditor }: MainTabsProps) => {
   const { colors } = useAppTheme()
   const { bottom } = useSafeAreaInsets()
+  const [today, setToday] = useState(() => new Date())
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        const now = new Date()
+        setToday(prev => {
+          if (prev.toDateString() !== now.toDateString()) return now
+          return prev
+        })
+      }
+    })
+    return () => sub.remove()
+  }, [])
 
   return (
     <Tab.Navigator
@@ -46,7 +61,7 @@ export const MainTabs = ({ onOpenSettings, onOpenItemEditor, onOpenGoalEditor, o
       <Tab.Screen
         name="Tareas"
         options={{
-          headerTitle: format(new Date(), "EEEE d 'de' MMMM", { locale: es }).replace(/^\w/, c => c.toUpperCase()),
+          headerTitle: format(today, "EEEE d 'de' MMMM", { locale: es }).replace(/^\w/, c => c.toUpperCase()),
           tabBarIcon: ({ color, size }) => <ListTodo color={color} size={size} />,
           headerRight: () => (
             <Pressable

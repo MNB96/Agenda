@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ChevronLeft, CornerDownRight, Flag, Plus, Star, Trash2, X, XCircle } from 'lucide-react-native'
@@ -92,12 +92,7 @@ export const AddGoalSheet = ({ open, goalId, onClose }: AddGoalSheetProps) => {
   // Subgoals typed before the goal itself is saved (no parentId yet) — created in handleSave.
   const [pendingSubgoals, setPendingSubgoals] = useState<string[]>([])
 
-  // Same "adjust state during render" pattern QuickAddSheet uses: create mode resets to blank
-  // as soon as the sheet opens; edit mode prefills once the fetched item actually arrives.
-  const [wasOpen, setWasOpen] = useState(open)
-  const [syncedGoalId, setSyncedGoalId] = useState<string | undefined>(undefined)
-  if (open !== wasOpen) {
-    setWasOpen(open)
+  useEffect(() => {
     if (open && !goalId) {
       setTitle('')
       setDescription('')
@@ -107,21 +102,20 @@ export const AddGoalSheet = ({ open, goalId, onClose }: AddGoalSheetProps) => {
       setDeadlinePickerOpen(false)
       setNewSubgoalText('')
       setPendingSubgoals([])
-      setSyncedGoalId(undefined)
-    } else if (!open) {
-      setSyncedGoalId(undefined)
     }
-  }
-  if (open && item && item.type === ITEM_TYPE.GOAL && syncedGoalId !== item.id) {
-    setSyncedGoalId(item.id)
-    setTitle(item.title)
-    setDescription(item.description ?? '')
-    setImportant(item.important ?? false)
-    setDeadline(item.deadline)
-    setCategoryId(item.categoryId)
-    setDeadlinePickerOpen(false)
-    setNewSubgoalText('')
-  }
+  }, [open, goalId])
+
+  useEffect(() => {
+    if (open && item && item.type === ITEM_TYPE.GOAL) {
+      setTitle(item.title)
+      setDescription(item.description ?? '')
+      setImportant(item.important ?? false)
+      setDeadline(item.deadline)
+      setCategoryId(item.categoryId)
+      setDeadlinePickerOpen(false)
+      setNewSubgoalText('')
+    }
+  }, [open, item])
 
   const canSave = title.trim().length > 0
 
@@ -152,7 +146,11 @@ export const AddGoalSheet = ({ open, goalId, onClose }: AddGoalSheetProps) => {
     if (!text) return
     setNewSubgoalText('')
     if (goalId) {
-      await createItem({ title: text, parentId: goalId, type: ITEM_TYPE.GOAL })
+      try {
+        await createItem({ title: text, parentId: goalId, type: ITEM_TYPE.GOAL })
+      } catch (error) {
+        Alert.alert('No se pudo agregar', error instanceof Error ? error.message : 'Intentá de nuevo.')
+      }
     } else {
       setPendingSubgoals((prev) => [...prev, text])
     }
@@ -203,7 +201,14 @@ export const AddGoalSheet = ({ open, goalId, onClose }: AddGoalSheetProps) => {
       {
         text: 'Eliminar',
         style: 'destructive',
-        onPress: async () => { await removeItem(item); onClose() },
+        onPress: async () => {
+          try {
+            await removeItem(item)
+            onClose()
+          } catch (error) {
+            Alert.alert('No se pudo eliminar', error instanceof Error ? error.message : 'Intentá de nuevo.')
+          }
+        },
       },
     ])
   }
@@ -218,7 +223,12 @@ export const AddGoalSheet = ({ open, goalId, onClose }: AddGoalSheetProps) => {
       return
     }
     const wasCompleted = isCompleted
-    await toggleCompleted(item)
+    try {
+      await toggleCompleted(item)
+    } catch (error) {
+      Alert.alert('No se pudo completar', error instanceof Error ? error.message : 'Intentá de nuevo.')
+      return
+    }
     if (!wasCompleted) onClose()
   }
 

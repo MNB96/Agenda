@@ -1,10 +1,12 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { itemRepository } from '../../app/container'
 import { isReminderOnlyDue } from '../../domain/items'
 import { useItems } from './useItems'
 
 export const useAutoCompleteReminderOnly = () => {
   const { toggleCompleted } = useItems()
+  const toggleRef = useRef(toggleCompleted)
+  toggleRef.current = toggleCompleted
 
   useEffect(() => {
     const tick = async () => {
@@ -13,7 +15,7 @@ export const useAutoCompleteReminderOnly = () => {
         const dueItems = active.filter((item) => item.reminderOnly && isReminderOnlyDue(item))
         for (const item of dueItems) {
           try {
-            await toggleCompleted(item)
+            await toggleRef.current(item)
           } catch {
             // The item remains active until the next poll; avoids losing the reminder state.
           }
@@ -29,5 +31,5 @@ export const useAutoCompleteReminderOnly = () => {
     }, 60_000)
 
     return () => clearInterval(intervalId)
-  }, [toggleCompleted])
+  }, [])
 }

@@ -366,7 +366,7 @@ const withProps = (current: Item, overrides: Partial<ItemProps>): Item => {
   return buildItem({ ...current, ...overrides, updatedAt: new Date().toISOString() })
 }
 
-export const getReminderOnlyDueMoment = (item: Item): Date | undefined => {
+const getReminderOnlyDueMoment = (item: Item): Date | undefined => {
   const dueDate = item.startDate ?? item.deadline
   if (!dueDate) return undefined
   const dueTime = item.startTime ?? '00:00'

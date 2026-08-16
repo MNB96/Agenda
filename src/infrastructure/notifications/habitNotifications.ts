@@ -11,7 +11,7 @@ export const registerHabitNotificationActions = async (): Promise<void> => {
     {
       identifier: HABIT_COMPLETION_ACTION_ID,
       buttonTitle: 'Marcar como completado',
-      options: { opensAppToForeground: false },
+      options: { opensAppToForeground: true },
     },
   ])
 }

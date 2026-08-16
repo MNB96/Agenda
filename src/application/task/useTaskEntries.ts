@@ -216,6 +216,7 @@ export const useTaskEntries = (): UseTaskEntriesResult => {
     setIsLoadingMoreCompleted(true)
     fetchMoreCompleted()
       .then((loadedCount) => setHasMoreCompleted(loadedCount === COMPLETED_PAGE_SIZE))
+      .catch(() => {})
       .finally(() => setIsLoadingMoreCompleted(false))
   }
 

@@ -19,8 +19,9 @@ export const useMarkOverdueGoals = () => {
 
       for (const item of overdueGoals) {
         try {
+          const alreadySuffixed = item.title.endsWith(MISSED_GOAL_TITLE_SUFFIX)
           await taskRepository.updateTask(accessToken, item.calendarLink!.eventId, {
-            title: `${item.title}${MISSED_GOAL_TITLE_SUFFIX}`,
+            title: alreadySuffixed ? item.title : `${item.title}${MISSED_GOAL_TITLE_SUFFIX}`,
             notes: item.description,
             dueDate: item.deadline,
           })

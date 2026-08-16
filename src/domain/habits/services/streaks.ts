@@ -61,7 +61,7 @@ export const isCompletionCountMet = (count: number, targetCount: number): boolea
   return safeCount >= safeTarget
 }
 
-export const isCompletedForCurrentPeriod = (
+const isCompletedForCurrentPeriod = (
   completionDates: readonly string[],
   regularity: HabitRegularity,
   now: Date = new Date(),

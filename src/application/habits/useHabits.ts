@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AppState } from 'react-native'
 import * as Notifications from 'expo-notifications'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -6,8 +6,6 @@ import { format, startOfISOWeek } from 'date-fns'
 import { habitRepository } from '../../app/container'
 import { Habit, type HabitCompletion, type HabitOccurrence, type HabitPatch, type NewHabitInput } from '../../domain/habits'
 import { HABIT_COMPLETION_ACTION_ID, cancelHabitReminders, scheduleHabitReminders } from '../../infrastructure/notifications/habitNotifications'
-
-const processedNotificationIds = new Set<string>()
 
 const HABITS_KEY = ['habits']
 const HABIT_COMPLETIONS_KEY = ['habit-completions']
@@ -40,6 +38,8 @@ const getCurrentPeriodCount = (completions: HabitCompletion[], habit: Habit): nu
 
 export const useHabits = () => {
   const queryClient = useQueryClient()
+  const processedNotificationIdsRef = useRef(new Set<string>())
+  const managingNotificationsRef = useRef(new Set<string>())
 
   const habitsQuery = useQuery({ queryKey: HABITS_KEY, queryFn: () => habitRepository.list() })
   const completionsQuery = useQuery({ queryKey: HABIT_COMPLETIONS_KEY, queryFn: () => habitRepository.listCompletions() })
@@ -68,14 +68,16 @@ export const useHabits = () => {
   }, [])
 
   useEffect(() => {
-    const subscription = Notifications.addNotificationResponseReceivedListener(async (response) => {
+    const handleHabitResponse = async (response: Notifications.NotificationResponse) => {
       if (response.actionIdentifier !== HABIT_COMPLETION_ACTION_ID) return
       const notifId = response.notification.request.identifier
-      if (processedNotificationIds.has(notifId)) return
-      processedNotificationIds.add(notifId)
-      setTimeout(() => processedNotificationIds.delete(notifId), 10_000)
+      if (processedNotificationIdsRef.current.has(notifId)) return
+      processedNotificationIdsRef.current.add(notifId)
+      setTimeout(() => processedNotificationIdsRef.current.delete(notifId), 10_000)
       const habitId = response.notification.request.content.data?.habitId as string | undefined
       if (!habitId) return
+      // Dismiss first so the notification clears regardless of whether the save succeeds.
+      await Notifications.dismissNotificationAsync(notifId).catch(() => {})
       try {
         const habit = await habitRepository.getById(habitId)
         if (!habit) return
@@ -88,6 +90,16 @@ export const useHabits = () => {
         invalidateAll()
         void checkAndManageNotifications(habitId)
       } catch {}
+    }
+
+    // Handle case where app was killed when the action was tapped — the listener below
+    // won't have been active, so we retrieve the stored response on mount.
+    void Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response) void handleHabitResponse(response)
+    })
+
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      void handleHabitResponse(response)
     })
     return () => subscription.remove()
   }, [])
@@ -117,13 +129,15 @@ export const useHabits = () => {
     return map
   }, [occurrencesQuery.data])
 
-  const invalidateAll = () => {
+  const invalidateAll = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: HABITS_KEY })
     queryClient.invalidateQueries({ queryKey: HABIT_COMPLETIONS_KEY })
     queryClient.invalidateQueries({ queryKey: HABIT_OCCURRENCES_TODAY_KEY })
-  }
+  }, [queryClient])
 
   const checkAndManageNotifications = async (habitId: string) => {
+    if (managingNotificationsRef.current.has(habitId)) return
+    managingNotificationsRef.current.add(habitId)
     try {
       const habit = await habitRepository.getById(habitId)
       if (!habit?.reminder) return
@@ -137,11 +151,18 @@ export const useHabits = () => {
       } else if (!periodMet && habit.reminder && (!habit.notificationIds || habit.notificationIds.length === 0)) {
         const notificationIds = await scheduleHabitReminders(habit)
         if (notificationIds.length > 0) {
-          await habitRepository.save({ ...habit, notificationIds })
-          queryClient.invalidateQueries({ queryKey: HABITS_KEY })
+          try {
+            await habitRepository.save({ ...habit, notificationIds })
+            queryClient.invalidateQueries({ queryKey: HABITS_KEY })
+          } catch {
+            await cancelHabitReminders({ ...habit, notificationIds }).catch(() => {})
+          }
         }
       }
-    } catch {}
+    } catch {
+    } finally {
+      managingNotificationsRef.current.delete(habitId)
+    }
   }
 
   const createMutation = useMutation({
@@ -150,7 +171,14 @@ export const useHabits = () => {
       await habitRepository.save(habit)
       const notificationIds = await scheduleHabitReminders(habit)
       if (notificationIds.length > 0) {
-        await habitRepository.save({ ...habit, notificationIds })
+        const withIds = { ...habit, notificationIds }
+        try {
+          await habitRepository.save(withIds)
+          return withIds
+        } catch {
+          await cancelHabitReminders(withIds).catch(() => {})
+          throw new Error('No se pudo guardar el hábito.')
+        }
       }
       return habit
     },

@@ -15,7 +15,7 @@ const toHHMM = (minutes: number): string => {
   return `${hours}:${mins}`
 }
 
-export const computeIntervalTimes = (config: HabitReminderConfig): string[] => {
+const computeIntervalTimes = (config: HabitReminderConfig): string[] => {
   const start = toMinutes(config.windowStart ?? DEFAULT_WINDOW_START)
   const end = toMinutes(config.windowEnd ?? DEFAULT_WINDOW_END)
   const stepMinutes = Math.max(1, Math.round((config.intervalHours ?? 1) * 60))

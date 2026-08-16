@@ -30,10 +30,10 @@ export const useCalendarDeleteQueue = (
             }
           } catch (error) {
             if (isGoogleCalendarAuthError(error)) {
-              // Tasks auth errors no desconectan Calendar (puede seguir andando por su cuenta),
-              // pero tampoco tiene sentido reintentar — sacar de la cola permanentemente.
               if (kind !== 'task') markUnauthorized()
-              throw new PermanentCalendarDeleteError()
+              // Tasks auth errors: remove from queue silently — re-auth alone won't unblock the delete
+              // since the Tasks API may not be enabled. No need to alarm the user.
+              throw new PermanentCalendarDeleteError(kind !== 'task')
             }
             throw error
           }

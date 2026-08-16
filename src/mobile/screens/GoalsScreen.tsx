@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { differenceInCalendarDays } from 'date-fns'
 import { Target } from 'lucide-react-native'
@@ -28,6 +28,14 @@ export const GoalsScreen = ({ onOpenGoalEditor }: GoalsScreenProps) => {
 
   const [search, setSearch] = useState('')
   const [activeCategory, setActiveCategory] = useState<'all' | string>('all')
+  const [undoGoal, setUndoGoal] = useState<Item | null>(null)
+  const undoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current)
+    }
+  }, [])
 
   const { overdueGoals, activeGoals, completedGoals } = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -62,8 +70,24 @@ export const GoalsScreen = ({ onOpenGoalEditor }: GoalsScreenProps) => {
   const handleToggle = async (item: Parameters<typeof toggleCompleted>[0]) => {
     try {
       await toggleCompleted(item)
+      if (item.status !== 'completed') {
+        if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current)
+        setUndoGoal(item)
+        undoTimeoutRef.current = setTimeout(() => setUndoGoal(null), 4000)
+      }
     } catch (error) {
       Alert.alert('No se pudo completar', error instanceof Error ? error.message : 'Intentá de nuevo.')
+    }
+  }
+
+  const handleUndoGoal = async () => {
+    if (!undoGoal) return
+    if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current)
+    setUndoGoal(null)
+    try {
+      await toggleCompleted(undoGoal)
+    } catch (error) {
+      Alert.alert('No se pudo deshacer', error instanceof Error ? error.message : 'Intentá de nuevo.')
     }
   }
 
@@ -128,71 +152,79 @@ export const GoalsScreen = ({ onOpenGoalEditor }: GoalsScreenProps) => {
   }
 
   return (
-    <View style={styles.container}>
-      {filters}
-      <ScrollView contentContainerStyle={styles.content}>
-        {isEmptyResult ? (
-          <Text style={styles.noResultsText}>No hay metas que coincidan.</Text>
-        ) : (
-          <>
-            {overdueGoals.length > 0 && (
-              <>
-                <Text style={[styles.sectionHeader, { color: colors.danger }]}>Vencidas</Text>
-                {overdueGoals.map((goal) => (
-                  <SwipeableItemCard
-                    key={goal.id}
-                    item={goal}
-                    overdueDeadlineLabel={goal.deadline ? formatOverdueDays(goal.deadline) : undefined}
-                    subtasks={subgoalsByParent.get(goal.id)}
-                    onToggle={handleToggle}
-                    onToggleSubtask={handleToggle}
-                    onOpen={() => onOpenGoalEditor(goal.id)}
-                    onDelete={handleDelete}
-                    deleteConfirmTitle="Eliminar meta"
-                    deleteConfirmMessage="¿Eliminar esta meta?"
-                  />
-                ))}
-              </>
-            )}
+    <View style={{ flex: 1 }}>
+      <View style={styles.container}>
+        {filters}
+        <ScrollView contentContainerStyle={styles.content}>
+          {isEmptyResult ? (
+            <Text style={styles.noResultsText}>No hay metas que coincidan.</Text>
+          ) : (
+            <>
+              {overdueGoals.length > 0 && (
+                <>
+                  <Text style={[styles.sectionHeader, { color: colors.danger }]}>Vencidas</Text>
+                  {overdueGoals.map((goal) => (
+                    <SwipeableItemCard
+                      key={goal.id}
+                      item={goal}
+                      overdueDeadlineLabel={goal.deadline ? formatOverdueDays(goal.deadline) : undefined}
+                      subtasks={subgoalsByParent.get(goal.id)}
+                      onToggle={handleToggle}
+                      onToggleSubtask={handleToggle}
+                      onOpen={() => onOpenGoalEditor(goal.id)}
+                      onDelete={handleDelete}
+                      deleteConfirmTitle="Eliminar meta"
+                      deleteConfirmMessage="¿Eliminar esta meta?"
+                    />
+                  ))}
+                </>
+              )}
 
-            {activeGoals.length > 0 && (
-              <>
-                {overdueGoals.length > 0 && <Text style={styles.sectionHeader}>Activas</Text>}
-                {activeGoals.map((goal) => (
-                  <SwipeableItemCard
-                    key={goal.id}
-                    item={goal}
-                    subtasks={subgoalsByParent.get(goal.id)}
-                    onToggle={handleToggle}
-                    onToggleSubtask={handleToggle}
-                    onOpen={() => onOpenGoalEditor(goal.id)}
-                    onDelete={handleDelete}
-                    deleteConfirmTitle="Eliminar meta"
-                    deleteConfirmMessage="¿Eliminar esta meta?"
-                  />
-                ))}
-              </>
-            )}
+              {activeGoals.length > 0 && (
+                <>
+                  {overdueGoals.length > 0 && <Text style={styles.sectionHeader}>Activas</Text>}
+                  {activeGoals.map((goal) => (
+                    <SwipeableItemCard
+                      key={goal.id}
+                      item={goal}
+                      subtasks={subgoalsByParent.get(goal.id)}
+                      onToggle={handleToggle}
+                      onToggleSubtask={handleToggle}
+                      onOpen={() => onOpenGoalEditor(goal.id)}
+                      onDelete={handleDelete}
+                      deleteConfirmTitle="Eliminar meta"
+                      deleteConfirmMessage="¿Eliminar esta meta?"
+                    />
+                  ))}
+                </>
+              )}
 
-            {completedGoals.length > 0 && (
-              <>
-                <Text style={styles.sectionHeader}>Cumplidas</Text>
-                {completedGoals.map((goal) => (
-                  <SwipeableItemCard
-                    key={goal.id}
-                    item={goal}
-                    onToggle={handleToggle}
-                    onOpen={() => onOpenGoalEditor(goal.id)}
-                    onDelete={handleDelete}
-                    deleteConfirmTitle="Eliminar meta"
-                    deleteConfirmMessage="¿Eliminar esta meta?"
-                  />
-                ))}
-              </>
-            )}
-          </>
-        )}
-      </ScrollView>
+              {completedGoals.length > 0 && (
+                <>
+                  <Text style={styles.sectionHeader}>Cumplidas</Text>
+                  {completedGoals.map((goal) => (
+                    <SwipeableItemCard
+                      key={goal.id}
+                      item={goal}
+                      onToggle={handleToggle}
+                      onOpen={() => onOpenGoalEditor(goal.id)}
+                      onDelete={handleDelete}
+                      deleteConfirmTitle="Eliminar meta"
+                      deleteConfirmMessage="¿Eliminar esta meta?"
+                    />
+                  ))}
+                </>
+              )}
+            </>
+          )}
+        </ScrollView>
+      </View>
+      {undoGoal && (
+        <Pressable style={styles.undoToast} onPress={() => void handleUndoGoal()}>
+          <Text style={styles.undoToastText}>Meta completada</Text>
+          <Text style={styles.undoToastAction}>Deshacer</Text>
+        </Pressable>
+      )}
     </View>
   )
 }
@@ -263,4 +295,26 @@ const createStyles = (colors: ThemeTokens) =>
     },
     emptyTitle: { color: colors.text, fontSize: 19, fontWeight: '800' },
     emptySubtitle: { color: colors.textSecondary, fontSize: 15, marginTop: 4, textAlign: 'center' },
+    undoToast: {
+      position: 'absolute',
+      bottom: 96,
+      left: 16,
+      right: 16,
+      backgroundColor: colors.surfaceElevated,
+      borderRadius: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      borderWidth: 1,
+      borderColor: colors.border,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.12,
+      shadowRadius: 8,
+      elevation: 6,
+    },
+    undoToastText: { fontSize: 14, color: colors.text, fontWeight: '500' },
+    undoToastAction: { fontSize: 14, color: colors.primary, fontWeight: '700' },
   })

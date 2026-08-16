@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, Alert, FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { differenceInCalendarDays, differenceInHours, format, isToday, startOfDay } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -109,6 +109,12 @@ export const TaskScreen = ({ onOpenItemEditor }: TaskScreenProps) => {
 
   const [undoItem, setUndoItem] = useState<Item | null>(null)
   const undoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current)
+    }
+  }, [])
 
   const handleToggle = async (item: Item) => {
     try {
@@ -285,7 +291,13 @@ export const TaskScreen = ({ onOpenItemEditor }: TaskScreenProps) => {
                     overdueLabel={overdueLabel}
                     subtasks={subtasksByParent.get(localItem.id)}
                     onToggle={handleToggle}
-                    onToggleSubtask={async (sub) => { await toggleCompleted(sub) }}
+                    onToggleSubtask={async (sub) => {
+                      try {
+                        await toggleCompleted(sub)
+                      } catch (error) {
+                        Alert.alert('No se pudo completar', error instanceof Error ? error.message : 'Intentá de nuevo.')
+                      }
+                    }}
                     onOpen={() => onOpenItemEditor(localItem.id)}
                     onDelete={async (item) => {
                       try {

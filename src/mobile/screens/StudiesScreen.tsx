@@ -1,16 +1,17 @@
 import { differenceInCalendarDays, format } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useFocusEffect } from '@react-navigation/native'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
-import { Bell, BookOpen, CheckCircle, Clock } from 'lucide-react-native'
+import { Bell, BookOpen, CheckCircle, Clock, Target } from 'lucide-react-native'
 import { itemRepository } from '../../app/container'
 import { useItems } from '../../application/items/useItems'
 import { useLicenseUsages, useSettings } from '../../application/settings/useSettings'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
 import { isExamTask } from '../../domain/items/services/examDetector'
-import type { Item } from '../../domain/items'
+import { ITEM_TYPE, type Item } from '../../domain/items'
 
 // useItems() solo pagina completados en general; un examen viejo de facultad podría no estar
 // ahí, así que se pide aparte, acotado a la categoría.
@@ -33,6 +34,12 @@ const urgencyColor = (days: number, colors: ThemeTokens): string => {
 const studyLabel = (v: 'half' | 'full') => (v === 'half' ? '½ día' : '1 día')
 
 export const StudiesScreen = ({ onOpenItemEditor }: StudiesScreenProps) => {
+  const [showAllCompleted, setShowAllCompleted] = useState(false)
+
+  useFocusEffect(useCallback(() => {
+    return () => setShowAllCompleted(false)
+  }, []))
+
   const { items } = useItems()
   const { data: completedFacultadItems = [] } = useQuery({
     queryKey: ['items', 'completed', 'facultad'],
@@ -97,7 +104,6 @@ export const StudiesScreen = ({ onOpenItemEditor }: StudiesScreenProps) => {
     const completedExams = completedFacultadItems
       .filter(item => isExamTask(item.title))
       .sort((examA, examB) => (examB.completedAt ?? '').localeCompare(examA.completedAt ?? ''))
-      .slice(0, 5)
 
     return {
       semesterSummary: { label, total: semesterExams.length, upcoming, next, nextDays },
@@ -298,9 +304,14 @@ export const StudiesScreen = ({ onOpenItemEditor }: StudiesScreenProps) => {
               const dateStr = item.startDate ?? item.deadline
               const today = new Date().toISOString().slice(0, 10)
               const isOverdue = !!dateStr && dateStr < today
+              const isGoal = item.type === ITEM_TYPE.GOAL
+              const accentColor = isOverdue ? colors.danger : (isGoal ? colors.primary : colors.border)
               return (
                 <Pressable key={item.id} style={[styles.taskRow, i > 0 && styles.taskRowBorder]} onPress={() => onOpenItemEditor(item.id)}>
-                  <View style={[styles.taskDot, isOverdue && { backgroundColor: colors.danger }]} />
+                  {isGoal
+                    ? <Target size={14} color={accentColor} />
+                    : <View style={[styles.taskDot, { backgroundColor: accentColor }]} />
+                  }
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.taskTitle, isOverdue && { color: colors.danger }]} numberOfLines={1}>{item.title}</Text>
                     {dateStr && (
@@ -325,7 +336,7 @@ export const StudiesScreen = ({ onOpenItemEditor }: StudiesScreenProps) => {
         <>
           <Text style={styles.sectionHeader}>Rendidos</Text>
           <View style={styles.card}>
-            {completedExams.map((exam, i) => {
+            {(showAllCompleted ? completedExams : completedExams.slice(0, 5)).map((exam, i) => {
               const grade = exam.academicConfig?.grade
               const passed = grade !== undefined ? grade >= 4 : undefined
               return (
@@ -345,6 +356,16 @@ export const StudiesScreen = ({ onOpenItemEditor }: StudiesScreenProps) => {
                 </Pressable>
               )
             })}
+            {completedExams.length > 5 && (
+              <Pressable
+                style={[styles.taskRow, { justifyContent: 'center' }]}
+                onPress={() => setShowAllCompleted(v => !v)}
+              >
+                <Text style={{ fontSize: 13, color: colors.primary, fontWeight: '600' }}>
+                  {showAllCompleted ? 'Ver menos' : `Ver ${completedExams.length - 5} más`}
+                </Text>
+              </Pressable>
+            )}
           </View>
         </>
       )}
@@ -378,8 +399,8 @@ const createStyles = (colors: ThemeTokens) => StyleSheet.create({
   summaryNextLabel: { fontSize: 11, color: colors.primary, fontWeight: '600', marginBottom: 1 },
   summaryNextExam: { fontSize: 15, fontWeight: '600', color: colors.text },
   summaryDaysBadge: { backgroundColor: colors.primarySoft, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4, alignItems: 'center' },
-  summaryDaysNumber: { fontSize: 18, fontWeight: '700', color: colors.primary, lineHeight: 22 },
-  summaryDaysLabel: { fontSize: 10, color: colors.primary, fontWeight: '500' },
+  summaryDaysNumber: { fontSize: 18, fontWeight: '700', color: colors.onPrimary, lineHeight: 22 },
+  summaryDaysLabel: { fontSize: 10, color: colors.onPrimary, fontWeight: '500' },
   summaryEmpty: { fontSize: 13, color: colors.textMuted, fontStyle: 'italic' },
   summaryFooter: { flexDirection: 'row', alignItems: 'center', gap: 6, borderTopWidth: 1, borderColor: colors.border, paddingTop: 8 },
   summaryFooterText: { fontSize: 12, color: colors.textMuted },

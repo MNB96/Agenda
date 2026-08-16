@@ -19,12 +19,20 @@ export const useGoogleSessionLifecycleMobile = () => {
     if (!connectedEmail) return
 
     let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
 
     const ensureSession = async () => {
       // A real 401/403 (missing scope) can't be fixed by a silent refresh — retrying loops forever.
       if (authIssue === 'unauthorized') return
       const stillValid = Boolean(accessToken) && Boolean(expiresAt) && Date.now() < expiresAt! - REFRESH_MARGIN_MS
-      if (stillValid || isRefreshing.current) return
+      if (stillValid || isRefreshing.current) {
+        // Token válido: dormir hasta cerca de la expiración (mínimo 30s, máximo hasta refresh margin)
+        const sleepMs = stillValid
+          ? Math.max(30_000, expiresAt! - REFRESH_MARGIN_MS - Date.now())
+          : CHECK_INTERVAL_MS
+        if (!cancelled) timer = setTimeout(() => void ensureSession(), sleepMs)
+        return
+      }
       isRefreshing.current = true
 
       // Play Services keeps its own session, so try a silent refresh before forcing reconnect.
@@ -44,14 +52,14 @@ export const useGoogleSessionLifecycleMobile = () => {
         if (!cancelled) markExpired()
       } finally {
         isRefreshing.current = false
+        if (!cancelled) timer = setTimeout(() => void ensureSession(), CHECK_INTERVAL_MS)
       }
     }
 
     void ensureSession()
-    const timer = setInterval(() => void ensureSession(), CHECK_INTERVAL_MS)
     return () => {
       cancelled = true
-      clearInterval(timer)
+      if (timer) clearTimeout(timer)
     }
   }, [accessToken, expiresAt, connectedEmail, authIssue, markExpired, setSession])
 }

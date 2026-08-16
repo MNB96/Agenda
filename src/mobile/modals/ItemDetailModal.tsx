@@ -26,11 +26,11 @@ import {
   CornerDownRight,
   MapPin,
   Minus,
-  MoreVertical,
   Plus,
   Repeat,
   Star,
   Tag,
+  Trash2,
   X,
   XCircle,
 } from 'lucide-react-native'
@@ -229,7 +229,12 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
   }, [handleClose, reminderOnlyUntilPickerOpen, reminderSetupOpen, reminderSetupShowUntilPicker])
 
   const handleToggleComplete = async () => {
-    await toggleCompleted(item)
+    try {
+      await toggleCompleted(item)
+    } catch (error) {
+      Alert.alert('No se pudo completar', error instanceof Error ? error.message : 'Intentá de nuevo.')
+      return
+    }
     await handleClose()
   }
 
@@ -239,7 +244,14 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
       {
         text: 'Eliminar',
         style: 'destructive',
-        onPress: async () => { await removeItem(item); onClose() },
+        onPress: async () => {
+          try {
+            await removeItem(item)
+            onClose()
+          } catch (error) {
+            Alert.alert('No se pudo eliminar', error instanceof Error ? error.message : 'Intentá de nuevo.')
+          }
+        },
       },
     ])
   }
@@ -408,7 +420,7 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
               hitSlop={12}
               style={styles.headerBtn}
             >
-              <MoreVertical size={22} color={colors.textMuted} />
+              <Trash2 size={22} color={colors.textMuted} />
             </Pressable>
           </View>
 
@@ -740,7 +752,11 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
                 {subtasks.map((sub) => (
                   <View key={sub.id} style={styles.subtaskRow}>
                     <Pressable
-                      onPress={() => void toggleCompleted(sub)}
+                      onPress={() => {
+                        toggleCompleted(sub).catch((error: unknown) => {
+                          Alert.alert('No se pudo completar', error instanceof Error ? error.message : 'Intentá de nuevo.')
+                        })
+                      }}
                       style={[
                         styles.subtaskCheck,
                         sub.status === 'completed' && { backgroundColor: colors.success, borderColor: colors.success },
@@ -749,7 +765,11 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
                     <Text style={[styles.subtaskTitle, sub.status === 'completed' && styles.done]}>
                       {sub.title}
                     </Text>
-                    <Pressable onPress={() => void removeSubtask(sub)} hitSlop={8}>
+                    <Pressable onPress={() => {
+                      removeSubtask(sub).catch((error: unknown) => {
+                        Alert.alert('No se pudo eliminar', error instanceof Error ? error.message : 'Intentá de nuevo.')
+                      })
+                    }} hitSlop={8}>
                       <XCircle size={18} color={colors.textMuted} />
                     </Pressable>
                   </View>

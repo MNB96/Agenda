@@ -242,7 +242,14 @@ export const AddHabitSheet = ({ open, habitId, onClose }: AddHabitSheetProps) =>
       {
         text: 'Eliminar',
         style: 'destructive',
-        onPress: async () => { await removeHabit(habit.id); onClose() },
+        onPress: async () => {
+          try {
+            await removeHabit(habit.id)
+            onClose()
+          } catch (error) {
+            Alert.alert('No se pudo eliminar', error instanceof Error ? error.message : 'Intentá de nuevo.')
+          }
+        },
       },
     ])
   }

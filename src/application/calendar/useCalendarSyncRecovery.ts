@@ -40,7 +40,7 @@ export const useCalendarSyncRecovery = (
     settingsRef.current = settings
   }, [settings])
 
-  const run = useCallback(async (token: string) => {
+  const run = useCallback(async (token: string, abortSignal: { aborted: boolean }) => {
     if (isProcessing.current) return
 
     const net = await Network.getNetworkStateAsync()
@@ -96,6 +96,7 @@ export const useCalendarSyncRecovery = (
         if (authFailed) break
         if (!updated.calendarSyncPending) await applySyncedItems([updated])
         await new Promise<void>((r) => setTimeout(r, 400))
+        if (abortSignal.aborted) break
       }
     } finally {
       isProcessing.current = false
@@ -103,11 +104,15 @@ export const useCalendarSyncRecovery = (
   }, [markUnauthorized, applySyncedItems])
 
   useEffect(() => {
-    if (accessToken) void run(accessToken)
+    const abortSignal = { aborted: false }
+    if (accessToken) void run(accessToken, abortSignal)
 
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active' && accessToken) void run(accessToken)
+      if (state === 'active' && accessToken) void run(accessToken, abortSignal)
     })
-    return () => sub.remove()
+    return () => {
+      abortSignal.aborted = true
+      sub.remove()
+    }
   }, [accessToken, run])
 }

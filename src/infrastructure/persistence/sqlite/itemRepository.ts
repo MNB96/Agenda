@@ -8,7 +8,15 @@ interface ItemRow {
 
 // Drops rows hydrateItem can't reconstruct (corrupted/contradictory JSON) instead of propagating undefined.
 const hydrateRows = (rows: ItemRow[]): Item[] =>
-  rows.map((row) => hydrateItem(JSON.parse(row.data))).filter((item): item is Item => item !== undefined)
+  rows
+    .map((row) => {
+      try {
+        return hydrateItem(JSON.parse(row.data))
+      } catch {
+        return undefined
+      }
+    })
+    .filter((item): item is Item => item !== undefined)
 
 export class SQLiteItemRepository implements ItemRepository {
   async list(): Promise<Item[]> {
@@ -46,7 +54,7 @@ export class SQLiteItemRepository implements ItemRepository {
     const rows = await db.getAllAsync<ItemRow>(
       `SELECT data FROM items
        WHERE status = 'completed' AND completedAt IS NOT NULL AND completedAt <= ?
-         AND googleCalendarEventId IS NOT NULL`,
+         AND calendarSyncPending = 0`,
       [completedBefore],
     )
     return hydrateRows(rows)
@@ -55,7 +63,12 @@ export class SQLiteItemRepository implements ItemRepository {
   async getById(id: string): Promise<Item | undefined> {
     const db = await getDb()
     const row = await db.getFirstAsync<ItemRow>('SELECT data FROM items WHERE id = ?', [id])
-    return row ? hydrateItem(JSON.parse(row.data)) : undefined
+    if (!row) return undefined
+    try {
+      return hydrateItem(JSON.parse(row.data))
+    } catch {
+      return undefined
+    }
   }
 
   async getByParentIds(parentIds: string[]): Promise<Item[]> {
