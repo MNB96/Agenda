@@ -8,15 +8,17 @@ export interface SqliteDataExport {
   habits: Record<string, unknown>[]
   habitCompletions: Record<string, unknown>[]
   habitOccurrences: Record<string, unknown>[]
+  subjects: Record<string, unknown>[]
 }
 
 export const exportAllSqliteData = async (): Promise<SqliteDataExport> => {
   const db = await getDb()
-  const [items, habits, habitCompletions, habitOccurrences] = await Promise.all([
+  const [items, habits, habitCompletions, habitOccurrences, subjects] = await Promise.all([
     db.getAllAsync<Record<string, unknown>>('SELECT * FROM items'),
     db.getAllAsync<Record<string, unknown>>('SELECT * FROM habits'),
     db.getAllAsync<Record<string, unknown>>('SELECT * FROM habit_completions'),
     db.getAllAsync<Record<string, unknown>>('SELECT * FROM habit_occurrences'),
+    db.getAllAsync<Record<string, unknown>>('SELECT * FROM subjects'),
   ])
   return {
     exportedAt: new Date().toISOString(),
@@ -24,5 +26,6 @@ export const exportAllSqliteData = async (): Promise<SqliteDataExport> => {
     habits,
     habitCompletions,
     habitOccurrences,
+    subjects,
   }
 }

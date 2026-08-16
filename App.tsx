@@ -140,7 +140,7 @@ const AppShellInner = ({
 
         try {
           const item = await itemRepository.getById(itemId)
-          if (!item || item.status === 'completed' || item.reminderOnly) return
+          if (!item || item.status === 'completed') return
           const subtasks = await itemRepository.getByParentIds([item.id])
           const completed = Item.complete(item, subtasks)
           await cancelItemNotifications(item)

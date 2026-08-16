@@ -15,7 +15,7 @@ export const registerItemNotificationActions = async (): Promise<void> => {
     {
       identifier: ITEM_COMPLETION_ACTION_ID,
       buttonTitle: 'Completar',
-      options: { opensAppToForeground: true },
+      options: { opensAppToForeground: false },
     },
   ])
 }
@@ -222,7 +222,6 @@ export const scheduleItemNotifications = async (item: Item): Promise<string[]> =
 
   const deadlineIds = await scheduleDeadlineNotifications(item)
   const reminders = item.reminderConfig
-
   if (!reminders?.length) {
     // Sin recordatorios configurados: notificar a la hora del ítem. Si es una tarea de
     // solo fecha límite (sin fecha/hora agendada), ya quedó cubierta arriba.

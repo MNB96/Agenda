@@ -1,13 +1,15 @@
 import { differenceInCalendarDays, format } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useFocusEffect } from '@react-navigation/native'
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
-import { Bell, BookOpen, CheckCircle, Clock, Target } from 'lucide-react-native'
+import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { Bell, BookOpen, CheckCircle, Clock, Pencil, Target } from 'lucide-react-native'
 import { itemRepository } from '../../app/container'
 import { useItems } from '../../application/items/useItems'
 import { useLicenseUsages, useSettings } from '../../application/settings/useSettings'
+import { useSubjects } from '../../application/subjects/useSubjects'
+import { computeAttendance } from '../../domain/subjects'
 import { useAppTheme } from '../theme/useAppTheme'
 import type { ThemeTokens } from '../theme/tokens'
 import { isExamTask } from '../../domain/items/services/examDetector'
@@ -36,6 +38,24 @@ const studyLabel = (v: 'half' | 'full') => (v === 'half' ? '½ día' : '1 día')
 export const StudiesScreen = ({ onOpenItemEditor }: StudiesScreenProps) => {
   const [showAllCompleted, setShowAllCompleted] = useState(false)
 
+  // Attendance state
+  const [editingDates, setEditingDates] = useState(false)
+  const [tempStart, setTempStart] = useState('')
+  const [tempEnd, setTempEnd] = useState('')
+  const [addingSubject, setAddingSubject] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newTotalClasses, setNewTotalClasses] = useState(16)
+  const [editingSubjectId, setEditingSubjectId] = useState<string | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editTotalClasses, setEditTotalClasses] = useState(16)
+  const scrollRef = useRef<ScrollView>(null)
+
+  useEffect(() => {
+    if (addingSubject) {
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100)
+    }
+  }, [addingSubject])
+
   useFocusEffect(useCallback(() => {
     return () => setShowAllCompleted(false)
   }, []))
@@ -47,6 +67,17 @@ export const StudiesScreen = ({ onOpenItemEditor }: StudiesScreenProps) => {
   })
   const { data: settings } = useSettings()
   const { data: licenseUsages } = useLicenseUsages()
+  const {
+    subjects,
+    semesterConfig,
+    saveSemesterConfig,
+    createSubject: doCreateSubject,
+    updateSubject: doUpdateSubject,
+    removeSubject,
+    addAbsence,
+    removeAbsence,
+  } = useSubjects()
+
   const { colors } = useAppTheme()
   const styles = useMemo(() => createStyles(colors), [colors])
 
@@ -159,7 +190,8 @@ export const StudiesScreen = ({ onOpenItemEditor }: StudiesScreenProps) => {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+    <ScrollView ref={scrollRef} style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
 
       <View style={styles.summaryCard}>
         <Text style={styles.summaryTitle}>{semesterSummary.label}</Text>
@@ -370,7 +402,249 @@ export const StudiesScreen = ({ onOpenItemEditor }: StudiesScreenProps) => {
         </>
       )}
 
+      <Text style={styles.sectionHeader}>Asistencia</Text>
+      <View style={styles.card}>
+
+        {/* Semester date range row */}
+        <View style={styles.attendanceDateRow}>
+          <Text style={styles.attendanceDateText}>
+            {semesterConfig.startDate}  →  {semesterConfig.endDate}
+          </Text>
+          <Pressable
+            hitSlop={8}
+            onPress={() => {
+              if (!editingDates) {
+                setTempStart(semesterConfig.startDate)
+                setTempEnd(semesterConfig.endDate)
+              }
+              setEditingDates((v) => !v)
+            }}
+          >
+            <Pencil size={14} color={colors.textMuted} />
+          </Pressable>
+        </View>
+
+        {editingDates && (
+          <View style={styles.dateEditRow}>
+            <TextInput
+              style={styles.dateInput}
+              value={tempStart}
+              onChangeText={setTempStart}
+              placeholder="yyyy-MM-dd"
+              placeholderTextColor={colors.textMuted}
+            />
+            <Text style={styles.dateArrow}>→</Text>
+            <TextInput
+              style={styles.dateInput}
+              value={tempEnd}
+              onChangeText={setTempEnd}
+              placeholder="yyyy-MM-dd"
+              placeholderTextColor={colors.textMuted}
+            />
+            <Pressable
+              style={styles.dateSaveBtn}
+              onPress={() => {
+                void saveSemesterConfig({ startDate: tempStart, endDate: tempEnd })
+                setEditingDates(false)
+              }}
+            >
+              <Text style={styles.dateSaveBtnText}>OK</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {/* Subject rows */}
+        {subjects.length === 0 ? (
+          <View style={styles.attendanceEmpty}>
+            <Text style={styles.summaryEmpty}>Ninguna materia cargada aún.</Text>
+          </View>
+        ) : (
+          subjects.map((subject, i) => {
+            const stats = computeAttendance(subject, semesterConfig)
+            const barColor =
+              stats.status === 'ok'
+                ? colors.success
+                : stats.status === 'warning'
+                  ? colors.accent
+                  : colors.danger
+            const filledRatio =
+              stats.maxAbsences > 0
+                ? Math.min(subject.absences / stats.maxAbsences, 1)
+                : subject.absences > 0
+                  ? 1
+                  : 0
+            const emptyRatio = 1 - filledRatio
+
+            const isEditing = editingSubjectId === subject.id
+
+            return (
+              <View key={subject.id} style={[styles.subjectRow, i > 0 && styles.subjectRowBorder]}>
+                {isEditing ? (
+                  <View style={{ flex: 1 }}>
+                    <TextInput
+                      style={styles.addSubjectInput}
+                      value={editName}
+                      onChangeText={setEditName}
+                      autoFocus
+                    />
+                    <View style={styles.classesPerWeekRow}>
+                      <Text style={styles.classesLabel}>Total de clases:</Text>
+                      <Pressable
+                        style={styles.absenceBtn}
+                        onPress={() => setEditTotalClasses((v) => Math.max(1, v - 1))}
+                      >
+                        <Text style={styles.absenceBtnText}>−</Text>
+                      </Pressable>
+                      <Text style={styles.classesValue}>{editTotalClasses}</Text>
+                      <Pressable
+                        style={styles.absenceBtn}
+                        onPress={() => setEditTotalClasses((v) => Math.min(60, v + 1))}
+                      >
+                        <Text style={styles.absenceBtnText}>+</Text>
+                      </Pressable>
+                    </View>
+                    <View style={styles.addFormActions}>
+                      <Pressable onPress={() => setEditingSubjectId(null)}>
+                        <Text style={styles.cancelText}>Cancelar</Text>
+                      </Pressable>
+                      <Pressable
+                        style={styles.saveBtn}
+                        onPress={() => {
+                          if (!editName.trim()) return
+                          void doUpdateSubject({ id: subject.id, patch: { name: editName.trim(), totalClasses: editTotalClasses } })
+                          setEditingSubjectId(null)
+                        }}
+                      >
+                        <Text style={styles.saveBtnText}>Guardar</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ) : (
+                  <Pressable
+                    style={{ flex: 1 }}
+                    onPress={() => {
+                      setEditingSubjectId(subject.id)
+                      setEditName(subject.name)
+                      setEditTotalClasses(subject.totalClasses)
+                    }}
+                    onLongPress={() => {
+                      Alert.alert(
+                        'Eliminar materia',
+                        `¿Eliminar "${subject.name}"?`,
+                        [
+                          { text: 'Cancelar', style: 'cancel' },
+                          {
+                            text: 'Eliminar',
+                            style: 'destructive',
+                            onPress: () => void removeSubject(subject.id),
+                          },
+                        ],
+                      )
+                    }}
+                  >
+                    <Text style={styles.subjectName} numberOfLines={1}>{subject.name}</Text>
+                    <View style={styles.absenceBarTrack}>
+                      {filledRatio > 0 && (
+                        <View
+                          style={[styles.absenceBarFill, { flex: filledRatio, backgroundColor: barColor }]}
+                        />
+                      )}
+                      {emptyRatio > 0 && (
+                        <View style={[styles.absenceBarFill, { flex: emptyRatio, backgroundColor: colors.border }]} />
+                      )}
+                    </View>
+                    <Text style={[styles.absenceLabel, stats.status === 'exceeded' && { color: colors.danger }]}>
+                      {stats.status === 'exceeded'
+                        ? `¡Límite excedido! (${subject.absences}/${stats.maxAbsences} faltas)`
+                        : `${subject.absences}/${stats.maxAbsences} faltas permitidas · ${stats.totalClasses} clases`}
+                      {stats.attendancePercent !== null
+                        ? `  (${Math.round(stats.attendancePercent)}% asist.)`
+                        : ''}
+                    </Text>
+                  </Pressable>
+                )}
+                {!isEditing && (
+                  <View style={styles.absenceBtns}>
+                    <Pressable
+                      style={styles.absenceBtn}
+                      onPress={() => void removeAbsence(subject.id)}
+                    >
+                      <Text style={styles.absenceBtnText}>−</Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.absenceBtn}
+                      onPress={() => void addAbsence(subject.id)}
+                    >
+                      <Text style={styles.absenceBtnText}>+</Text>
+                    </Pressable>
+                  </View>
+                )}
+              </View>
+            )
+          })
+        )}
+
+        {/* Add subject */}
+        {addingSubject ? (
+          <View style={styles.addSubjectForm}>
+            <TextInput
+              style={styles.addSubjectInput}
+              value={newName}
+              onChangeText={setNewName}
+              placeholder="Nombre de la materia"
+              placeholderTextColor={colors.textMuted}
+              autoFocus
+            />
+            <View style={styles.classesPerWeekRow}>
+              <Text style={styles.classesLabel}>Total de clases:</Text>
+              <Pressable
+                style={styles.absenceBtn}
+                onPress={() => setNewTotalClasses((v) => Math.max(1, v - 1))}
+              >
+                <Text style={styles.absenceBtnText}>−</Text>
+              </Pressable>
+              <Text style={styles.classesValue}>{newTotalClasses}</Text>
+              <Pressable
+                style={styles.absenceBtn}
+                onPress={() => setNewTotalClasses((v) => Math.min(60, v + 1))}
+              >
+                <Text style={styles.absenceBtnText}>+</Text>
+              </Pressable>
+            </View>
+            <View style={styles.addFormActions}>
+              <Pressable
+                onPress={() => {
+                  setAddingSubject(false)
+                  setNewName('')
+                  setNewTotalClasses(16)
+                }}
+              >
+                <Text style={styles.cancelText}>Cancelar</Text>
+              </Pressable>
+              <Pressable
+                style={styles.saveBtn}
+                onPress={() => {
+                  if (!newName.trim()) return
+                  void doCreateSubject({ name: newName.trim(), totalClasses: newTotalClasses })
+                  setAddingSubject(false)
+                  setNewName('')
+                  setNewTotalClasses(16)
+                }}
+              >
+                <Text style={styles.saveBtnText}>Guardar</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : (
+          <Pressable style={styles.addSubjectRow} onPress={() => setAddingSubject(true)}>
+            <Text style={styles.addSubjectText}>+ Agregar materia</Text>
+          </Pressable>
+        )}
+
+      </View>
+
     </ScrollView>
+    </KeyboardAvoidingView>
   )
 }
 
@@ -506,5 +780,176 @@ const createStyles = (colors: ThemeTokens) => StyleSheet.create({
   gradeBadgeText: {
     fontSize: 11,
     fontWeight: '600',
+  },
+
+  // Attendance section
+  attendanceDateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderColor: colors.border,
+  },
+  attendanceDateText: {
+    fontSize: 12,
+    color: colors.textMuted,
+    fontWeight: '500',
+  },
+  dateEditRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderColor: colors.border,
+  },
+  dateInput: {
+    flex: 1,
+    height: 34,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    fontSize: 13,
+    color: colors.text,
+    backgroundColor: colors.surfaceSecondary,
+  },
+  dateArrow: {
+    fontSize: 14,
+    color: colors.textMuted,
+  },
+  dateSaveBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  dateSaveBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.onPrimary,
+  },
+  attendanceEmpty: {
+    padding: 14,
+  },
+  subjectRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 10,
+  },
+  subjectRowBorder: {
+    borderTopWidth: 1,
+    borderColor: colors.border,
+  },
+  subjectName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: 6,
+  },
+  absenceBarTrack: {
+    height: 6,
+    borderRadius: 999,
+    flexDirection: 'row',
+    overflow: 'hidden',
+    backgroundColor: colors.border,
+    marginBottom: 4,
+  },
+  absenceBarFill: {
+    height: 6,
+  },
+  absenceLabel: {
+    fontSize: 11,
+    color: colors.textMuted,
+  },
+  absenceBtns: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  absenceBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  absenceBtnText: {
+    fontSize: 18,
+    fontWeight: '400',
+    color: colors.textSecondary,
+    lineHeight: 22,
+  },
+  addSubjectRow: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderColor: colors.border,
+  },
+  addSubjectText: {
+    fontSize: 14,
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  addSubjectForm: {
+    borderTopWidth: 1,
+    borderColor: colors.border,
+    padding: 14,
+    gap: 10,
+  },
+  addSubjectInput: {
+    height: 40,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    fontSize: 14,
+    color: colors.text,
+    backgroundColor: colors.surfaceSecondary,
+  },
+  classesPerWeekRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  classesLabel: {
+    flex: 1,
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  classesValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text,
+    minWidth: 20,
+    textAlign: 'center',
+  },
+  addFormActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 14,
+    marginTop: 2,
+  },
+  cancelText: {
+    fontSize: 14,
+    color: colors.textMuted,
+  },
+  saveBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: 10,
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+  },
+  saveBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.onPrimary,
   },
 })
