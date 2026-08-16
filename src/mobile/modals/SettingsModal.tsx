@@ -8,6 +8,7 @@ import { ChevronLeft } from 'lucide-react-native'
 import { useGoogleCalendars } from '../../application/calendar/useGoogleCalendar'
 import { useSettings } from '../../application/settings/useSettings'
 import { useDataExport } from '../../application/settings/useDataExport'
+import { useDataImport } from '../../application/settings/useDataImport'
 import { useItems } from '../../application/items/useItems'
 import { useGoogleAuthStore, GOOGLE_TOKEN_TTL_SECONDS, GOOGLE_OAUTH_SCOPES } from '../../state/googleAuthStore'
 import { openNotificationSoundSettings, openExactAlarmSettings } from '../../infrastructure/notifications/itemNotifications'
@@ -27,6 +28,7 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
   const { accessToken, connectedEmail, authIssue, setSession, clearSession } = useGoogleAuthStore()
   const calendarsQuery = useGoogleCalendars()
   const { exportData, isExporting } = useDataExport()
+  const { importData, isImporting } = useDataImport()
   const { colors } = useAppTheme()
   const insets = useSafeAreaInsets()
   const styles = useMemo(() => createStyles(colors), [colors])
@@ -269,6 +271,15 @@ export const SettingsModal = ({ open, onClose }: SettingsModalProps) => {
               >
                 <Text style={styles.secondaryButtonText}>
                   {isExporting ? 'Exportando...' : 'Descargar mis datos (JSON)'}
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[styles.secondaryButton, isImporting && styles.disabled, { marginTop: 8 }]}
+                disabled={isImporting}
+                onPress={() => void importData()}
+              >
+                <Text style={styles.secondaryButtonText}>
+                  {isImporting ? 'Restaurando...' : 'Cargar backup (JSON)'}
                 </Text>
               </Pressable>
               {(() => {
