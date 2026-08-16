@@ -115,9 +115,13 @@ const AppShellInner = ({
     void registerHabitNotificationActions()
     void registerItemNotificationActions()
 
-    const subscription = Notifications.addNotificationResponseReceivedListener(async (response) => {
+    // IDs ya procesados para evitar duplicados entre el listener y getLastNotificationResponseAsync.
+    const processed = new Set<string>()
+
+    const handleResponse = async (response: Notifications.NotificationResponse) => {
       const actionId = response.actionIdentifier
       const itemId = response.notification.request.content.data?.itemId as string | undefined
+      const notifId = response.notification.request.identifier
 
       // Abrir la tarea al tocar el cuerpo de la notificación.
       if (actionId === Notifications.DEFAULT_ACTION_IDENTIFIER && itemId) {
@@ -127,17 +131,32 @@ const AppShellInner = ({
 
       // Completar tarea desde la bandeja sin abrir la app.
       if (actionId === ITEM_COMPLETION_ACTION_ID && itemId) {
-        try {
-          const item = await itemRepository.getById(itemId)
-          if (!item || item.status === 'completed' || item.reminderOnly) return
-          const subtasks = await itemRepository.getByParentIds([item.id])
-          const completed = Item.complete(item, subtasks)
-          await cancelItemNotifications(item)
-          const linked = Item.linkNotifications(completed, [])
-          await itemRepository.save(linked)
-          void queryClient.invalidateQueries({ queryKey: ['items'] })
-        } catch {}
+        if (processed.has(notifId)) return
+        processed.add(notifId)
+        setTimeout(() => processed.delete(notifId), 30_000)
+
+        // Descartar la notificación primero; si la completar falla igual desaparece de la bandeja.
+        void Notifications.dismissNotificationAsync(notifId).catch(() => {})
+
+        const item = await itemRepository.getById(itemId)
+        if (!item || item.status === 'completed' || item.reminderOnly) return
+        const subtasks = await itemRepository.getByParentIds([item.id])
+        const completed = Item.complete(item, subtasks)
+        await cancelItemNotifications(item)
+        const linked = Item.linkNotifications(completed, [])
+        await itemRepository.save(linked)
+        queryClient.invalidateQueries({ queryKey: ['items'] })
       }
+    }
+
+    // Caso app cerrada: si el usuario tocó la acción mientras la app no estaba activa,
+    // el listener no la vio — getLastNotificationResponseAsync la recupera al montar.
+    void Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response) void handleResponse(response)
+    })
+
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      void handleResponse(response)
     })
 
     return () => subscription.remove()

@@ -126,7 +126,10 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
   const [selectedAlarmType, setSelectedAlarmType] = useState<'notification' | 'alarm'>(
     item.reminderConfig?.some(r => r.alarmType === 'alarm') ? 'alarm' : 'notification',
   )
-  const [selectedPersistent, setSelectedPersistent] = useState(false)
+  const [selectedPersistent, setSelectedPersistent] = useState(
+    item.reminderConfig?.some(r => r.persistent) ?? false,
+  )
+  const [reminderOnlyUntilPickerOpen, setReminderOnlyUntilPickerOpen] = useState(false)
   const [travelTimeLoading, setTravelTimeLoading] = useState(false)
   const [travelTimeResult, setTravelTimeResult] = useState<string | null>(null)
   const [travelConfig, setTravelConfig] = useState<TravelConfigInput | undefined>(item.travelConfig)
@@ -178,7 +181,9 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
           repeatConfig: repeatRule !== 'none' ? repeatConfig : undefined,
           categoryId,
           location: location || undefined,
-          reminderConfig: reminders.length > 0 ? reminders : undefined,
+          reminderConfig: reminderOnly
+            ? [{ id: item.reminderConfig?.[0]?.id ?? createId(), mode: 'relative' as const, minutesBefore: 0, alarmType: selectedAlarmType, persistent: selectedPersistent }]
+            : reminders.length > 0 ? reminders : undefined,
           travelConfig,
           academicConfig: (() => {
             const ac = { ...(item.academicConfig ?? {}) }
@@ -210,17 +215,18 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
       await deleteUsage(existingUsage.id)
     }
     onClose()
-  }, [item, title, description, important, reminderOnly, scheduledDate, scheduledTime, endTime, deadline, syncToCalendar, travelConfig, repeatRule, repeatConfig, categoryId, location, reminders, studyTimeBefore, gradeText, licenseUsages, saveUsage, deleteUsage, updateItem, onClose])
+  }, [item, title, description, important, reminderOnly, scheduledDate, scheduledTime, endTime, deadline, syncToCalendar, travelConfig, repeatRule, repeatConfig, categoryId, location, reminders, selectedAlarmType, selectedPersistent, studyTimeBefore, gradeText, licenseUsages, saveUsage, deleteUsage, updateItem, onClose])
 
   useEffect(() => {
     const handler = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (reminderOnlyUntilPickerOpen) { setReminderOnlyUntilPickerOpen(false); return true }
       if (reminderSetupShowUntilPicker) { setReminderSetupShowUntilPicker(false); return true }
       if (reminderSetupOpen) { setReminderSetupOpen(false); return true }
       void handleClose()
       return true
     })
     return () => handler.remove()
-  }, [handleClose, reminderSetupOpen, reminderSetupShowUntilPicker])
+  }, [handleClose, reminderOnlyUntilPickerOpen, reminderSetupOpen, reminderSetupShowUntilPicker])
 
   const handleToggleComplete = async () => {
     await toggleCompleted(item)
@@ -345,6 +351,7 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
         transparent={false}
         statusBarTranslucent
         onRequestClose={() => {
+          if (reminderOnlyUntilPickerOpen) { setReminderOnlyUntilPickerOpen(false); return }
           if (reminderSetupShowUntilPicker) { setReminderSetupShowUntilPicker(false); return }
           if (reminderSetupOpen) { setReminderSetupOpen(false); return }
           void handleClose()
@@ -433,7 +440,7 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
               />
             </View>
 
-            {(DEFAULT_CATEGORIES).length > 0 && (
+            {!reminderOnly && (DEFAULT_CATEGORIES).length > 0 && (
               <View style={styles.categoryRow}>
                 <Tag size={18} color={categoryId ? colors.primary : colors.textMuted} style={styles.rowIcon} />
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryChips}>
@@ -461,7 +468,7 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
               </View>
             )}
 
-            {showCategorySuggestion && suggestedCategory && (
+            {!reminderOnly && showCategorySuggestion && suggestedCategory && (
               <View style={styles.categorySuggestionRow}>
                 <Text style={styles.categorySuggestionLabel}>
                   ¿Categoría: <Text style={styles.categorySuggestionName}>{suggestedCategory.name}</Text>?
@@ -483,7 +490,7 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
               </View>
             )}
 
-            {(categoryId === 'facultad' || suggestedCategoryId === 'facultad') && isExamTask(title) && (
+            {!reminderOnly && (categoryId === 'facultad' || suggestedCategoryId === 'facultad') && isExamTask(title) && (
               <View style={styles.studyTimeRow}>
                 <Text style={styles.studyTimeLabel}>Día de estudio</Text>
                 <View style={styles.studyTimeChips}>
@@ -507,7 +514,7 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
               </View>
             )}
 
-            {(categoryId === 'facultad' || suggestedCategoryId === 'facultad') && isExamTask(title) && (
+            {!reminderOnly && (categoryId === 'facultad' || suggestedCategoryId === 'facultad') && isExamTask(title) && (
               <View style={styles.gradeRow}>
                 <Text style={styles.studyTimeLabel}>Nota del examen</Text>
                 <View style={styles.gradeInputRow}>
@@ -546,224 +553,329 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
 
             <View style={styles.rowDivider} />
 
-            <View>
-              <View style={styles.detailRow}>
-                <Pressable
-                  onPress={() => location ? void Linking.openURL(`https://maps.google.com/?q=${encodeURIComponent(location)}`) : undefined}
-                  disabled={!location}
-                  hitSlop={4}
-                >
-                  <MapPin size={20} color={location ? colors.primary : colors.textMuted} style={styles.rowIcon} />
-                </Pressable>
-                <TextInput
-                  value={locationQuery}
-                  onChangeText={(text) => {
-                    setLocationQuery(text)
-                    if (!text.trim()) setLocation(undefined)
-                  }}
-                  style={[styles.detailRowInput, location ? { color: colors.primary } : {}]}
-                  placeholder="Agregar dirección"
-                  placeholderTextColor={colors.textMuted}
-                  returnKeyType="done"
-                  selectionColor={colors.primary}
-                  onSubmitEditing={() => clearLocationSuggestions()}
-                />
-                {locationQuery ? (
-                  <Pressable
-                    onPress={() => { setLocationQuery(''); setLocation(undefined); clearLocationSuggestions() }}
-                    hitSlop={8}
-                  >
-                    <X size={16} color={colors.textMuted} />
-                  </Pressable>
-                ) : null}
-              </View>
-              {locationSuggestions.length > 0 && (
-                <View style={styles.suggestionsContainer}>
-                  {locationSuggestions.map((suggestion) => (
-                    <Pressable
-                      key={suggestion.placeId}
-                      style={({ pressed }) => [styles.suggestionItem, pressed && { opacity: 0.7 }]}
-                      onPress={() => {
-                        setLocation(suggestion.description)
-                        setLocationQuery(suggestion.description)
-                        clearLocationSuggestions()
-                        Keyboard.dismiss()
-                      }}
-                    >
-                      <MapPin size={13} color={colors.textMuted} style={{ marginTop: 1 }} />
-                      <Text style={styles.suggestionText} numberOfLines={2}>{suggestion.description}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              )}
-            </View>
-
-            <View style={styles.rowDivider} />
-
-            <Pressable style={styles.detailRow} onPress={() => setShowDeadlinePicker(true)}>
-              <CircleCheck size={20} color={deadline ? colors.text : colors.textMuted} style={styles.rowIcon} />
-              {deadlineLabel ? (
-                <View style={styles.chip}>
-                  <Text style={styles.chipText}>{deadlineLabel}</Text>
-                  <Pressable
-                    onPress={(e) => { e.stopPropagation?.(); setDeadline(undefined) }}
-                    hitSlop={8}
-                  >
-                    <X size={12} color={colors.textMuted} />
-                  </Pressable>
-                </View>
-              ) : (
-                <Text style={styles.detailRowPlaceholder}>Agregar fecha límite</Text>
-              )}
-            </Pressable>
-
-            <View style={styles.rowDivider} />
-
-            <Pressable style={styles.detailRow} onPress={() => setExpandDate((v) => !v)}>
-              <Clock size={20} color={scheduledDate ? colors.primary : colors.textMuted} style={styles.rowIcon} />
-              {dateLabel ? (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Pressable
-                    style={[styles.chip, { borderColor: colors.primary + '55', backgroundColor: colors.primary + '15' }]}
-                    onPress={() => setExpandDate((v) => !v)}
-                  >
-                    <Text style={[styles.chipText, { color: colors.primary }]}>
-                      {dateLabel}
-                    </Text>
-                    <Pressable
-                      onPress={(e) => { e.stopPropagation?.(); setScheduledDate(undefined); setScheduledTime(undefined) }}
-                      hitSlop={8}
-                    >
-                      <X size={12} color={colors.primary} />
-                    </Pressable>
-                  </Pressable>
-                  {scheduledDate && (
-                    <Pressable onPress={() => setShowTimePicker(true)} style={[styles.chip, { borderColor: colors.border }]}>
-                      <Text style={styles.chipText}>{scheduledTime ?? '+ hora'}</Text>
-                    </Pressable>
-                  )}
-                  {scheduledDate && scheduledTime && (
-                    <Pressable onPress={() => setShowEndTimePicker(true)} style={[styles.chip, { borderColor: colors.border }]}>
-                      <Text style={styles.chipText}>{endTime ? `hasta ${endTime}` : '+ hasta'}</Text>
-                    </Pressable>
-                  )}
-                </View>
-              ) : (
-                <Text style={styles.detailRowPlaceholder}>Agregar fecha</Text>
-              )}
-            </Pressable>
-
-            {expandDate && (
-              <View style={styles.remindersPanel}>
-                <MonthCalendar
-                  selectedDate={scheduledDate}
-                  onSelectDate={(d) => { setScheduledDate(d); setExpandDate(false) }}
-                  colors={colors}
-                />
-              </View>
-            )}
-
-            {scheduledDate && accessToken && (
+            {!reminderOnly && (
               <>
+                <View>
+                  <View style={styles.detailRow}>
+                    <Pressable
+                      onPress={() => location ? void Linking.openURL(`https://maps.google.com/?q=${encodeURIComponent(location)}`) : undefined}
+                      disabled={!location}
+                      hitSlop={4}
+                    >
+                      <MapPin size={20} color={location ? colors.primary : colors.textMuted} style={styles.rowIcon} />
+                    </Pressable>
+                    <TextInput
+                      value={locationQuery}
+                      onChangeText={(text) => {
+                        setLocationQuery(text)
+                        if (!text.trim()) setLocation(undefined)
+                      }}
+                      style={[styles.detailRowInput, location ? { color: colors.primary } : {}]}
+                      placeholder="Agregar dirección"
+                      placeholderTextColor={colors.textMuted}
+                      returnKeyType="done"
+                      selectionColor={colors.primary}
+                      onSubmitEditing={() => clearLocationSuggestions()}
+                    />
+                    {locationQuery ? (
+                      <Pressable
+                        onPress={() => { setLocationQuery(''); setLocation(undefined); clearLocationSuggestions() }}
+                        hitSlop={8}
+                      >
+                        <X size={16} color={colors.textMuted} />
+                      </Pressable>
+                    ) : null}
+                  </View>
+                  {locationSuggestions.length > 0 && (
+                    <View style={styles.suggestionsContainer}>
+                      {locationSuggestions.map((suggestion) => (
+                        <Pressable
+                          key={suggestion.placeId}
+                          style={({ pressed }) => [styles.suggestionItem, pressed && { opacity: 0.7 }]}
+                          onPress={() => {
+                            setLocation(suggestion.description)
+                            setLocationQuery(suggestion.description)
+                            clearLocationSuggestions()
+                            Keyboard.dismiss()
+                          }}
+                        >
+                          <MapPin size={13} color={colors.textMuted} style={{ marginTop: 1 }} />
+                          <Text style={styles.suggestionText} numberOfLines={2}>{suggestion.description}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  )}
+                </View>
+
                 <View style={styles.rowDivider} />
-                <View style={styles.syncRow}>
-                  <Text style={styles.syncRowLabel}>Sincronizar con Google Calendar</Text>
-                  <Switch value={syncToCalendar} onValueChange={setSyncToCalendar} />
+
+                <Pressable style={styles.detailRow} onPress={() => setShowDeadlinePicker(true)}>
+                  <CircleCheck size={20} color={deadline ? colors.text : colors.textMuted} style={styles.rowIcon} />
+                  {deadlineLabel ? (
+                    <View style={styles.chip}>
+                      <Text style={styles.chipText}>{deadlineLabel}</Text>
+                      <Pressable
+                        onPress={(e) => { e.stopPropagation?.(); setDeadline(undefined) }}
+                        hitSlop={8}
+                      >
+                        <X size={12} color={colors.textMuted} />
+                      </Pressable>
+                    </View>
+                  ) : (
+                    <Text style={styles.detailRowPlaceholder}>Agregar fecha límite</Text>
+                  )}
+                </Pressable>
+
+                <View style={styles.rowDivider} />
+
+                <Pressable style={styles.detailRow} onPress={() => setExpandDate((v) => !v)}>
+                  <Clock size={20} color={scheduledDate ? colors.primary : colors.textMuted} style={styles.rowIcon} />
+                  {dateLabel ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Pressable
+                        style={[styles.chip, { borderColor: colors.primary + '55', backgroundColor: colors.primary + '15' }]}
+                        onPress={() => setExpandDate((v) => !v)}
+                      >
+                        <Text style={[styles.chipText, { color: colors.primary }]}>
+                          {dateLabel}
+                        </Text>
+                        <Pressable
+                          onPress={(e) => { e.stopPropagation?.(); setScheduledDate(undefined); setScheduledTime(undefined) }}
+                          hitSlop={8}
+                        >
+                          <X size={12} color={colors.primary} />
+                        </Pressable>
+                      </Pressable>
+                      {scheduledDate && (
+                        <Pressable onPress={() => setShowTimePicker(true)} style={[styles.chip, { borderColor: colors.border }]}>
+                          <Text style={styles.chipText}>{scheduledTime ?? '+ hora'}</Text>
+                        </Pressable>
+                      )}
+                      {scheduledDate && scheduledTime && (
+                        <Pressable onPress={() => setShowEndTimePicker(true)} style={[styles.chip, { borderColor: colors.border }]}>
+                          <Text style={styles.chipText}>{endTime ? `hasta ${endTime}` : '+ hasta'}</Text>
+                        </Pressable>
+                      )}
+                    </View>
+                  ) : (
+                    <Text style={styles.detailRowPlaceholder}>Agregar fecha</Text>
+                  )}
+                </Pressable>
+
+                {expandDate && (
+                  <View style={styles.remindersPanel}>
+                    <MonthCalendar
+                      selectedDate={scheduledDate}
+                      onSelectDate={(d) => { setScheduledDate(d); setExpandDate(false) }}
+                      colors={colors}
+                    />
+                  </View>
+                )}
+
+                {scheduledDate && accessToken && (
+                  <>
+                    <View style={styles.rowDivider} />
+                    <View style={styles.syncRow}>
+                      <Text style={styles.syncRowLabel}>Sincronizar con Google Calendar</Text>
+                      <Switch value={syncToCalendar} onValueChange={setSyncToCalendar} />
+                    </View>
+                  </>
+                )}
+
+                <View style={styles.rowDivider} />
+
+                <Pressable style={styles.detailRow} onPress={() => setShowRepeatPanel(true)}>
+                  <Repeat size={20} color={repeatRule !== 'none' ? colors.primary : colors.textMuted} style={styles.rowIcon} />
+                  <Text style={repeatRule !== 'none' ? [styles.detailRowPlaceholder, { color: colors.primary }] : styles.detailRowPlaceholder}>
+                    {repeatLabel ?? 'No repetir'}
+                  </Text>
+                  {repeatRule !== 'none' && (
+                    <Pressable onPress={(e) => { e.stopPropagation?.(); setRepeatRule('none'); setRepeatConfig(undefined) }} hitSlop={8}>
+                      <X size={16} color={colors.textMuted} />
+                    </Pressable>
+                  )}
+                </Pressable>
+
+                <View style={styles.rowDivider} />
+
+                <Pressable style={styles.detailRow} onPress={() => setExpandReminders((v) => !v)}>
+                  <Bell size={20} color={reminders.length > 0 ? colors.primary : colors.textMuted} style={styles.rowIcon} />
+                  <Text style={reminders.length > 0 ? [styles.detailRowPlaceholder, { color: colors.primary }] : styles.detailRowPlaceholder}>
+                    {reminders.length > 0 ? `${reminders.length} recordatorio${reminders.length !== 1 ? 's' : ''}` : 'Agregar recordatorio'}
+                  </Text>
+                  {reminders.length > 0 && (
+                    <Pressable onPress={() => setReminders([])} hitSlop={8}>
+                      <X size={16} color={colors.textMuted} />
+                    </Pressable>
+                  )}
+                </Pressable>
+
+                {expandReminders && (
+                  <ReminderPanel
+                    reminders={reminders}
+                    onChangeReminders={setReminders}
+                    alarmType={selectedAlarmType}
+                    onChangeAlarmType={setSelectedAlarmType}
+                    persistent={selectedPersistent}
+                    onChangePersistent={setSelectedPersistent}
+                    showTravelButton={Boolean(location && (scheduledDate || deadline))}
+                    travelTimeLoading={travelTimeLoading}
+                    hasTravelConfig={Boolean(travelConfig)}
+                    travelTimeResult={travelTimeResult}
+                    onCalculateTravelTime={() => void handleCalculateTravelTime()}
+                    transportMode={transportMode}
+                    onChangeTransportMode={setTransportMode}
+                    extraMinutes={extraMinutes}
+                    onChangeExtraMinutes={setExtraMinutes}
+                    departureReminderEnabled={departureReminderEnabled}
+                    onChangeDepartureReminderEnabled={handleToggleDepartureReminder}
+                    colors={colors}
+                    indent
+                    rowDividers
+                  />
+                )}
+
+                <View style={styles.rowDivider} />
+
+                {subtasks.map((sub) => (
+                  <View key={sub.id} style={styles.subtaskRow}>
+                    <Pressable
+                      onPress={() => void toggleCompleted(sub)}
+                      style={[
+                        styles.subtaskCheck,
+                        sub.status === 'completed' && { backgroundColor: colors.success, borderColor: colors.success },
+                      ]}
+                    />
+                    <Text style={[styles.subtaskTitle, sub.status === 'completed' && styles.done]}>
+                      {sub.title}
+                    </Text>
+                    <Pressable onPress={() => void removeSubtask(sub)} hitSlop={8}>
+                      <XCircle size={18} color={colors.textMuted} />
+                    </Pressable>
+                  </View>
+                ))}
+
+                <View style={styles.detailRow}>
+                  <CornerDownRight size={20} color={colors.textMuted} style={styles.rowIcon} />
+                  <TextInput
+                    ref={subtaskInputRef}
+                    value={newSubtaskText}
+                    onChangeText={setNewSubtaskText}
+                    placeholder="Agregar subtarea"
+                    placeholderTextColor={colors.textMuted}
+                    style={styles.detailRowInput}
+                    returnKeyType="done"
+                    blurOnSubmit={false}
+                    onSubmitEditing={() => void addSubtask()}
+                    selectionColor={colors.primary}
+                  />
+                  <Pressable onPress={() => void addSubtask()} disabled={!newSubtaskText.trim()} hitSlop={8}>
+                    <Plus size={20} color={newSubtaskText.trim() ? colors.primary : colors.textMuted} />
+                  </Pressable>
                 </View>
               </>
             )}
 
-            <View style={styles.rowDivider} />
+            {reminderOnly && (() => {
+              const roInterval = repeatConfig?.interval ?? 1
+              const roUnit: 'hours' | 'days' = repeatRule === 'hourly' ? 'hours' : 'days'
+              const roUntil = repeatConfig?.endDate
+              return (
+                <>
+                  {/* Hora */}
+                  <Pressable style={styles.detailRow} onPress={() => setShowTimePicker(true)}>
+                    <Clock size={20} color={colors.primary} style={styles.rowIcon} />
+                    <View style={[styles.chip, { borderColor: colors.primary + '55', backgroundColor: colors.primary + '15' }]}>
+                      <Text style={[styles.chipText, { color: colors.primary }]}>{scheduledTime ?? '—'}</Text>
+                    </View>
+                  </Pressable>
 
-            <Pressable style={styles.detailRow} onPress={() => setShowRepeatPanel(true)}>
-              <Repeat size={20} color={repeatRule !== 'none' ? colors.primary : colors.textMuted} style={styles.rowIcon} />
-              <Text style={repeatRule !== 'none' ? [styles.detailRowPlaceholder, { color: colors.primary }] : styles.detailRowPlaceholder}>
-                {repeatLabel ?? 'No repetir'}
-              </Text>
-              {repeatRule !== 'none' && (
-                <Pressable onPress={(e) => { e.stopPropagation?.(); setRepeatRule('none'); setRepeatConfig(undefined) }} hitSlop={8}>
-                  <X size={16} color={colors.textMuted} />
-                </Pressable>
-              )}
-            </Pressable>
+                  <View style={styles.rowDivider} />
 
-            <View style={styles.rowDivider} />
+                  {/* Repetir cada */}
+                  <View style={styles.detailRow}>
+                    <Repeat size={20} color={colors.primary} style={styles.rowIcon} />
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                      <Pressable
+                        onPress={() => setRepeatConfig(prev => ({ unit: prev?.unit ?? 'hour', interval: Math.max(1, (prev?.interval ?? 1) - 1), end: prev?.end ?? 'never', endDate: prev?.endDate }))}
+                        hitSlop={10}
+                        style={styles.reminderStepBtn}
+                      >
+                        <Minus size={16} color={colors.primary} />
+                      </Pressable>
+                      <Text style={{ fontSize: 16, fontWeight: '600', color: colors.text, minWidth: 20, textAlign: 'center' }}>{roInterval}</Text>
+                      <Pressable
+                        onPress={() => setRepeatConfig(prev => ({ unit: prev?.unit ?? 'hour', interval: (prev?.interval ?? 1) + 1, end: prev?.end ?? 'never', endDate: prev?.endDate }))}
+                        hitSlop={10}
+                        style={styles.reminderStepBtn}
+                      >
+                        <Plus size={16} color={colors.primary} />
+                      </Pressable>
+                      <View style={{ flexDirection: 'row', gap: 6, marginLeft: 4 }}>
+                        {(['hours', 'days'] as const).map((u) => (
+                          <Pressable
+                            key={u}
+                            onPress={() => {
+                              setRepeatRule(u === 'hours' ? 'hourly' : 'daily')
+                              setRepeatConfig(prev => ({ unit: u === 'hours' ? 'hour' : 'day', interval: prev?.interval ?? 1, end: prev?.end ?? 'never', endDate: prev?.endDate }))
+                            }}
+                            style={[styles.reminderUnitChip, roUnit === u && { backgroundColor: colors.accent, borderColor: colors.accent }]}
+                          >
+                            <Text style={[styles.reminderUnitChipText, roUnit === u && { color: '#fff' }]}>
+                              {u === 'hours' ? 'horas' : 'días'}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    </View>
+                  </View>
 
-            <Pressable style={styles.detailRow} onPress={() => setExpandReminders((v) => !v)}>
-              <Bell size={20} color={reminders.length > 0 ? colors.primary : colors.textMuted} style={styles.rowIcon} />
-              <Text style={reminders.length > 0 ? [styles.detailRowPlaceholder, { color: colors.primary }] : styles.detailRowPlaceholder}>
-                {reminders.length > 0 ? `${reminders.length} recordatorio${reminders.length !== 1 ? 's' : ''}` : 'Agregar recordatorio'}
-              </Text>
-              {reminders.length > 0 && (
-                <Pressable onPress={() => setReminders([])} hitSlop={8}>
-                  <X size={16} color={colors.textMuted} />
-                </Pressable>
-              )}
-            </Pressable>
+                  <View style={styles.rowDivider} />
 
-            {expandReminders && (
-              <ReminderPanel
-                reminders={reminders}
-                onChangeReminders={setReminders}
-                alarmType={selectedAlarmType}
-                onChangeAlarmType={setSelectedAlarmType}
-                persistent={selectedPersistent}
-                onChangePersistent={setSelectedPersistent}
-                showTravelButton={Boolean(location && (scheduledDate || deadline))}
-                travelTimeLoading={travelTimeLoading}
-                hasTravelConfig={Boolean(travelConfig)}
-                travelTimeResult={travelTimeResult}
-                onCalculateTravelTime={() => void handleCalculateTravelTime()}
-                transportMode={transportMode}
-                onChangeTransportMode={setTransportMode}
-                extraMinutes={extraMinutes}
-                onChangeExtraMinutes={setExtraMinutes}
-                departureReminderEnabled={departureReminderEnabled}
-                onChangeDepartureReminderEnabled={handleToggleDepartureReminder}
-                colors={colors}
-                indent
-                rowDividers
-              />
-            )}
+                  {/* Hasta */}
+                  <Pressable style={styles.detailRow} onPress={() => setReminderOnlyUntilPickerOpen(true)}>
+                    <CircleCheck size={20} color={roUntil ? colors.text : colors.textMuted} style={styles.rowIcon} />
+                    {roUntil ? (
+                      <View style={styles.chip}>
+                        <Text style={styles.chipText}>{format(new Date(roUntil + 'T00:00:00'), "d 'de' MMM", { locale: es })}</Text>
+                        <Pressable onPress={(e) => { e.stopPropagation?.(); setRepeatConfig(prev => ({ unit: prev?.unit ?? 'hour', interval: prev?.interval ?? 1, end: 'never' })) }} hitSlop={8}>
+                          <X size={12} color={colors.textMuted} />
+                        </Pressable>
+                      </View>
+                    ) : (
+                      <Text style={styles.detailRowPlaceholder}>Fecha de fin (opcional)</Text>
+                    )}
+                  </Pressable>
 
-            <View style={styles.rowDivider} />
+                  <View style={styles.rowDivider} />
 
-            {subtasks.map((sub) => (
-              <View key={sub.id} style={styles.subtaskRow}>
-                <Pressable
-                  onPress={() => void toggleCompleted(sub)}
-                  style={[
-                    styles.subtaskCheck,
-                    sub.status === 'completed' && { backgroundColor: colors.success, borderColor: colors.success },
-                  ]}
-                />
-                <Text style={[styles.subtaskTitle, sub.status === 'completed' && styles.done]}>
-                  {sub.title}
-                </Text>
-                <Pressable onPress={() => void removeSubtask(sub)} hitSlop={8}>
-                  <XCircle size={18} color={colors.textMuted} />
-                </Pressable>
-              </View>
-            ))}
-
-            <View style={styles.detailRow}>
-              <CornerDownRight size={20} color={colors.textMuted} style={styles.rowIcon} />
-              <TextInput
-                ref={subtaskInputRef}
-                value={newSubtaskText}
-                onChangeText={setNewSubtaskText}
-                placeholder="Agregar subtarea"
-                placeholderTextColor={colors.textMuted}
-                style={styles.detailRowInput}
-                returnKeyType="done"
-                blurOnSubmit={false}
-                onSubmitEditing={() => void addSubtask()}
-                selectionColor={colors.primary}
-              />
-              <Pressable onPress={() => void addSubtask()} disabled={!newSubtaskText.trim()} hitSlop={8}>
-                <Plus size={20} color={newSubtaskText.trim() ? colors.primary : colors.textMuted} />
-              </Pressable>
-            </View>
+                  {/* Tipo */}
+                  <View style={styles.detailRow}>
+                    <Bell size={20} color={colors.textMuted} style={styles.rowIcon} />
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <Pressable
+                        style={[styles.reminderTypeBtn, selectedAlarmType === 'notification' && styles.reminderTypeBtnActive]}
+                        onPress={() => setSelectedAlarmType('notification')}
+                      >
+                        <Bell size={12} color={selectedAlarmType === 'notification' ? colors.primary : colors.textMuted} />
+                        <Text style={[styles.reminderTypeBtnText, selectedAlarmType === 'notification' && { color: colors.primary, fontWeight: '600' }]}>
+                          Notificación
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        style={[styles.reminderTypeBtn, selectedAlarmType === 'alarm' && styles.reminderTypeBtnAlarm]}
+                        onPress={() => setSelectedAlarmType('alarm')}
+                      >
+                        <AlarmClock size={12} color={selectedAlarmType === 'alarm' ? colors.accent : colors.textMuted} />
+                        <Text style={[styles.reminderTypeBtnText, selectedAlarmType === 'alarm' && { color: colors.accent, fontWeight: '600' }]}>
+                          Alarma
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                </>
+              )
+            })()}
           </ScrollView>
 
           <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom + 8, 20) }]}>
@@ -790,6 +902,37 @@ const ItemDetailModalForm = ({ item, onClose }: ItemDetailModalFormProps) => {
               </Text>
             </Pressable>
           </View>
+
+          {reminderOnlyUntilPickerOpen && (
+            <>
+              <Pressable
+                style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 10 }]}
+                onPress={() => setReminderOnlyUntilPickerOpen(false)}
+              />
+              <View
+                style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24, zIndex: 11 }]}
+                pointerEvents="box-none"
+              >
+                <View style={styles.reminderSetupCard} onStartShouldSetResponder={() => true}>
+                  <View style={styles.reminderSetupHeader}>
+                    <Text style={styles.reminderSetupTitle}>Hasta</Text>
+                    <Pressable onPress={() => setReminderOnlyUntilPickerOpen(false)} hitSlop={12}>
+                      <X size={20} color={colors.textMuted} />
+                    </Pressable>
+                  </View>
+                  <MonthCalendar
+                    selectedDate={repeatConfig?.endDate}
+                    onSelectDate={(d) => {
+                      setRepeatConfig(prev => ({ unit: prev?.unit ?? 'hour', interval: prev?.interval ?? 1, end: 'on_date', endDate: d }))
+                      setReminderOnlyUntilPickerOpen(false)
+                    }}
+                    colors={colors}
+                    accentColor={colors.accent}
+                  />
+                </View>
+              </View>
+            </>
+          )}
 
           {reminderSetupOpen && (
             <>
@@ -1360,5 +1503,27 @@ const createStyles = (colors: ThemeTokens) =>
       borderTopWidth: 1,
       borderColor: colors.border,
       marginTop: 4,
+    },
+    reminderTypeBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    reminderTypeBtnActive: {
+      borderColor: colors.primary,
+      backgroundColor: colors.primary + '15',
+    },
+    reminderTypeBtnAlarm: {
+      borderColor: colors.accent,
+      backgroundColor: colors.accent + '15',
+    },
+    reminderTypeBtnText: {
+      fontSize: 12,
+      color: colors.textSecondary,
     },
   })

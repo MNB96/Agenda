@@ -153,7 +153,10 @@ export const ReminderPanel = ({
         <Text style={styles.typeLabel}>Tipo:</Text>
         <Pressable
           style={[styles.typeBtn, alarmType === 'notification' && styles.typeBtnActive]}
-          onPress={() => onChangeAlarmType('notification')}
+          onPress={() => {
+            onChangeAlarmType('notification')
+            onChangeReminders(reminders.map(r => ({ ...r, alarmType: 'notification' as const })))
+          }}
         >
           <Bell size={12} color={alarmType === 'notification' ? colors.primary : colors.textMuted} />
           <Text style={[styles.typeBtnText, alarmType === 'notification' && { color: colors.primary, fontWeight: '600' }]}>
@@ -162,7 +165,10 @@ export const ReminderPanel = ({
         </Pressable>
         <Pressable
           style={[styles.typeBtn, alarmType === 'alarm' && styles.typeBtnAlarmActive]}
-          onPress={() => onChangeAlarmType('alarm')}
+          onPress={() => {
+            onChangeAlarmType('alarm')
+            onChangeReminders(reminders.map(r => ({ ...r, alarmType: 'alarm' as const })))
+          }}
         >
           <AlarmClock size={12} color={alarmType === 'alarm' ? colors.accent : colors.textMuted} />
           <Text style={[styles.typeBtnText, alarmType === 'alarm' && { color: colors.accent, fontWeight: '600' }]}>
@@ -171,7 +177,11 @@ export const ReminderPanel = ({
         </Pressable>
         <Pressable
           style={[styles.typeBtn, persistent && styles.typeBtnActive]}
-          onPress={() => onChangePersistent(!persistent)}
+          onPress={() => {
+            const next = !persistent
+            onChangePersistent(next)
+            onChangeReminders(reminders.map(r => ({ ...r, persistent: next })))
+          }}
         >
           <Pin size={12} color={persistent ? colors.primary : colors.textMuted} />
           <Text style={[styles.typeBtnText, persistent && { color: colors.primary, fontWeight: '600' }]}>

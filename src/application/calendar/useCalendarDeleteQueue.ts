@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { AppState } from 'react-native'
+import * as Network from 'expo-network'
 import { calendarRepository, taskRepository } from '../../app/container'
 import { isGoogleCalendarAuthError } from '../../infrastructure/calendar/errors'
 import { notifyCalendarDeleteFailed } from '../../infrastructure/notifications/itemNotifications'
-import { processQueue } from './calendarDeleteQueue'
+import { processQueue, PermanentCalendarDeleteError } from './calendarDeleteQueue'
 
 export const useCalendarDeleteQueue = (
   accessToken: string | null,
@@ -13,6 +14,10 @@ export const useCalendarDeleteQueue = (
 
   const run = useCallback(async (token: string) => {
     if (isProcessing.current) return
+
+    const net = await Network.getNetworkStateAsync()
+    if (!net.isConnected || !net.isInternetReachable) return
+
     isProcessing.current = true
     try {
       await processQueue(
@@ -24,7 +29,12 @@ export const useCalendarDeleteQueue = (
               await calendarRepository.deleteEvent(token, calendarId, eventId)
             }
           } catch (error) {
-            if (isGoogleCalendarAuthError(error) && kind !== 'task') markUnauthorized()
+            if (isGoogleCalendarAuthError(error)) {
+              // Tasks auth errors no desconectan Calendar (puede seguir andando por su cuenta),
+              // pero tampoco tiene sentido reintentar — sacar de la cola permanentemente.
+              if (kind !== 'task') markUnauthorized()
+              throw new PermanentCalendarDeleteError()
+            }
             throw error
           }
         },

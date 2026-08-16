@@ -5,6 +5,28 @@ const MAX_ATTEMPTS = 5
 // Backoff: 5min, 15min, 1h, 6h, 24h
 const BACKOFF_MS = [5 * 60_000, 15 * 60_000, 60 * 60_000, 6 * 60 * 60_000, 24 * 60 * 60_000]
 
+// Lanzado por el caller para sacar una entrada de la cola sin quemar reintentos
+// (ej: error de auth donde reintentar no tiene sentido).
+export class PermanentCalendarDeleteError extends Error {
+  constructor() {
+    super('Permanent delete failure — do not retry')
+    this.name = 'PermanentCalendarDeleteError'
+  }
+}
+
+const isNetworkError = (error: unknown): boolean => {
+  if (!(error instanceof Error)) return false
+  const msg = error.message.toLowerCase()
+  return (
+    msg.includes('network request failed') ||
+    msg.includes('failed to fetch') ||
+    msg.includes('network error') ||
+    msg.includes('etimedout') ||
+    msg.includes('enotfound') ||
+    msg.includes('econnrefused')
+  )
+}
+
 export interface PendingCalendarDelete {
   id: string
   kind: 'event' | 'task'
@@ -68,9 +90,21 @@ export async function processQueue(
       await deleteResource(entry.kind, entry.calendarId, entry.eventId)
       const idx = updated.findIndex((e) => e.id === entry.id)
       if (idx !== -1) updated.splice(idx, 1)
-    } catch {
+    } catch (error) {
       const idx = updated.findIndex((e) => e.id === entry.id)
       if (idx === -1) continue
+
+      if (error instanceof PermanentCalendarDeleteError) {
+        // Auth u otro error irrecuperable: sacar de la cola sin quemar reintentos.
+        updated.splice(idx, 1)
+        await onExhausted(entry.itemTitle)
+        continue
+      }
+
+      if (isNetworkError(error)) {
+        // Sin red: no quemar el reintento, el backoff ya programado alcanza.
+        continue
+      }
 
       const next = { ...updated[idx], attemptCount: updated[idx].attemptCount + 1 }
       if (next.attemptCount >= MAX_ATTEMPTS) {

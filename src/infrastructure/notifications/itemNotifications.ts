@@ -292,6 +292,19 @@ export const cancelItemNotifications = async (
       } catch {}
     }),
   )
+  // cancelScheduledNotificationAsync only removes future-scheduled ones; already-delivered
+  // sticky notifications stay in the tray until explicitly dismissed.
+  if (toCancel.length > 0) {
+    try {
+      const presented = await Notifications.getPresentedNotificationsAsync()
+      const cancelSet = new Set(toCancel)
+      await Promise.all(
+        presented
+          .filter(n => cancelSet.has(n.request.identifier))
+          .map(n => Notifications.dismissNotificationAsync(n.request.identifier).catch(() => {})),
+      )
+    } catch {}
+  }
 }
 
 export const notifyCalendarDeleteFailed = async (taskTitle: string): Promise<void> => {

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { AppState } from 'react-native'
+import * as Network from 'expo-network'
 import { calendarRepository, itemRepository, taskRepository } from '../../app/container'
 import { syncItemToCalendar, resolveTargetKind } from './itemCalendarSync'
 import { useSettings } from '../settings/useSettings'
@@ -41,6 +42,10 @@ export const useCalendarSyncRecovery = (
 
   const run = useCallback(async (token: string) => {
     if (isProcessing.current) return
+
+    const net = await Network.getNetworkStateAsync()
+    if (!net.isConnected || !net.isInternetReachable) return
+
     isProcessing.current = true
     try {
       const items = await itemRepository.list()
