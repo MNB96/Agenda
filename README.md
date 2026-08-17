@@ -1,76 +1,84 @@
-# Agenda Personal (React Native)
+# Agenda Personal — React Native (Expo)
 
-Aplicacion mobile-first en React Native (Expo) para organizar la vida diaria con una unica lista y dos pantallas principales: Hoy y Agenda.
+App de productividad personal mobile-first. Nombre de display: **Tasks**. Package: `com.agenda.personal`.
+
+## Tabs
+
+| Tab | Descripción |
+|---|---|
+| **Tareas** | Lista de tareas con secciones (vencidas, hoy, importante, sin fecha, completadas), búsqueda, filtros por categoría y swipe gestures |
+| **Facultad** | Seguimiento académico: exámenes, materias, ausencias, licencias por examen |
+| **Metas** | Metas con deadline, sub-metas, sync con Google Tasks |
+| **Hábitos** | Rastreador con streaks, multi-repetición diaria, estadísticas |
 
 ## Stack
 
-- React Native + Expo + TypeScript
-- React Navigation (tabs)
-- Zustand
-- TanStack Query
-- date-fns
-- lucide-react-native
-- AsyncStorage (persistencia local desacoplada)
-- Google Calendar API (OAuth)
-
-## Estado actual del MVP mobile
-
-- Navegacion principal de 2 tabs: Hoy y Agenda
-- Alta rapida con parser local (texto natural basico)
-- Una sola coleccion de items (task/event/deadline/date_window/goal)
-- Filtros por categoria y busqueda simple en Hoy
-- Vista Agenda cronologica por fecha con eventos locales + Google Calendar
-- Edicion de item y sincronizacion opcional con Google Calendar
-- Ajustes (Google, recordatorios, licencias por examen)
-- Persistencia local en AsyncStorage con repositorios
+- React Native 0.86 + Expo 57 + TypeScript (strict)
+- Hermes runtime en Android
+- React Navigation v7 (bottom tabs)
+- TanStack React Query v5 + Zustand v5
+- expo-sqlite (base de datos principal)
+- AsyncStorage (settings y flags de migración)
+- Google Calendar API + Google Tasks API + Google Sign-In
+- expo-notifications (notificaciones locales con acciones)
+- expo-location (tiempo de viaje)
+- date-fns v4 (locale español)
 
 ## Arquitectura
 
-- src/domain: modelos e interfaces
-- src/repositories/asyncstorage: persistencia local
-- src/providers: integraciones (calendar)
-- src/services: parser, scoring y utilidades de negocio
-- src/features: hooks de casos de uso
-- src/mobile: UI React Native (screens, modals, navigation)
-- src/state: estado global de sesion/UI
+Capas limpias estrictas:
+
+```
+domain/         ← Entidades, interfaces, servicios puros (sin React, sin infra)
+infrastructure/ ← SQLite, AsyncStorage, Google APIs, Notifications
+application/    ← Hooks React Query (casos de uso)
+mobile/         ← UI React Native (screens, modals, components, theme)
+state/          ← Zustand (solo sesión Google OAuth)
+app/            ← container.ts: único punto de DI
+```
 
 ## Variables de entorno
 
-Copiar .env.example a .env y completar:
+Copiar `.env.example` a `.env` y completar:
 
-- EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID
-- EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID
-- EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID
-- EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
+```
+EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=
+EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID=
+EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID=
+EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=
+EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=
+```
 
-## Google Calendar OAuth en mobile
-
-1. Crear proyecto en Google Cloud.
-2. Habilitar Google Calendar API.
-3. Configurar OAuth consent screen.
-4. Crear credenciales OAuth para Android/iOS (y Expo/Web si aplica al flujo de pruebas).
-5. Cargar client IDs en variables EXPO_PUBLIC.
-
-La app detecta token expirado/no autorizado y solicita reconexion.
-
-En web, conectar Google requiere EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID. Si falta, el boton de conexion queda deshabilitado para evitar errores en runtime.
-
-## Ejecucion
+## Ejecución
 
 ```bash
 npm install
-npm run start
+npm run android    # debug en emulador o dispositivo
+npm run start      # Metro bundler (Expo Go)
 ```
 
-Atajos:
+## Build release Android
 
-- Android: npm run android
-- iOS: npm run ios
+```bash
+cd android && ./gradlew assembleRelease
+# APK: android/app/build/outputs/apk/release/app-release.apk
+```
 
-## Sobre Babel
+## Google OAuth — setup
 
-`babel.config.js` se mantiene porque Expo/Metro usa Babel para transformar React Native. Este archivo esta en su forma minima (`babel-preset-expo`) y no agrega complejidad extra.
+1. Crear proyecto en Google Cloud Console
+2. Habilitar Google Calendar API y Google Tasks API
+3. Configurar OAuth consent screen
+4. Crear credenciales OAuth para Android e iOS
+5. Cargar IDs en las variables `EXPO_PUBLIC_GOOGLE_*`
 
-## Nota de producto
+La app detecta token expirado/no autorizado y solicita reconexión silenciosa o interactiva.
 
-El foco ahora es app de celular. La vieja capa web (Vite/React Router) quedo fuera del flujo principal de ejecucion.
+## Babel
+
+`babel.config.js` usa `babel-preset-expo` con `allowDeclareFields: true` (requerido para el patrón de tipado nominal en entidades de dominio).
+
+## Docs de features
+
+Ver `docs/` para documentación detallada de cada pantalla.  
+Ver `CLAUDE.md` para la guía técnica completa del proyecto.
